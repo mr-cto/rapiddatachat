@@ -8,6 +8,16 @@
   "env": {
     "NODE_ENV": "production"
   },
+  "buildEnv": {
+    "PROJECT_STORAGE_PATH": "./projects",
+    "MAX_PROJECTS_PER_USER": "50",
+    "SCHEMA_VALIDATION_LEVEL": "strict",
+    "MAX_SCHEMA_COLUMNS": "100",
+    "COLUMN_MAPPING_STRATEGY": "fuzzy",
+    "ENABLE_SCHEMA_EVOLUTION": "true",
+    "NORMALIZATION_BATCH_SIZE": "1000",
+    "ENABLE_DATA_VALIDATION": "true"
+  },
   "routes": [
     {
       "src": "/api/(.*)",

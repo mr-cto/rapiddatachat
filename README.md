@@ -146,11 +146,25 @@ The simplified data upload flow requires several environment variables to be con
 
 For a complete list and detailed descriptions, see the [Environment Variables Documentation](docs/environment-variables.md).
 
+## CI/CD Pipeline
+
+RapidDataChat includes a GitHub Actions workflow for continuous integration and deployment:
+
+- **Lint**: Runs ESLint to check code quality
+- **Test**: Runs tests with a PostgreSQL test database
+- **Build**: Builds the Next.js application
+- **Deploy Preview**: Deploys to a preview environment for pull requests
+- **Deploy Production**: Deploys to production for pushes to the main branch
+
+For more details on the CI/CD pipeline, see the [CI/CD Pipeline Documentation](docs/ci-cd-pipeline.md).
+
 ## Deployment
 
 The application is designed to be deployed on Vercel with a PostgreSQL database.
 
 When deploying to Vercel, make sure to add all the required environment variables in the Vercel dashboard under Project Settings > Environment Variables.
+
+For detailed deployment instructions, see the [Deployment Guide](DEPLOYMENT.md).
 
 ## Contributing
 
