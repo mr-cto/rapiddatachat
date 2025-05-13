@@ -77,6 +77,8 @@ For more details, see the [Data Flow Overview](docs/data-flow-overview.md).
 
    - Copy `.env.example` to `.env` if it doesn't exist
    - Update the `DATABASE_URL` if needed (default should work with the setup above)
+   - You can also use the setup script: `node scripts/setup-env.js`
+   - For more details on environment variables, see [Environment Variables Documentation](docs/environment-variables.md)
 
 3. Run Prisma migrations:
 
@@ -132,9 +134,23 @@ npm install react-hook-form zod
 
 Note: Other dependencies like uuid, csv-parser, xlsx, and prisma are already included in the project.
 
+## Environment Variables
+
+The simplified data upload flow requires several environment variables to be configured:
+
+- **PROJECT_STORAGE_PATH**: Path to store project-related data
+- **MAX_PROJECTS_PER_USER**: Maximum number of projects a user can create
+- **SCHEMA_VALIDATION_LEVEL**: Level of schema validation (strict, lenient)
+- **COLUMN_MAPPING_STRATEGY**: Strategy for automatic column mapping (exact, fuzzy, none)
+- **ENABLE_SCHEMA_EVOLUTION**: Allow adding new columns to existing schemas
+
+For a complete list and detailed descriptions, see the [Environment Variables Documentation](docs/environment-variables.md).
+
 ## Deployment
 
 The application is designed to be deployed on Vercel with a PostgreSQL database.
+
+When deploying to Vercel, make sure to add all the required environment variables in the Vercel dashboard under Project Settings > Environment Variables.
 
 ## Contributing
 
