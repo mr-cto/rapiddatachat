@@ -1,11 +1,7 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
-import {
-  SchemaManagementService,
-  GlobalSchema,
-  ColumnMapping,
-} from "../../../lib/schemaManagement";
+import { GlobalSchemaService } from "../../../lib/globalSchemaService";
 
 /**
  * API handler for schema management operations
@@ -26,7 +22,7 @@ export default async function handler(
   // If email is not available, fall back to the user ID
   const userId = session.user.email || session.user.id || "";
   console.log(`[schema-management] Using user ID: ${userId}`);
-  const schemaService = new SchemaManagementService();
+  const schemaService = new GlobalSchemaService();
 
   try {
     // Handle different HTTP methods
@@ -51,8 +47,10 @@ export default async function handler(
           return res.status(200).json({ schema });
         } else if (req.query.projectId) {
           // Get all schemas for a project
-          const schemas = await schemaService.getGlobalSchemas(userId);
-          // Filter schemas by projectId (to be implemented in the future)
+          const schemas = await schemaService.getGlobalSchemas(
+            userId,
+            req.query.projectId as string
+          );
           return res.status(200).json({ schemas });
         } else {
           // Get all schemas for the user
@@ -62,55 +60,25 @@ export default async function handler(
 
       case "POST":
         // Create a new schema
-        if (req.body.action === "create_from_files") {
-          // Create a schema from active files
-          const { name, description } = req.body;
+        if (req.body.action === "create_from_template") {
+          // Create a schema from a template
+          const { projectId, templateName, name, description } = req.body;
 
           if (!name) {
             return res.status(400).json({ error: "Schema name is required" });
           }
 
-          try {
-            const schema =
-              await schemaService.createGlobalSchemaFromActiveFiles(
-                userId,
-                name,
-                description
-              );
-
-            return res.status(201).json({ schema });
-          } catch (error) {
-            return res.status(400).json({
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Failed to create schema from active files",
-            });
-          }
-        } else if (req.body.action === "create_with_columns") {
-          // Create a schema with predefined columns
-          const { name, description, columns } = req.body;
-
-          if (!name) {
-            return res.status(400).json({ error: "Schema name is required" });
-          }
-
-          if (!columns || !Array.isArray(columns)) {
-            return res.status(400).json({ error: "Columns must be an array" });
-          }
-
-          if (columns.length === 0) {
-            return res
-              .status(400)
-              .json({ error: "Schema must have at least one column" });
+          if (!templateName) {
+            return res.status(400).json({ error: "Template name is required" });
           }
 
           try {
-            const schema = await schemaService.createGlobalSchemaWithColumns(
+            const schema = await schemaService.createSchemaFromTemplate(
               userId,
+              projectId,
+              templateName,
               name,
-              description,
-              columns
+              description
             );
 
             return res.status(201).json({ schema });
@@ -119,7 +87,7 @@ export default async function handler(
               error:
                 error instanceof Error
                   ? error.message
-                  : "Failed to create schema with columns",
+                  : "Failed to create schema from template",
             });
           }
         } else if (req.body.action === "save_mapping") {
@@ -137,7 +105,7 @@ export default async function handler(
             return res.status(403).json({ error: "Forbidden" });
           }
 
-          const mapping: ColumnMapping = {
+          const mapping = {
             fileId,
             schemaId,
             mappings,
@@ -169,16 +137,11 @@ export default async function handler(
           }
 
           try {
-            // Store projectId in the schema description for now
-            // In the future, we can add a projectId field to the schema table
-            const fullDescription = projectId
-              ? `Project ID: ${projectId}\n${description || ""}`
-              : description;
-
-            const schema = await schemaService.createGlobalSchemaWithColumns(
+            const schema = await schemaService.createGlobalSchema(
               userId,
+              projectId,
               name,
-              fullDescription,
+              description,
               columns
             );
 
@@ -195,7 +158,8 @@ export default async function handler(
 
       case "PUT":
         // Update an existing schema
-        const { id, name, description, columns, isActive } = req.body;
+        const { id, name, description, columns, isActive, createNewVersion } =
+          req.body;
 
         if (!id) {
           return res.status(400).json({ error: "Schema ID is required" });
@@ -214,7 +178,7 @@ export default async function handler(
         }
 
         // Update the schema
-        const updatedSchema: GlobalSchema = {
+        const updatedSchema = {
           ...existingSchema,
           name: name || existingSchema.name,
           description:
@@ -226,12 +190,18 @@ export default async function handler(
           updatedAt: new Date(),
         };
 
-        const result = await schemaService.updateGlobalSchema(updatedSchema);
+        const result = await schemaService.updateGlobalSchema(
+          updatedSchema,
+          createNewVersion === true
+        );
 
         if (result) {
           // If this schema is now active, deactivate all other schemas
           if (isActive) {
-            const allSchemas = await schemaService.getGlobalSchemas(userId);
+            const allSchemas = await schemaService.getGlobalSchemas(
+              userId,
+              existingSchema.projectId
+            );
 
             for (const schema of allSchemas) {
               if (schema.id !== id && schema.isActive) {
