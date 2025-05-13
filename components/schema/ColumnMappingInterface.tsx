@@ -5,6 +5,7 @@ import NewColumnForm from "./NewColumnForm";
 import TransformationRuleForm, {
   TransformationRule,
 } from "./TransformationRuleForm";
+import MappingPreview from "./MappingPreview";
 import {
   FileColumnMetadata,
   SchemaColumnMetadata,
@@ -20,6 +21,18 @@ interface ColumnMappingInterfaceProps {
   schemaId: string;
   onComplete?: (mappings: ColumnMapping[]) => void;
   onCancel?: () => void;
+}
+
+/**
+ * Interface for validation issue
+ */
+interface ValidationIssue {
+  rowIndex: number;
+  columnName: string;
+  schemaColumnId: string;
+  issueType: "missing" | "type" | "format";
+  message: string;
+  severity: "warning" | "error";
 }
 
 /**
@@ -56,6 +69,10 @@ const ColumnMappingInterface: React.FC<ColumnMappingInterfaceProps> = ({
   const [transformationRules, setTransformationRules] = useState<
     Record<string, TransformationRule[]>
   >({});
+  const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>(
+    []
+  );
+  const [activeTab, setActiveTab] = useState<"mapping" | "preview">("mapping");
 
   // Load data on component mount
   useEffect(() => {
@@ -379,6 +396,13 @@ const ColumnMappingInterface: React.FC<ColumnMappingInterfaceProps> = ({
   };
 
   /**
+   * Handle validation issues from preview
+   */
+  const handleValidationIssues = (issues: ValidationIssue[]) => {
+    setValidationIssues(issues);
+  };
+
+  /**
    * Get mapped schema column for a file column
    */
   const getMappedSchemaColumn = (fileColumnName: string) => {
@@ -398,36 +422,6 @@ const ColumnMappingInterface: React.FC<ColumnMappingInterfaceProps> = ({
       return fileColumns.find((fc) => fc.name === mapping.fileColumnName);
     }
     return null;
-  };
-
-  /**
-   * Get preview of mapped data
-   */
-  const getMappedPreview = () => {
-    if (!previewData || previewData.length === 0) {
-      return [];
-    }
-
-    return previewData.map((row) => {
-      const mappedRow: Record<string, any> = {};
-      mappings.forEach((mapping) => {
-        const schemaColumn = schemaColumns.find(
-          (sc) => sc.id === mapping.schemaColumnId
-        );
-        if (schemaColumn) {
-          let value = row[mapping.fileColumnName];
-
-          // Apply transformation rules if any
-          const rules = transformationRules[mapping.fileColumnName];
-          if (rules && rules.length > 0) {
-            value = transformationService.applyTransformations(value, rules);
-          }
-
-          mappedRow[schemaColumn.name] = value;
-        }
-      });
-      return mappedRow;
-    });
   };
 
   /**
@@ -585,255 +579,270 @@ const ColumnMappingInterface: React.FC<ColumnMappingInterfaceProps> = ({
                   {Object.keys(transformationRules).length}
                 </div>
               </div>
+              {validationIssues.length > 0 && (
+                <div className="mt-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded-md text-yellow-800 dark:text-yellow-200 text-sm">
+                  <span className="font-medium">Validation Issues:</span>{" "}
+                  {validationIssues.length} issues found in preview data
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Column mapping display */}
-          <ColumnMappingDisplay
-            fileColumns={fileColumns}
-            schemaColumns={schemaColumns}
-            isLoading={isLoading}
-            onSelectFileColumn={handleSelectFileColumn}
-            onSelectSchemaColumn={handleSelectSchemaColumn}
-            selectedFileColumn={selectedFileColumn}
-            selectedSchemaColumn={selectedSchemaColumn}
-            suggestedMappings={suggestedMappings}
-          />
+          {/* Tabs */}
+          <div className="mb-6">
+            <div className="border-b border-gray-200 dark:border-gray-700">
+              <nav className="-mb-px flex">
+                <button
+                  onClick={() => setActiveTab("mapping")}
+                  className={`py-2 px-4 text-center border-b-2 font-medium text-sm ${
+                    activeTab === "mapping"
+                      ? "border-blue-500 text-blue-600 dark:text-blue-400"
+                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300"
+                  }`}
+                >
+                  Column Mapping
+                </button>
+                <button
+                  onClick={() => setActiveTab("preview")}
+                  className={`py-2 px-4 text-center border-b-2 font-medium text-sm ${
+                    activeTab === "preview"
+                      ? "border-blue-500 text-blue-600 dark:text-blue-400"
+                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300"
+                  }`}
+                >
+                  Preview
+                </button>
+              </nav>
+            </div>
+          </div>
 
-          {/* Current mappings */}
-          <div className="mt-8">
-            <h3 className="text-lg font-semibold mb-2 text-gray-800 dark:text-gray-200">
-              Current Mappings
-            </h3>
-            {mappings.length === 0 ? (
-              <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-md text-gray-500 dark:text-gray-400">
-                No mappings created yet. Select a file column and a schema
-                column, then click "Map Selected Columns".
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full bg-white dark:bg-gray-800 rounded-md overflow-hidden">
-                  <thead className="bg-gray-100 dark:bg-gray-700">
-                    <tr>
-                      <th className="py-2 px-4 text-left text-gray-700 dark:text-gray-300">
-                        File Column
-                      </th>
-                      <th className="py-2 px-4 text-left text-gray-700 dark:text-gray-300">
-                        Schema Column
-                      </th>
-                      <th className="py-2 px-4 text-left text-gray-700 dark:text-gray-300">
-                        Transformations
-                      </th>
-                      <th className="py-2 px-4 text-left text-gray-700 dark:text-gray-300">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {mappings.map((mapping) => {
-                      const fileColumn = fileColumns.find(
-                        (fc) => fc.name === mapping.fileColumnName
-                      );
-                      const schemaColumn = schemaColumns.find(
-                        (sc) => sc.id === mapping.schemaColumnId
-                      );
-                      const rules =
-                        transformationRules[mapping.fileColumnName] || [];
+          {/* Tab content */}
+          {activeTab === "mapping" ? (
+            <>
+              {/* Column mapping display */}
+              <ColumnMappingDisplay
+                fileColumns={fileColumns}
+                schemaColumns={schemaColumns}
+                isLoading={isLoading}
+                onSelectFileColumn={handleSelectFileColumn}
+                onSelectSchemaColumn={handleSelectSchemaColumn}
+                selectedFileColumn={selectedFileColumn}
+                selectedSchemaColumn={selectedSchemaColumn}
+                suggestedMappings={suggestedMappings}
+              />
 
-                      return (
-                        <tr
-                          key={mapping.fileColumnName}
-                          className="border-t border-gray-200 dark:border-gray-700"
-                        >
-                          <td className="py-2 px-4">
-                            <div className="font-medium">
-                              {mapping.fileColumnName}
-                            </div>
-                            <div className="text-sm text-gray-500 dark:text-gray-400">
-                              {fileColumn?.type || "Unknown type"}
-                            </div>
-                          </td>
-                          <td className="py-2 px-4">
-                            <div className="font-medium">
-                              {schemaColumn?.name || "Unknown column"}
-                              {schemaColumn?.isNewColumn && (
-                                <span className="ml-2 text-xs bg-yellow-200 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200 px-2 py-0.5 rounded">
-                                  New
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-sm text-gray-500 dark:text-gray-400">
-                              {schemaColumn?.type || "Unknown type"}
-                            </div>
-                          </td>
-                          <td className="py-2 px-4">
-                            {rules.length > 0 ? (
-                              <div>
-                                <div className="text-sm font-medium text-blue-600 dark:text-blue-400">
-                                  {rules.length} rule
-                                  {rules.length !== 1 ? "s" : ""}
-                                </div>
-                                <div className="text-xs text-gray-500 dark:text-gray-400">
-                                  {rules.map((rule) => rule.name).join(", ")}
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="text-sm text-gray-500 dark:text-gray-400">
-                                No transformations
-                              </div>
-                            )}
-                          </td>
-                          <td className="py-2 px-4">
-                            <div className="flex space-x-2">
-                              <button
-                                onClick={() =>
-                                  showTransformationFormForColumn(fileColumn!)
-                                }
-                                className="text-blue-500 hover:text-blue-700"
-                              >
-                                Add Transform
-                              </button>
-                              <button
-                                onClick={() =>
-                                  handleRemoveMapping(mapping.fileColumnName)
-                                }
-                                className="text-red-500 hover:text-red-700"
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          </td>
+              {/* Current mappings */}
+              <div className="mt-8">
+                <h3 className="text-lg font-semibold mb-2 text-gray-800 dark:text-gray-200">
+                  Current Mappings
+                </h3>
+                {mappings.length === 0 ? (
+                  <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-md text-gray-500 dark:text-gray-400">
+                    No mappings created yet. Select a file column and a schema
+                    column, then click "Map Selected Columns".
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full bg-white dark:bg-gray-800 rounded-md overflow-hidden">
+                      <thead className="bg-gray-100 dark:bg-gray-700">
+                        <tr>
+                          <th className="py-2 px-4 text-left text-gray-700 dark:text-gray-300">
+                            File Column
+                          </th>
+                          <th className="py-2 px-4 text-left text-gray-700 dark:text-gray-300">
+                            Schema Column
+                          </th>
+                          <th className="py-2 px-4 text-left text-gray-700 dark:text-gray-300">
+                            Transformations
+                          </th>
+                          <th className="py-2 px-4 text-left text-gray-700 dark:text-gray-300">
+                            Actions
+                          </th>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+                      </thead>
+                      <tbody>
+                        {mappings.map((mapping) => {
+                          const fileColumn = fileColumns.find(
+                            (fc) => fc.name === mapping.fileColumnName
+                          );
+                          const schemaColumn = schemaColumns.find(
+                            (sc) => sc.id === mapping.schemaColumnId
+                          );
+                          const rules =
+                            transformationRules[mapping.fileColumnName] || [];
 
-          {/* Transformation rules */}
-          {Object.keys(transformationRules).length > 0 && (
-            <div className="mt-8">
-              <h3 className="text-lg font-semibold mb-2 text-gray-800 dark:text-gray-200">
-                Transformation Rules
-              </h3>
-              <div className="overflow-x-auto">
-                <table className="min-w-full bg-white dark:bg-gray-800 rounded-md overflow-hidden">
-                  <thead className="bg-gray-100 dark:bg-gray-700">
-                    <tr>
-                      <th className="py-2 px-4 text-left text-gray-700 dark:text-gray-300">
-                        File Column
-                      </th>
-                      <th className="py-2 px-4 text-left text-gray-700 dark:text-gray-300">
-                        Rule Name
-                      </th>
-                      <th className="py-2 px-4 text-left text-gray-700 dark:text-gray-300">
-                        Type
-                      </th>
-                      <th className="py-2 px-4 text-left text-gray-700 dark:text-gray-300">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(transformationRules).flatMap(
-                      ([fileColumnName, rules]) =>
-                        rules.map((rule) => (
-                          <tr
-                            key={rule.id}
-                            className="border-t border-gray-200 dark:border-gray-700"
-                          >
-                            <td className="py-2 px-4">{fileColumnName}</td>
-                            <td className="py-2 px-4">
-                              <div className="font-medium">{rule.name}</div>
-                              {rule.description && (
-                                <div className="text-sm text-gray-500 dark:text-gray-400">
-                                  {rule.description}
+                          return (
+                            <tr
+                              key={mapping.fileColumnName}
+                              className="border-t border-gray-200 dark:border-gray-700"
+                            >
+                              <td className="py-2 px-4">
+                                <div className="font-medium">
+                                  {mapping.fileColumnName}
                                 </div>
-                              )}
-                            </td>
-                            <td className="py-2 px-4">
-                              <div className="capitalize">{rule.type}</div>
-                              <div className="text-sm text-gray-500 dark:text-gray-400">
-                                {rule.type === "format"
-                                  ? rule.params.formatType
-                                  : rule.type === "replace"
-                                  ? `Replace "${rule.params.pattern}" with "${
-                                      rule.params.value || ""
-                                    }"`
-                                  : rule.type === "truncate"
-                                  ? `Max length: ${rule.params.length}`
-                                  : rule.type === "pad"
-                                  ? `Pad to ${rule.params.length} with "${rule.params.char}"`
-                                  : rule.type === "number"
-                                  ? rule.params.format
-                                  : rule.type === "date"
-                                  ? rule.params.format
-                                  : "Custom formula"}
-                              </div>
-                            </td>
-                            <td className="py-2 px-4">
-                              <button
-                                onClick={() =>
-                                  handleRemoveTransformationRule(
-                                    fileColumnName,
-                                    rule.id
-                                  )
-                                }
-                                className="text-red-500 hover:text-red-700"
-                              >
-                                Remove
-                              </button>
-                            </td>
-                          </tr>
-                        ))
-                    )}
-                  </tbody>
-                </table>
+                                <div className="text-sm text-gray-500 dark:text-gray-400">
+                                  {fileColumn?.type || "Unknown type"}
+                                </div>
+                              </td>
+                              <td className="py-2 px-4">
+                                <div className="font-medium">
+                                  {schemaColumn?.name || "Unknown column"}
+                                  {schemaColumn?.isNewColumn && (
+                                    <span className="ml-2 text-xs bg-yellow-200 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200 px-2 py-0.5 rounded">
+                                      New
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-sm text-gray-500 dark:text-gray-400">
+                                  {schemaColumn?.type || "Unknown type"}
+                                </div>
+                              </td>
+                              <td className="py-2 px-4">
+                                {rules.length > 0 ? (
+                                  <div>
+                                    <div className="text-sm font-medium text-blue-600 dark:text-blue-400">
+                                      {rules.length} rule
+                                      {rules.length !== 1 ? "s" : ""}
+                                    </div>
+                                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                                      {rules
+                                        .map((rule) => rule.name)
+                                        .join(", ")}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                                    No transformations
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-2 px-4">
+                                <div className="flex space-x-2">
+                                  <button
+                                    onClick={() =>
+                                      showTransformationFormForColumn(
+                                        fileColumn!
+                                      )
+                                    }
+                                    className="text-blue-500 hover:text-blue-700"
+                                  >
+                                    Add Transform
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      handleRemoveMapping(
+                                        mapping.fileColumnName
+                                      )
+                                    }
+                                    className="text-red-500 hover:text-red-700"
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
-            </div>
-          )}
 
-          {/* Preview */}
-          {previewData.length > 0 && mappings.length > 0 && (
-            <div className="mt-8">
-              <h3 className="text-lg font-semibold mb-2 text-gray-800 dark:text-gray-200">
-                Preview
-              </h3>
-              <div className="overflow-x-auto">
-                <table className="min-w-full bg-white dark:bg-gray-800 rounded-md overflow-hidden">
-                  <thead className="bg-gray-100 dark:bg-gray-700">
-                    <tr>
-                      {Object.keys(getMappedPreview()[0] || {}).map((key) => (
-                        <th
-                          key={key}
-                          className="py-2 px-4 text-left text-gray-700 dark:text-gray-300"
-                        >
-                          {key}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {getMappedPreview().map((row, rowIndex) => (
-                      <tr
-                        key={rowIndex}
-                        className="border-t border-gray-200 dark:border-gray-700"
-                      >
-                        {Object.values(row).map((value, valueIndex) => (
-                          <td key={valueIndex} className="py-2 px-4">
-                            {value !== null && value !== undefined
-                              ? String(value)
-                              : ""}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+              {/* Transformation rules */}
+              {Object.keys(transformationRules).length > 0 && (
+                <div className="mt-8">
+                  <h3 className="text-lg font-semibold mb-2 text-gray-800 dark:text-gray-200">
+                    Transformation Rules
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full bg-white dark:bg-gray-800 rounded-md overflow-hidden">
+                      <thead className="bg-gray-100 dark:bg-gray-700">
+                        <tr>
+                          <th className="py-2 px-4 text-left text-gray-700 dark:text-gray-300">
+                            File Column
+                          </th>
+                          <th className="py-2 px-4 text-left text-gray-700 dark:text-gray-300">
+                            Rule Name
+                          </th>
+                          <th className="py-2 px-4 text-left text-gray-700 dark:text-gray-300">
+                            Type
+                          </th>
+                          <th className="py-2 px-4 text-left text-gray-700 dark:text-gray-300">
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(transformationRules).flatMap(
+                          ([fileColumnName, rules]) =>
+                            rules.map((rule) => (
+                              <tr
+                                key={rule.id}
+                                className="border-t border-gray-200 dark:border-gray-700"
+                              >
+                                <td className="py-2 px-4">{fileColumnName}</td>
+                                <td className="py-2 px-4">
+                                  <div className="font-medium">{rule.name}</div>
+                                  {rule.description && (
+                                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                                      {rule.description}
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="py-2 px-4">
+                                  <div className="capitalize">{rule.type}</div>
+                                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                                    {rule.type === "format"
+                                      ? rule.params.formatType
+                                      : rule.type === "replace"
+                                      ? `Replace "${
+                                          rule.params.pattern
+                                        }" with "${rule.params.value || ""}"`
+                                      : rule.type === "truncate"
+                                      ? `Max length: ${rule.params.length}`
+                                      : rule.type === "pad"
+                                      ? `Pad to ${rule.params.length} with "${rule.params.char}"`
+                                      : rule.type === "number"
+                                      ? rule.params.format
+                                      : rule.type === "date"
+                                      ? rule.params.format
+                                      : "Custom formula"}
+                                  </div>
+                                </td>
+                                <td className="py-2 px-4">
+                                  <button
+                                    onClick={() =>
+                                      handleRemoveTransformationRule(
+                                        fileColumnName,
+                                        rule.id
+                                      )
+                                    }
+                                    className="text-red-500 hover:text-red-700"
+                                  >
+                                    Remove
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <MappingPreview
+              fileId={fileId}
+              schemaId={schemaId}
+              mappings={mappings}
+              fileColumns={fileColumns}
+              schemaColumns={schemaColumns}
+              transformationRules={transformationRules}
+              sampleData={previewData}
+              onValidationIssues={handleValidationIssues}
+            />
           )}
         </>
       )}
