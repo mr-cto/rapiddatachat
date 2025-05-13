@@ -26,6 +26,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ projectId }) => {
   const [error, setError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [useChunkedUpload, setUseChunkedUpload] = useState(false);
 
   // Fetch project data
   useEffect(() => {
@@ -75,6 +76,12 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ projectId }) => {
     setUploadProgress(0);
 
     try {
+      // If using chunked upload, the FileUpload component will handle it
+      if (useChunkedUpload) {
+        // The progress will be updated by the FileUpload component
+        return;
+      }
+
       // Create FormData
       const formData = new FormData();
       formData.append("projectId", projectId || "");
@@ -160,6 +167,11 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ projectId }) => {
     }
   };
 
+  // Toggle chunked upload
+  const toggleChunkedUpload = () => {
+    setUseChunkedUpload(!useChunkedUpload);
+  };
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -208,14 +220,31 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ projectId }) => {
 
       {/* File Upload Section */}
       <div className="bg-ui-secondary dark:bg-ui-secondary rounded-lg p-6 shadow-sm">
-        <h2 className="text-xl font-semibold text-primary dark:text-primary mb-4">
-          Upload Data
-        </h2>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold text-primary dark:text-primary">
+            Upload Data
+          </h2>
+          <div className="flex items-center">
+            <label className="inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={useChunkedUpload}
+                onChange={toggleChunkedUpload}
+                className="sr-only peer"
+              />
+              <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-accent-primary/20 dark:peer-focus:ring-accent-primary/30 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-accent-primary"></div>
+              <span className="ms-3 text-sm font-medium text-secondary dark:text-secondary">
+                Large file upload
+              </span>
+            </label>
+          </div>
+        </div>
         <FileUpload
           onFilesSelected={handleFilesSelected}
           uploading={isUploading}
           progress={uploadProgress}
           projectId={projectId}
+          useChunkedUpload={useChunkedUpload}
         />
       </div>
 

@@ -2,76 +2,126 @@ import fs from "fs";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
 
-// Define paths for file storage
+// Define the uploads directory
 export const UPLOADS_DIR = path.join(process.cwd(), "uploads");
 export const PROCESSED_DIR = path.join(process.cwd(), "processed");
 
-// Ensure directories exist
+/**
+ * Ensure that the necessary directories exist
+ */
 export function ensureDirectoriesExist() {
   if (!fs.existsSync(UPLOADS_DIR)) {
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
   }
-
   if (!fs.existsSync(PROCESSED_DIR)) {
     fs.mkdirSync(PROCESSED_DIR, { recursive: true });
   }
 }
 
-// Generate a unique filename
+/**
+ * Generate a unique filename
+ * @param originalFilename Original filename
+ * @returns Unique filename
+ */
 export function generateUniqueFilename(originalFilename: string): string {
-  const ext = path.extname(originalFilename);
-  const basename = path.basename(originalFilename, ext);
-  const sanitizedName = basename.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
-  const uniqueId = uuidv4().slice(0, 8);
-
-  return `${sanitizedName}_${uniqueId}${ext}`;
+  const timestamp = Date.now();
+  const uniqueId = uuidv4().substring(0, 8);
+  const sanitizedFilename = originalFilename.replace(/[^a-zA-Z0-9.-]/g, "_");
+  return `${timestamp}_${uniqueId}_${sanitizedFilename}`;
 }
 
-// Get MIME type from file extension
-export function getMimeTypeFromExtension(filename: string): string | null {
-  const ext = path.extname(filename).toLowerCase();
+/**
+ * Interface for chunk metadata
+ */
+export interface ChunkMetadata {
+  fileId: string;
+  originalFilename: string;
+  totalChunks: number;
+  currentChunk: number;
+  totalSize: number;
+  mimeType: string;
+}
 
-  switch (ext) {
-    case ".csv":
-      return "text/csv";
-    case ".xls":
-      return "application/vnd.ms-excel";
-    case ".xlsx":
-      return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-    default:
-      return null;
+/**
+ * Get the temporary directory for storing chunks
+ * @param fileId File ID
+ * @returns Path to the temporary directory
+ */
+export function getChunkDirectory(fileId: string): string {
+  const chunkDir = path.join(UPLOADS_DIR, `chunks_${fileId}`);
+  if (!fs.existsSync(chunkDir)) {
+    fs.mkdirSync(chunkDir, { recursive: true });
   }
+  return chunkDir;
 }
 
-// Validate file type
-export function isValidFileType(filename: string): boolean {
-  const mimeType = getMimeTypeFromExtension(filename);
-  return mimeType !== null;
+/**
+ * Save a chunk to the temporary directory
+ * @param fileId File ID
+ * @param chunkIndex Chunk index
+ * @param chunk Chunk data
+ * @returns Path to the saved chunk
+ */
+export function saveChunk(
+  fileId: string,
+  chunkIndex: number,
+  chunk: Buffer
+): string {
+  const chunkDir = getChunkDirectory(fileId);
+  const chunkPath = path.join(chunkDir, `chunk_${chunkIndex}`);
+  fs.writeFileSync(chunkPath, chunk);
+  return chunkPath;
 }
 
-// Get file size in human-readable format
-export function getHumanReadableSize(bytes: number): string {
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let size = bytes;
-  let unitIndex = 0;
+/**
+ * Check if all chunks have been uploaded
+ * @param fileId File ID
+ * @param totalChunks Total number of chunks
+ * @returns True if all chunks have been uploaded
+ */
+export function areAllChunksUploaded(
+  fileId: string,
+  totalChunks: number
+): boolean {
+  const chunkDir = getChunkDirectory(fileId);
+  const files = fs.readdirSync(chunkDir);
+  return files.length === totalChunks;
+}
 
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024;
-    unitIndex++;
+/**
+ * Reassemble chunks into a complete file
+ * @param fileId File ID
+ * @param originalFilename Original filename
+ * @param totalChunks Total number of chunks
+ * @returns Path to the reassembled file
+ */
+export function reassembleChunks(
+  fileId: string,
+  originalFilename: string,
+  totalChunks: number
+): string {
+  const chunkDir = getChunkDirectory(fileId);
+  const outputPath = path.join(
+    UPLOADS_DIR,
+    generateUniqueFilename(originalFilename)
+  );
+  const outputStream = fs.createWriteStream(outputPath);
+
+  // Reassemble chunks in order
+  for (let i = 0; i < totalChunks; i++) {
+    const chunkPath = path.join(chunkDir, `chunk_${i}`);
+    const chunkData = fs.readFileSync(chunkPath);
+    outputStream.write(chunkData);
   }
 
-  return `${size.toFixed(2)} ${units[unitIndex]}`;
-}
+  outputStream.end();
 
-// Clean up temporary files
-export function cleanupTempFiles(filePaths: string[]): void {
-  filePaths.forEach((filePath) => {
-    try {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-    } catch (error) {
-      console.error(`Error cleaning up file ${filePath}:`, error);
-    }
-  });
+  // Clean up chunks
+  for (let i = 0; i < totalChunks; i++) {
+    const chunkPath = path.join(chunkDir, `chunk_${i}`);
+    fs.unlinkSync(chunkPath);
+  }
+  fs.rmdirSync(chunkDir);
+
+  return outputPath;
 }

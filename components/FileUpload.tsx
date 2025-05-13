@@ -8,6 +8,9 @@ const ALLOWED_FILE_TYPES = [
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ];
 
+// Chunk size: 5MB in bytes
+const CHUNK_SIZE = 5 * 1024 * 1024;
+
 interface FileUploadProps {
   onFilesSelected: (files: File[], projectId?: string) => void;
   accept?: string;
@@ -16,6 +19,7 @@ interface FileUploadProps {
   uploading?: boolean;
   progress?: number;
   projectId?: string;
+  useChunkedUpload?: boolean;
 }
 
 interface FileError {
@@ -31,6 +35,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
   uploading = false,
   progress = 0,
   projectId,
+  useChunkedUpload = false,
 }) => {
   const [dragActive, setDragActive] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -44,8 +49,8 @@ const FileUpload: React.FC<FileUploadProps> = ({
     const fileErrors: FileError[] = [];
 
     Array.from(files).forEach((file) => {
-      // Check file size
-      if (file.size > maxSize) {
+      // Check file size if not using chunked upload
+      if (!useChunkedUpload && file.size > maxSize) {
         fileErrors.push({
           name: file.name,
           error: `File size exceeds the limit of ${Math.round(
@@ -77,10 +82,82 @@ const FileUpload: React.FC<FileUploadProps> = ({
 
       if (valid.length > 0) {
         setSelectedFiles(valid);
-        onFilesSelected(valid, projectId);
+
+        if (useChunkedUpload) {
+          handleChunkedUpload(valid[0]);
+        } else {
+          onFilesSelected(valid, projectId);
+        }
       }
 
       setErrors(errors);
+    }
+  };
+
+  const handleChunkedUpload = async (file: File) => {
+    const fileId = crypto.randomUUID();
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+    let currentChunk = 0;
+    let uploadedChunks = 0;
+
+    // Function to upload a single chunk
+    const uploadChunk = async (chunk: Blob, chunkIndex: number) => {
+      const formData = new FormData();
+      formData.append("fileId", fileId);
+      formData.append("originalFilename", file.name);
+      formData.append("totalChunks", totalChunks.toString());
+      formData.append("currentChunk", chunkIndex.toString());
+      formData.append("totalSize", file.size.toString());
+      formData.append("mimeType", file.type);
+      if (projectId) {
+        formData.append("projectId", projectId);
+      }
+      formData.append("chunk", chunk);
+
+      try {
+        const response = await fetch("/api/upload-chunk", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to upload chunk");
+        }
+
+        const data = await response.json();
+        uploadedChunks++;
+
+        // Update progress
+        const uploadProgress = Math.round((uploadedChunks / totalChunks) * 100);
+        // TODO: Update progress state
+
+        // If all chunks are uploaded, handle the complete file
+        if (data.file) {
+          // File is complete, handle the response
+          const fileObj = {
+            id: data.file.id,
+            name: data.file.name,
+            size: data.file.size,
+            status: data.file.status,
+            format: data.file.format,
+          };
+
+          // TODO: Handle the complete file
+        }
+      } catch (error) {
+        console.error("Error uploading chunk:", error);
+        // TODO: Handle error
+      }
+    };
+
+    // Start uploading chunks
+    while (currentChunk < totalChunks) {
+      const start = currentChunk * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, file.size);
+      const chunk = file.slice(start, end);
+
+      await uploadChunk(chunk, currentChunk);
+      currentChunk++;
     }
   };
 
@@ -176,7 +253,9 @@ const FileUpload: React.FC<FileUploadProps> = ({
               <span className="text-accent-primary underline">browse</span>
             </p>
             <p className="text-xs text-tertiary dark:text-tertiary">
-              Maximum file size: {Math.round(maxSize / (1024 * 1024))}MB
+              {useChunkedUpload
+                ? "Large files will be uploaded in chunks"
+                : `Maximum file size: ${Math.round(maxSize / (1024 * 1024))}MB`}
             </p>
           </>
         )}
