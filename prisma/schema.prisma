@@ -10,10 +10,28 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Project model for organizing related files
+model Project {
+  id          String    @id @default(uuid())
+  name        String
+  description String?
+  userId      String    @map("user_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  files       File[]
+  globalSchemas GlobalSchema[]
+
+  @@index([userId], name: "idx_projects_user")
+  @@map("projects")
+}
+
 // Files table
 model File {
   id          String    @id @default(uuid())
   userId      String    @map("user_id")
+  projectId   String?   @map("project_id")
   filename    String
   uploadedAt  DateTime  @default(now()) @map("uploaded_at")
   ingestedAt  DateTime? @map("ingested_at")
@@ -28,13 +46,78 @@ model File {
   activationError String? @map("activation_error") // Error message if activation failed
 
   // Relations
+  project     Project?  @relation(fields: [projectId], references: [id])
   sources     Source[]
   fileErrors  FileError[]
   deadLetterQueueItems DeadLetterQueueItem[]
   columnMerges ColumnMerge[]
+  columnMappings ColumnMapping[]
+  fileData    FileData[]
 
   @@index([userId], name: "idx_files_user")
+  @@index([projectId], name: "idx_files_project")
   @@map("files")
+}
+
+// Global Schema model for managing schema across multiple files
+model GlobalSchema {
+  id          String    @id @default(uuid())
+  projectId   String    @map("project_id")
+  name        String
+  description String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  project     Project   @relation(fields: [projectId], references: [id])
+  columns     SchemaColumn[]
+  columnMappings ColumnMapping[]
+
+  @@index([projectId], name: "idx_global_schemas_project")
+  @@map("global_schemas")
+}
+
+// Schema Column model for defining columns in the global schema
+model SchemaColumn {
+  id            String    @id @default(uuid())
+  globalSchemaId String    @map("global_schema_id")
+  name          String
+  description   String?
+  dataType      String    @map("data_type")
+  isRequired    Boolean   @default(false) @map("is_required")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  globalSchema  GlobalSchema @relation(fields: [globalSchemaId], references: [id])
+  columnMappings ColumnMapping[]
+
+  @@unique([globalSchemaId, name])
+  @@index([globalSchemaId], name: "idx_schema_columns_global_schema")
+  @@map("schema_columns")
+}
+
+// Column Mapping model for mapping file columns to schema columns
+model ColumnMapping {
+  id            String    @id @default(uuid())
+  fileId        String    @map("file_id")
+  globalSchemaId String    @map("global_schema_id")
+  schemaColumnId String    @map("schema_column_id")
+  fileColumn    String    @map("file_column")
+  transformationRule String? @map("transformation_rule")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  
+  // Relations
+  file          File      @relation(fields: [fileId], references: [id])
+  globalSchema  GlobalSchema @relation(fields: [globalSchemaId], references: [id])
+  schemaColumn  SchemaColumn @relation(fields: [schemaColumnId], references: [id])
+
+  @@unique([fileId, schemaColumnId])
+  @@index([fileId], name: "idx_column_mappings_file")
+  @@index([globalSchemaId], name: "idx_column_mappings_global_schema")
+  @@index([schemaColumnId], name: "idx_column_mappings_schema_column")
+  @@map("column_mappings")
 }
 
 // Sources table
@@ -114,15 +197,16 @@ model DeadLetterQueueItem {
   @@map("dead_letter_queue")
 }
 
-// FileData model for dynamic file data
-// This is a generic model to store file data with JSON
-// Since we can't create dynamic tables in Prisma
+// FileData model for normalized file data
 model FileData {
   id          String    @id @default(uuid())
   fileId      String    @map("file_id")
   ingestedAt  DateTime  @default(now()) @map("ingested_at")
-  data        Json      // Store all file data as JSON
+  data        Json      // Store normalized data according to global schema
   
+  // Relations
+  file        File      @relation(fields: [fileId], references: [id])
+
   @@index([fileId], name: "idx_file_data_file")
   @@map("file_data")
 }
