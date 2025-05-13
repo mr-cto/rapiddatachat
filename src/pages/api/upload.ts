@@ -9,6 +9,7 @@ import {
   ensureDirectoriesExist,
   generateUniqueFilename,
 } from "../../../lib/fileUtils";
+import { ProjectService } from "../../../lib/project/projectService";
 
 // Disable the default body parser to handle file uploads
 export const config = {
@@ -70,11 +71,30 @@ export default async function handler(
     });
 
     // Parse the form data
-    const [, files] = await form.parse(req);
+    const [fields, files] = await form.parse(req);
 
     // Check if files were uploaded
     if (!files.file || files.file.length === 0) {
       return res.status(400).json({ error: "No files uploaded" });
+    }
+
+    // Get the project ID from the form data
+    const projectId = Array.isArray(fields.projectId)
+      ? fields.projectId[0]
+      : fields.projectId;
+
+    // If projectId is provided, check if the project exists and belongs to the user
+    if (projectId) {
+      const projectService = new ProjectService();
+      const project = await projectService.getProjectById(projectId);
+
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      if (project.userId !== userId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
     }
 
     // Process each file
@@ -118,6 +138,12 @@ export default async function handler(
               '${fileId}'
             )
           `);
+
+          // If projectId is provided, associate the file with the project
+          if (projectId) {
+            const projectService = new ProjectService();
+            await projectService.addFileToProject(projectId, fileId);
+          }
         } catch (dbError) {
           // Check if this is a DuckDB server environment error
           if (
@@ -150,6 +176,7 @@ export default async function handler(
           format,
           path: file.filepath,
           dbOperationSuccess,
+          projectId: projectId || null,
         };
       })
     );
@@ -168,6 +195,7 @@ export default async function handler(
         size: file.size,
         status: file.status,
         format: file.format,
+        projectId: file.projectId,
       })),
       message: anyDbOperationFailed
         ? "Files uploaded successfully, but database operations were skipped. The application may have limited functionality."
@@ -205,6 +233,7 @@ async function processFilesAsync(
     format: string;
     path: string;
     dbOperationSuccess: boolean;
+    projectId: string | null;
   }>,
   cookie: string
 ): Promise<void> {
@@ -228,7 +257,10 @@ async function processFilesAsync(
             // Pass the session cookie for authentication
             Cookie: cookie,
           },
-          body: JSON.stringify({ fileId: file.id }),
+          body: JSON.stringify({
+            fileId: file.id,
+            projectId: file.projectId,
+          }),
         }
       );
 

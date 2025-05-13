@@ -9,12 +9,13 @@ const ALLOWED_FILE_TYPES = [
 ];
 
 interface FileUploadProps {
-  onFilesSelected: (files: File[]) => void;
+  onFilesSelected: (files: File[], projectId?: string) => void;
   accept?: string;
   multiple?: boolean;
   maxSize?: number;
   uploading?: boolean;
   progress?: number;
+  projectId?: string;
 }
 
 interface FileError {
@@ -29,6 +30,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
   maxSize = MAX_FILE_SIZE,
   uploading = false,
   progress = 0,
+  projectId,
 }) => {
   const [dragActive, setDragActive] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -75,7 +77,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
 
       if (valid.length > 0) {
         setSelectedFiles(valid);
-        onFilesSelected(valid);
+        onFilesSelected(valid, projectId);
       }
 
       setErrors(errors);

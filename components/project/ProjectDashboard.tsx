@@ -65,7 +65,10 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ projectId }) => {
   /**
    * Handle file selection for upload
    */
-  const handleFilesSelected = async (selectedFiles: File[]) => {
+  const handleFilesSelected = async (
+    selectedFiles: File[],
+    projectId?: string
+  ) => {
     if (selectedFiles.length === 0) return;
 
     setIsUploading(true);
@@ -74,7 +77,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ projectId }) => {
     try {
       // Create FormData
       const formData = new FormData();
-      formData.append("projectId", projectId);
+      formData.append("projectId", projectId || "");
       formData.append("file", selectedFiles[0]);
 
       // Upload the file with progress tracking
@@ -95,12 +98,12 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ projectId }) => {
           if (files.length === 0) {
             // Redirect to schema creation page
             router.push(
-              `/project/${projectId}/schema/create?fileId=${response.file.id}`
+              `/project/${projectId}/schema/create?fileId=${response.files[0].id}`
             );
           } else {
             // Redirect to schema mapping page
             router.push(
-              `/project/${projectId}/schema/map?fileId=${response.file.id}`
+              `/project/${projectId}/schema/map?fileId=${response.files[0].id}`
             );
           }
         } else {
@@ -212,6 +215,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ projectId }) => {
           onFilesSelected={handleFilesSelected}
           uploading={isUploading}
           progress={uploadProgress}
+          projectId={projectId}
         />
       </div>
 

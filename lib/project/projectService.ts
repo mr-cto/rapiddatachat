@@ -52,7 +52,7 @@ export class ProjectService {
       }
 
       // Create the project
-      const projectId = `project_${uuidv4()}`;
+      const projectId = uuidv4();
       const project: Project = {
         id: projectId,
         userId,
@@ -245,6 +245,108 @@ export class ProjectService {
     } catch (error) {
       console.error(
         `[ProjectService] Error deleting project ${projectId}:`,
+        error
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Get all files for a project
+   * @param projectId Project ID
+   * @returns Promise<any[]> Files
+   */
+  async getProjectFiles(projectId: string): Promise<any[]> {
+    try {
+      // Check if the project_files table exists
+      const tableExists = await this.checkIfTableExists("project_files");
+
+      if (!tableExists) {
+        // Create the table if it doesn't exist
+        await executeQuery(`
+          CREATE TABLE project_files (
+            project_id TEXT NOT NULL,
+            file_id TEXT NOT NULL,
+            PRIMARY KEY (project_id, file_id)
+          )
+        `);
+      }
+
+      // Get all files for the project
+      const result = await executeQuery(`
+        SELECT 
+          f.id, 
+          f.filename, 
+          f.uploaded_at as "uploadedAt", 
+          f.ingested_at as "ingestedAt", 
+          f.size_bytes as "sizeBytes", 
+          f.format, 
+          f.status, 
+          f.metadata,
+          (SELECT COUNT(*) FROM file_errors fe WHERE fe.file_id = f.id) as "fileErrors"
+        FROM 
+          files f
+        WHERE 
+          f.user_id = (SELECT user_id FROM projects WHERE id = '${projectId}') AND
+          f.id IN (
+            SELECT file_id FROM project_files WHERE project_id = '${projectId}'
+          )
+        ORDER BY 
+          f.uploaded_at DESC
+      `);
+
+      // Ensure result is an array
+      const files = Array.isArray(result) ? result : [];
+
+      // Format the response
+      return files.map((file: any) => ({
+        ...file,
+        _count: {
+          fileErrors: parseInt(String(file.fileErrors) || "0"),
+        },
+      }));
+    } catch (error) {
+      console.error(
+        `[ProjectService] Error getting files for project ${projectId}:`,
+        error
+      );
+      return [];
+    }
+  }
+
+  /**
+   * Add a file to a project
+   * @param projectId Project ID
+   * @param fileId File ID
+   * @returns Promise<boolean> True if added successfully
+   */
+  async addFileToProject(projectId: string, fileId: string): Promise<boolean> {
+    try {
+      // Check if the project_files table exists
+      const tableExists = await this.checkIfTableExists("project_files");
+
+      if (!tableExists) {
+        // Create the table if it doesn't exist
+        await executeQuery(`
+          CREATE TABLE project_files (
+            project_id TEXT NOT NULL,
+            file_id TEXT NOT NULL,
+            PRIMARY KEY (project_id, file_id)
+          )
+        `);
+      }
+
+      // Add the file to the project
+      await executeQuery(`
+        INSERT INTO project_files (project_id, file_id)
+        VALUES ('${projectId}', '${fileId}')
+        ON CONFLICT (project_id, file_id) DO NOTHING
+      `);
+
+      return true;
+    } catch (error) {
+      console.error(
+        `[ProjectService] Error adding file ${fileId} to project ${projectId}:`,
         error
       );
       return false;

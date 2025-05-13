@@ -2,19 +2,6 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../../auth/[...nextauth]";
 import { ProjectService } from "../../../../../lib/project/projectService";
-import { executeQuery } from "../../../../../lib/database";
-
-interface FileRecord {
-  id: string;
-  filename: string;
-  uploadedAt: string;
-  ingestedAt: string | null;
-  sizeBytes: number;
-  format: string | null;
-  status: string;
-  metadata: any;
-  fileErrors: string | number;
-}
 
 /**
  * API handler for project files
@@ -57,41 +44,10 @@ export default async function handler(
 
     // Handle GET request (get all files for a project)
     if (req.method === "GET") {
-      // Query the database for files associated with this project
-      const result = await executeQuery(`
-        SELECT 
-          f.id, 
-          f.filename, 
-          f.uploaded_at as "uploadedAt", 
-          f.ingested_at as "ingestedAt", 
-          f.size_bytes as "sizeBytes", 
-          f.format, 
-          f.status, 
-          f.metadata,
-          (SELECT COUNT(*) FROM file_errors fe WHERE fe.file_id = f.id) as "fileErrors"
-        FROM 
-          files f
-        WHERE 
-          f.user_id = '${userId}' AND
-          f.id IN (
-            SELECT file_id FROM project_files WHERE project_id = '${projectId}'
-          )
-        ORDER BY 
-          f.uploaded_at DESC
-      `);
+      // Get all files for the project using the ProjectService
+      const files = await projectService.getProjectFiles(projectId);
 
-      // Ensure result is an array
-      const files = Array.isArray(result) ? (result as FileRecord[]) : [];
-
-      // Format the response
-      const formattedFiles = files.map((file) => ({
-        ...file,
-        _count: {
-          fileErrors: parseInt(String(file.fileErrors) || "0"),
-        },
-      }));
-
-      return res.status(200).json({ files: formattedFiles });
+      return res.status(200).json({ files });
     }
 
     // Handle unsupported methods
