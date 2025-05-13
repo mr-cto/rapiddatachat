@@ -1,0 +1,148 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Files table
+model File {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  filename    String
+  uploadedAt  DateTime  @default(now()) @map("uploaded_at")
+  ingestedAt  DateTime? @map("ingested_at")
+  sizeBytes   Int       @map("size_bytes")
+  format      String?
+  status      String    @default("pending")
+  filepath    String?
+  metadata    Json?
+  activationProgress Int? @map("activation_progress") // Progress percentage (0-100)
+  activationStartedAt DateTime? @map("activation_started_at") // When activation started
+  activationCompletedAt DateTime? @map("activation_completed_at") // When activation completed
+  activationError String? @map("activation_error") // Error message if activation failed
+
+  // Relations
+  sources     Source[]
+  fileErrors  FileError[]
+  deadLetterQueueItems DeadLetterQueueItem[]
+  columnMerges ColumnMerge[]
+
+  @@index([userId], name: "idx_files_user")
+  @@map("files")
+}
+
+// Sources table
+model Source {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  name        String
+  createdAt   DateTime  @default(now()) @map("created_at")
+  fileId      String    @map("file_id")
+  
+  // Relations
+  file        File      @relation(fields: [fileId], references: [id])
+
+  @@map("sources")
+}
+
+// Queries table
+model Query {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  queryText   String    @map("query_text")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  status      String
+  error       String?
+  
+  // Relations
+  results     Result[]
+
+  @@index([userId], name: "idx_queries_user")
+  @@index([createdAt], name: "idx_queries_created_at")
+  @@map("queries")
+}
+
+// Results table
+model Result {
+  id          String    @id @default(uuid())
+  queryId     String    @map("query_id")
+  resultData  Json?     @map("result_data")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  
+  // Relations
+  query       Query     @relation(fields: [queryId], references: [id], onDelete: Cascade)
+
+  @@map("results")
+}
+
+// File errors table
+model FileError {
+  id          String    @id @default(uuid())
+  fileId      String    @map("file_id")
+  errorType   String    @map("error_type")
+  severity    String
+  message     String
+  details     String?
+  timestamp   DateTime
+  
+  // Relations
+  file        File      @relation(fields: [fileId], references: [id])
+
+  @@map("file_errors")
+}
+
+// Dead letter queue table
+model DeadLetterQueueItem {
+  id          String    @id @default(uuid())
+  fileId      String    @map("file_id")
+  operation   String
+  payload     String
+  error       String
+  timestamp   DateTime
+  retryCount  Int       @default(0) @map("retry_count")
+  lastRetryAt DateTime? @map("last_retry_at")
+  
+  // Relations
+  file        File      @relation(fields: [fileId], references: [id])
+
+  @@map("dead_letter_queue")
+}
+
+// FileData model for dynamic file data
+// This is a generic model to store file data with JSON
+// Since we can't create dynamic tables in Prisma
+model FileData {
+  id          String    @id @default(uuid())
+  fileId      String    @map("file_id")
+  ingestedAt  DateTime  @default(now()) @map("ingested_at")
+  data        Json      // Store all file data as JSON
+  
+  @@index([fileId], name: "idx_file_data_file")
+  @@map("file_data")
+}
+
+// Column merges table for storing merged column configurations
+model ColumnMerge {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  fileId      String    @map("file_id")
+  mergeName   String    @map("merge_name")
+  columnList  String[]  @map("column_list")
+  delimiter   String    @default(" ")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at")
+  
+  // Relations
+  file        File      @relation(fields: [fileId], references: [id])
+  
+  @@unique([userId, fileId, mergeName])
+  @@index([userId], name: "idx_column_merges_user")
+  @@index([fileId], name: "idx_column_merges_file")
+  @@map("column_merges")
+}

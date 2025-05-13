@@ -1,0 +1,148 @@
+@import "tailwindcss";
+
+:root {
+  /* Base colors */
+  --background: #ffffff;
+  --foreground: #171717;
+
+  /* Text colors with better contrast */
+  --text-black: #171717;
+  --text-secondary: #404040;
+  --text-tertiary: #525252;
+  --text-muted: #6b7280;
+
+  /* UI element colors */
+  --ui-bg-primary: #ffffff;
+  --ui-bg-secondary: #f9fafb;
+  --ui-bg-tertiary: #f3f4f6;
+  --ui-border: #e5e7eb;
+
+  /* Accent colors */
+  --accent-primary: #2563eb;
+  --accent-primary-hover: #1d4ed8;
+  --accent-secondary: #4b5563;
+  --accent-secondary-hover: #374151;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* Dark mode theme - applied only when .dark class is present */
+.dark {
+  /* Base colors */
+  --background: #0a0a0a;
+  --foreground: #ededed;
+
+  /* Text colors with better contrast */
+  --text-black: #000000;
+  --text-secondary: #e5e7eb;
+  --text-tertiary: #d1d5db;
+  --text-muted: #9ca3af;
+
+  /* UI element colors */
+  --ui-bg-primary: #111827;
+  --ui-bg-secondary: #1f2937;
+  --ui-bg-tertiary: #374151;
+  --ui-border: #4b5563;
+
+  /* Accent colors - slightly adjusted for dark mode */
+  --accent-primary: #3b82f6;
+  --accent-primary-hover: #60a5fa;
+  --accent-secondary: #9ca3af;
+  --accent-secondary-hover: #d1d5db;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Utility classes for text colors with proper contrast */
+.text-black {
+  color: var(--text-black);
+}
+
+.text-secondary {
+  color: var(--text-secondary);
+}
+
+.text-tertiary {
+  color: var(--text-tertiary);
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
+
+/* Utility classes for backgrounds */
+.bg-ui-primary {
+  background-color: var(--ui-bg-primary);
+}
+
+.bg-ui-secondary {
+  background-color: var(--ui-bg-secondary);
+}
+
+.bg-ui-tertiary {
+  background-color: var(--ui-bg-tertiary);
+}
+
+/* Dark mode utility classes */
+/* These will work both with .dark class and with the original dark: prefix */
+.dark .dark\:bg-ui-primary,
+.dark\:bg-ui-primary {
+  background-color: var(--ui-bg-primary);
+}
+
+.dark .dark\:bg-ui-secondary,
+.dark\:bg-ui-secondary {
+  background-color: var(--ui-bg-secondary);
+}
+
+.dark .dark\:text-black,
+.dark\:text-black {
+  color: var(--text-black);
+}
+
+.dark .dark\:text-secondary,
+.dark\:text-secondary {
+  color: var(--text-secondary);
+}
+
+.dark .dark\:text-tertiary,
+.dark\:text-tertiary {
+  color: var(--text-tertiary);
+}
+
+.dark .dark\:text-muted,
+.dark\:text-muted {
+  color: var(--text-muted);
+}
+
+.dark .dark\:border-dark,
+.dark\:border-dark {
+  border-color: var(--ui-border);
+}
+
+/* Ensure table text is always readable */
+.text-gray-800,
+.dark\:text-gray-200 {
+  color: #171717 !important; /* Force black text for table data */
+}
+
+/* Column headers styling */
+thead .text-gray-700 {
+  color: #ffffff !important; /* White text for column headers */
+  background-color: #2563eb !important; /* Blue background for better contrast */
+}
+
+/* Table data styling - ensure black text */
+tbody .text-gray-700,
+tbody .dark\:text-gray-300 {
+  color: #171717 !important; /* Force black text for table data */
+}
