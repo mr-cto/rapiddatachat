@@ -49,6 +49,11 @@ export default async function handler(
           }
 
           return res.status(200).json({ schema });
+        } else if (req.query.projectId) {
+          // Get all schemas for a project
+          const schemas = await schemaService.getGlobalSchemas(userId);
+          // Filter schemas by projectId (to be implemented in the future)
+          return res.status(200).json({ schemas });
         } else {
           // Get all schemas for the user
           const schemas = await schemaService.getGlobalSchemas(userId);
@@ -146,7 +151,46 @@ export default async function handler(
             return res.status(500).json({ error: "Failed to save mapping" });
           }
         } else {
-          return res.status(400).json({ error: "Invalid action" });
+          // Default action: create schema with columns
+          const { projectId, name, description, columns } = req.body;
+
+          if (!name) {
+            return res.status(400).json({ error: "Schema name is required" });
+          }
+
+          if (!columns || !Array.isArray(columns)) {
+            return res.status(400).json({ error: "Columns must be an array" });
+          }
+
+          if (columns.length === 0) {
+            return res
+              .status(400)
+              .json({ error: "Schema must have at least one column" });
+          }
+
+          try {
+            // Store projectId in the schema description for now
+            // In the future, we can add a projectId field to the schema table
+            const fullDescription = projectId
+              ? `Project ID: ${projectId}\n${description || ""}`
+              : description;
+
+            const schema = await schemaService.createGlobalSchemaWithColumns(
+              userId,
+              name,
+              fullDescription,
+              columns
+            );
+
+            return res.status(201).json({ schema });
+          } catch (error) {
+            return res.status(400).json({
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Failed to create schema with columns",
+            });
+          }
         }
 
       case "PUT":

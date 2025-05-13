@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/router";
+import { ColumnInfo } from "../../lib/fileParsingService";
 
 interface SchemaColumn {
   name: string;
@@ -30,6 +31,7 @@ const GlobalSchemaCreation: React.FC<GlobalSchemaCreationProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fileName, setFileName] = useState<string>("");
 
   // Fetch file columns
   useEffect(() => {
@@ -38,58 +40,45 @@ const GlobalSchemaCreation: React.FC<GlobalSchemaCreationProps> = ({
         setIsLoading(true);
         setError(null);
 
-        // Fetch file details to get columns
-        const response = await fetch(`/api/file-synopsis/${fileId}`);
-        if (!response.ok) {
+        // Fetch file details
+        const fileResponse = await fetch(`/api/files/${fileId}`);
+        if (!fileResponse.ok) {
           throw new Error("Failed to fetch file details");
+        }
+
+        const fileData = await fileResponse.json();
+        setFileName(fileData.filename || "Unknown File");
+
+        // Fetch parsed columns using the new file-parsing API
+        const response = await fetch(
+          `/api/file-parsing/${fileId}?type=columns`
+        );
+        if (!response.ok) {
+          throw new Error("Failed to fetch file columns");
         }
 
         const data = await response.json();
 
-        // Extract columns from the response
-        let extractedColumns: string[] = [];
-
-        if (data.columns) {
-          extractedColumns = Array.isArray(data.columns)
-            ? data.columns
-            : typeof data.columns === "object" && data.columns !== null
-            ? Object.keys(data.columns)
-            : [];
-        } else if (data.metadata?.columns) {
-          extractedColumns = Array.isArray(data.metadata.columns)
-            ? data.metadata.columns
-            : typeof data.metadata.columns === "object" &&
-              data.metadata.columns !== null
-            ? Object.keys(data.metadata.columns)
-            : [];
-        } else if (data.schema?.fields) {
-          extractedColumns = Array.isArray(data.schema.fields)
-            ? data.schema.fields.map((f: any) => f.name || f)
-            : [];
-        } else if (data.headers) {
-          extractedColumns = Array.isArray(data.headers) ? data.headers : [];
-        } else if (
-          data.data &&
-          Array.isArray(data.data) &&
-          data.data.length > 0
+        if (
+          !data.columns ||
+          !Array.isArray(data.columns) ||
+          data.columns.length === 0
         ) {
-          // If we have data rows, try to extract column names from the first row
-          if (typeof data.data[0] === "object" && data.data[0] !== null) {
-            extractedColumns = Object.keys(data.data[0]);
-          }
+          throw new Error("No columns found in the file");
         }
 
         // Convert to SchemaColumn objects
-        const schemaColumns = extractedColumns.map((column) => ({
-          name: column,
-          type: determineColumnType(column),
-          sourceFile: data.filename || "Unknown",
-          sourceColumn: column,
+        const schemaColumns = data.columns.map((column: ColumnInfo) => ({
+          name: column.name,
+          type: mapDataTypeToSchemaType(column.dataType),
+          description: "",
+          sourceFile: fileData.filename || "Unknown",
+          sourceColumn: column.name,
           isSelected: true,
         }));
 
         setColumns(schemaColumns);
-        setSchemaName(`${data.filename || "File"} Schema`);
+        setSchemaName(`${fileData.filename || "File"} Schema`);
         setIsLoading(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : "An error occurred");
@@ -103,30 +92,24 @@ const GlobalSchemaCreation: React.FC<GlobalSchemaCreationProps> = ({
   }, [fileId]);
 
   /**
-   * Determine column type based on name
+   * Map data type from file parsing to schema type
    */
-  const determineColumnType = (columnName: string): string => {
-    const lowerName = columnName.toLowerCase();
-
-    if (lowerName.includes("date") || lowerName.includes("time")) {
-      return "timestamp";
-    } else if (
-      lowerName.includes("price") ||
-      lowerName.includes("cost") ||
-      lowerName.includes("amount")
-    ) {
-      return "numeric";
-    } else if (
-      lowerName.includes("count") ||
-      lowerName.includes("number") ||
-      lowerName.includes("qty") ||
-      lowerName.includes("quantity")
-    ) {
-      return "integer";
-    } else if (lowerName.includes("is_") || lowerName.includes("has_")) {
-      return "boolean";
-    } else {
-      return "text";
+  const mapDataTypeToSchemaType = (dataType: string): string => {
+    switch (dataType.toLowerCase()) {
+      case "integer":
+        return "integer";
+      case "float":
+      case "numeric":
+        return "numeric";
+      case "date":
+      case "timestamp":
+        return "timestamp";
+      case "boolean":
+        return "boolean";
+      case "string":
+      case "text":
+      default:
+        return "text";
     }
   };
 
@@ -281,8 +264,9 @@ const GlobalSchemaCreation: React.FC<GlobalSchemaCreationProps> = ({
 
           <div className="mb-4">
             <p className="text-sm text-secondary dark:text-secondary">
-              Select the columns to include in your global schema. You can
-              modify the data type and add descriptions.
+              Select the columns from <strong>{fileName}</strong> to include in
+              your global schema. You can modify the data type and add
+              descriptions.
             </p>
           </div>
 

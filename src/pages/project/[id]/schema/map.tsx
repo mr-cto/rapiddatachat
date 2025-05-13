@@ -2,6 +2,18 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { useSession } from "next-auth/react";
 
+// Define the ColumnInfo interface locally instead of importing it
+interface ColumnInfo {
+  name: string;
+  index: number;
+  dataType: string;
+  sampleValues: any[];
+  uniqueValues?: number;
+  nullCount?: number;
+  min?: any;
+  max?: any;
+}
+
 interface SchemaColumn {
   name: string;
   type: string;
@@ -24,8 +36,8 @@ interface GlobalSchema {
 
 interface FileColumn {
   name: string;
-  type?: string;
-  sample?: string;
+  type: string;
+  sampleValues?: any[];
 }
 
 interface ColumnMapping {
@@ -43,6 +55,7 @@ const SchemaMapping: React.FC = () => {
   const { data: session, status } = useSession();
   const [schema, setSchema] = useState<GlobalSchema | null>(null);
   const [fileColumns, setFileColumns] = useState<FileColumn[]>([]);
+  const [fileName, setFileName] = useState<string>("");
   const [mappings, setMappings] = useState<ColumnMapping[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -79,56 +92,39 @@ const SchemaMapping: React.FC = () => {
         const schemaData = await schemaResponse.json();
         setSchema(schemaData.schema);
 
-        // Fetch file columns
-        const fileResponse = await fetch(`/api/file-synopsis/${fileId}`);
+        // Fetch file details
+        const fileResponse = await fetch(`/api/files/${fileId}`);
         if (!fileResponse.ok) {
-          throw new Error("Failed to fetch file columns");
+          throw new Error("Failed to fetch file details");
         }
         const fileData = await fileResponse.json();
+        setFileName(fileData.filename || "Unknown File");
 
-        // Extract columns from the response
-        let extractedColumns: string[] = [];
+        // Fetch file columns using the new file-parsing API
+        const columnsResponse = await fetch(
+          `/api/file-parsing/${fileId}?type=columns`
+        );
+        if (!columnsResponse.ok) {
+          throw new Error("Failed to fetch file columns");
+        }
+        const columnsData = await columnsResponse.json();
 
-        if (fileData.columns) {
-          extractedColumns = Array.isArray(fileData.columns)
-            ? fileData.columns
-            : typeof fileData.columns === "object" && fileData.columns !== null
-            ? Object.keys(fileData.columns)
-            : [];
-        } else if (fileData.metadata?.columns) {
-          extractedColumns = Array.isArray(fileData.metadata.columns)
-            ? fileData.metadata.columns
-            : typeof fileData.metadata.columns === "object" &&
-              fileData.metadata.columns !== null
-            ? Object.keys(fileData.metadata.columns)
-            : [];
-        } else if (fileData.schema?.fields) {
-          extractedColumns = Array.isArray(fileData.schema.fields)
-            ? fileData.schema.fields.map((f: any) => f.name || f)
-            : [];
-        } else if (fileData.headers) {
-          extractedColumns = Array.isArray(fileData.headers)
-            ? fileData.headers
-            : [];
-        } else if (
-          fileData.data &&
-          Array.isArray(fileData.data) &&
-          fileData.data.length > 0
+        if (
+          !columnsData.columns ||
+          !Array.isArray(columnsData.columns) ||
+          columnsData.columns.length === 0
         ) {
-          // If we have data rows, try to extract column names from the first row
-          if (
-            typeof fileData.data[0] === "object" &&
-            fileData.data[0] !== null
-          ) {
-            extractedColumns = Object.keys(fileData.data[0]);
-          }
+          throw new Error("No columns found in the file");
         }
 
         // Convert to FileColumn objects
-        const fileColumnObjects = extractedColumns.map((column) => ({
-          name: column,
-          type: determineColumnType(column),
-        }));
+        const fileColumnObjects = columnsData.columns.map(
+          (column: ColumnInfo) => ({
+            name: column.name,
+            type: mapDataTypeToSchemaType(column.dataType),
+            sampleValues: column.sampleValues,
+          })
+        );
 
         setFileColumns(fileColumnObjects);
 
@@ -146,30 +142,24 @@ const SchemaMapping: React.FC = () => {
   }, [id, fileId, status]);
 
   /**
-   * Determine column type based on name
+   * Map data type from file parsing to schema type
    */
-  const determineColumnType = (columnName: string): string => {
-    const lowerName = columnName.toLowerCase();
-
-    if (lowerName.includes("date") || lowerName.includes("time")) {
-      return "timestamp";
-    } else if (
-      lowerName.includes("price") ||
-      lowerName.includes("cost") ||
-      lowerName.includes("amount")
-    ) {
-      return "numeric";
-    } else if (
-      lowerName.includes("count") ||
-      lowerName.includes("number") ||
-      lowerName.includes("qty") ||
-      lowerName.includes("quantity")
-    ) {
-      return "integer";
-    } else if (lowerName.includes("is_") || lowerName.includes("has_")) {
-      return "boolean";
-    } else {
-      return "text";
+  const mapDataTypeToSchemaType = (dataType: string): string => {
+    switch (dataType.toLowerCase()) {
+      case "integer":
+        return "integer";
+      case "float":
+      case "numeric":
+        return "numeric";
+      case "date":
+      case "timestamp":
+        return "timestamp";
+      case "boolean":
+        return "boolean";
+      case "string":
+      case "text":
+      default:
+        return "text";
     }
   };
 
@@ -287,12 +277,13 @@ const SchemaMapping: React.FC = () => {
 
     try {
       // Call the API to save the column mapping
-      const response = await fetch("/api/column-mappings", {
+      const response = await fetch("/api/schema-management", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          action: "save_mapping",
           fileId: Array.isArray(fileId) ? fileId[0] : fileId,
           schemaId: schema.id,
           mappings: validMappings,
@@ -439,8 +430,8 @@ const SchemaMapping: React.FC = () => {
 
           <div className="mb-4">
             <p className="text-sm text-secondary dark:text-secondary">
-              Map columns from your file to the global schema. You can also
-              specify transformation rules for data normalization.
+              Map columns from <strong>{fileName}</strong> to the global schema.
+              You can also specify transformation rules for data normalization.
             </p>
           </div>
 
@@ -452,6 +443,9 @@ const SchemaMapping: React.FC = () => {
                     File Column
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Data Type
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Schema Column
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -460,44 +454,52 @@ const SchemaMapping: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
-                {mappings.map((mapping, index) => (
-                  <tr key={index}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                      {mapping.fileColumn}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <select
-                        value={mapping.schemaColumn}
-                        onChange={(e) =>
-                          updateMapping(mapping.fileColumn, e.target.value)
-                        }
-                        className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-accent-primary text-sm"
-                      >
-                        <option value="">-- Not Mapped --</option>
-                        {schema.columns.map((column) => (
-                          <option key={column.name} value={column.name}>
-                            {column.name} ({column.type})
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <input
-                        type="text"
-                        value={mapping.transformationRule || ""}
-                        onChange={(e) =>
-                          updateTransformationRule(
-                            mapping.fileColumn,
-                            e.target.value
-                          )
-                        }
-                        className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-accent-primary text-sm"
-                        placeholder="e.g., UPPER, LOWER, TRIM"
-                        disabled={!mapping.schemaColumn}
-                      />
-                    </td>
-                  </tr>
-                ))}
+                {mappings.map((mapping, index) => {
+                  const fileColumn = fileColumns.find(
+                    (fc) => fc.name === mapping.fileColumn
+                  );
+                  return (
+                    <tr key={index}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                        {mapping.fileColumn}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                        {fileColumn?.type || "text"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <select
+                          value={mapping.schemaColumn}
+                          onChange={(e) =>
+                            updateMapping(mapping.fileColumn, e.target.value)
+                          }
+                          className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-accent-primary text-sm"
+                        >
+                          <option value="">-- Not Mapped --</option>
+                          {schema.columns.map((column) => (
+                            <option key={column.name} value={column.name}>
+                              {column.name} ({column.type})
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <input
+                          type="text"
+                          value={mapping.transformationRule || ""}
+                          onChange={(e) =>
+                            updateTransformationRule(
+                              mapping.fileColumn,
+                              e.target.value
+                            )
+                          }
+                          className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-accent-primary text-sm"
+                          placeholder="e.g., UPPER, LOWER, TRIM"
+                          disabled={!mapping.schemaColumn}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
