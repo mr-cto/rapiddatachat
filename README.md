@@ -114,6 +114,24 @@ This script will:
 
 For an overview of the project structure and how the new data upload flow is integrated, see the [Project Structure Documentation](docs/project-structure.md).
 
+## Dependencies for Simplified Data Upload Flow
+
+The simplified data upload flow with global schema management uses the following key dependencies:
+
+- **react-hook-form**: For form handling and validation in project creation, schema creation, and column mapping forms
+- **zod**: For schema validation of form inputs and API requests
+- **uuid**: For generating unique IDs for projects, schemas, and mappings
+- **csv-parser** and **xlsx**: For parsing uploaded CSV and Excel files
+- **prisma**: For database operations to store projects, schemas, and normalized data
+
+To install these dependencies:
+
+```bash
+npm install react-hook-form zod
+```
+
+Note: Other dependencies like uuid, csv-parser, xlsx, and prisma are already included in the project.
+
 ## Deployment
 
 The application is designed to be deployed on Vercel with a PostgreSQL database.
