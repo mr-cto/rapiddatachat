@@ -10,6 +10,7 @@ import {
   generateUniqueFilename,
 } from "../../../lib/fileUtils";
 import { ProjectService } from "../../../lib/project/projectService";
+// Removed import for fileActivationSimple
 
 // Disable the default body parser to handle file uploads
 export const config = {
@@ -207,7 +208,7 @@ export default async function handler(
     res.status(200).json(response);
 
     // Process files asynchronously
-    processFilesAsync(fileResults, req.headers.cookie || "");
+    processFilesAsync(fileResults, req.headers.cookie || "", userId);
 
     return;
   } catch (error) {
@@ -220,9 +221,10 @@ export default async function handler(
 }
 
 /**
- * Process files asynchronously (ingest and activate)
+ * Process files asynchronously (ingest and auto-activate)
  * @param files Array of file information
  * @param cookie Cookie header for authentication
+ * @param userIdFromUpload User ID from the upload context
  */
 async function processFilesAsync(
   files: Array<{
@@ -235,7 +237,8 @@ async function processFilesAsync(
     dbOperationSuccess: boolean;
     projectId: string | null;
   }>,
-  cookie: string
+  cookie: string,
+  userIdFromUpload: string
 ): Promise<void> {
   // Process each file
   for (const file of files) {
@@ -291,46 +294,22 @@ async function processFilesAsync(
 
       console.log(`Successfully ingested file ${file.id}`);
 
-      // After successful ingestion, activate the file
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // After successful ingestion, automatically activate the file
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
-      const activateResponse = await fetch(
-        `${
-          process.env.NEXTAUTH_URL || "http://localhost:3000"
-        }/api/activate-file/${file.id}`,
-        {
-          method: "POST",
-          headers: {
-            // Pass the session cookie for authentication
-            Cookie: cookie,
-          },
-        }
-      );
-
-      if (!activateResponse.ok) {
-        try {
-          // Try to parse as JSON first
-          const contentType = activateResponse.headers.get("content-type");
-          if (contentType && contentType.includes("application/json")) {
-            const errorData = await activateResponse.json();
-            console.error(`Error activating file ${file.id}:`, errorData);
-          } else {
-            // If not JSON, get the text response
-            const errorText = await activateResponse.text();
-            console.error(
-              `Error activating file ${file.id}: Non-JSON response:`,
-              errorText.substring(0, 200) +
-                (errorText.length > 200 ? "..." : "")
-            );
-          }
-        } catch (parseError) {
-          console.error(
-            `Error parsing error response for file ${file.id}:`,
-            parseError
-          );
-        }
-      } else {
-        console.log(`Successfully activated file ${file.id}`);
+      try {
+        // Auto-activate the file directly
+        await executeQuery(`
+          UPDATE files
+          SET status = 'active'
+          WHERE id = '${file.id}'
+        `);
+        console.log(`Successfully auto-activated file ${file.id}`);
+      } catch (activationError) {
+        console.error(
+          `Error auto-activating file ${file.id}:`,
+          activationError
+        );
       }
     } catch (error) {
       console.error(`Error processing file ${file.id}:`, error);

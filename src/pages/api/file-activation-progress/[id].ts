@@ -4,8 +4,14 @@ import { authOptions } from "../auth/[...nextauth]";
 import {
   getActivationProgress,
   fileExistsForUser,
-} from "../../../../lib/fileActivation";
+} from "../../../../lib/fileActivationCompat";
 
+/**
+ * API handler for file activation progress (compatibility endpoint)
+ *
+ * This endpoint is maintained for backward compatibility with existing code.
+ * In the simplified upload flow, files are automatically activated after upload.
+ */
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -42,7 +48,7 @@ export default async function handler(
       return res.status(403).json({ error: "Access denied" });
     }
 
-    // Get activation progress
+    // Get activation progress using compatibility layer
     const progress = await getActivationProgress(fileId);
 
     if (!progress) {

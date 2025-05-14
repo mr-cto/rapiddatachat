@@ -1,225 +1,150 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/router";
-import { useSession } from "next-auth/react";
-import SchemaColumnManager from "../../../../components/schema/SchemaColumnManager";
-import { GlobalSchema } from "../../../../lib/globalSchemaService";
+import axios from "axios";
+import { getSession } from "next-auth/react";
+import { GetServerSideProps } from "next";
+import SchemaManagementInterface from "../../../../../components/schema/SchemaManagementInterface";
 
-/**
- * Schema Columns Management Page
- */
-const SchemaColumnsPage: React.FC = () => {
+interface SchemaColumnsPageProps {
+  projectId: string;
+  schemaId?: string;
+}
+
+const SchemaColumnsPage: React.FC<SchemaColumnsPageProps> = ({
+  projectId,
+  schemaId,
+}) => {
   const router = useRouter();
-  const { id: projectId, schemaId } = router.query;
-  const { data: session, status } = useSession();
-  const [schema, setSchema] = useState<GlobalSchema | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeSchemaId, setActiveSchemaId] = useState<string | null>(
+    schemaId || null
+  );
 
-  // Redirect to login if not authenticated
+  // Fetch active schema if not provided
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push("/auth/signin");
+    if (!schemaId) {
+      fetchActiveSchema();
+    } else {
+      setLoading(false);
     }
-  }, [status, router]);
+  }, [schemaId]);
 
-  // Fetch schema data
-  useEffect(() => {
-    const fetchSchema = async () => {
-      if (status !== "authenticated" || !schemaId) return;
+  // Fetch active schema
+  const fetchActiveSchema = async () => {
+    try {
+      setLoading(true);
+      setError(null);
 
-      try {
-        setIsLoading(true);
-        setError(null);
+      const response = await axios.get(
+        `/api/schema-information?projectId=${projectId}&activeOnly=true`
+      );
 
-        const response = await fetch(`/api/schema-management?id=${schemaId}`);
-
-        if (!response.ok) {
-          throw new Error("Failed to fetch schema");
-        }
-
-        const data = await response.json();
-        setSchema(data.schema);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "An error occurred");
-      } finally {
-        setIsLoading(false);
+      if (response.data && response.data.length > 0) {
+        setActiveSchemaId(response.data[0].id);
+      } else {
+        setError("No active schema found for this project");
       }
-    };
-
-    fetchSchema();
-  }, [schemaId, status]);
-
-  /**
-   * Handle schema columns update
-   */
-  const handleColumnsUpdated = (columns: any[]) => {
-    if (schema) {
-      setSchema({
-        ...schema,
-        columns,
-      });
+    } catch (err) {
+      console.error("Error fetching active schema:", err);
+      setError("Failed to load schema data");
+    } finally {
+      setLoading(false);
     }
   };
 
-  if (status === "loading" || isLoading) {
+  // Render loading state
+  if (loading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-accent-primary"></div>
+      <div className="container mx-auto px-4 py-8">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="spinner mb-4"></div>
+            <p className="text-gray-600">Loading schema data...</p>
+          </div>
+        </div>
       </div>
     );
   }
 
-  if (error) {
+  // Render error state
+  if (error || !activeSchemaId) {
     return (
-      <div className="max-w-6xl mx-auto px-4 py-8">
-        <div className="mb-8">
+      <div className="container mx-auto px-4 py-8">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+          <p className="font-bold">Error</p>
+          <p>{error || "No active schema found"}</p>
+        </div>
+        <div className="mt-4">
           <button
-            onClick={() => router.push(`/project/${projectId}`)}
-            className="flex items-center text-accent-primary hover:text-accent-primary-hover"
+            onClick={() => router.push(`/project/${projectId}/schema/create`)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5 mr-1"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"
-                clipRule="evenodd"
-              />
-            </svg>
-            Back to Project
+            Create New Schema
           </button>
         </div>
-
-        <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md text-red-700 dark:text-red-300">
-          {error}
-        </div>
       </div>
     );
   }
 
-  if (!schema) {
-    return (
-      <div className="max-w-6xl mx-auto px-4 py-8">
-        <div className="mb-8">
-          <button
-            onClick={() => router.push(`/project/${projectId}`)}
-            className="flex items-center text-accent-primary hover:text-accent-primary-hover"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5 mr-1"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"
-                clipRule="evenodd"
-              />
-            </svg>
-            Back to Project
-          </button>
-        </div>
-
-        <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-md text-yellow-700 dark:text-yellow-300">
-          Schema not found. Please select a valid schema.
-        </div>
-      </div>
-    );
-  }
-
+  // Render schema management interface
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
-      <div className="mb-8">
-        <button
-          onClick={() => router.push(`/project/${projectId}`)}
-          className="flex items-center text-accent-primary hover:text-accent-primary-hover"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-5 w-5 mr-1"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-          >
-            <path
-              fillRule="evenodd"
-              d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z"
-              clipRule="evenodd"
-            />
-          </svg>
-          Back to Project
-        </button>
+    <div className="container mx-auto px-4 py-8">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold">Schema Management</h1>
+        <p className="text-gray-600">
+          View and manage your global schema columns, versions, and file
+          contributions.
+        </p>
       </div>
 
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-primary dark:text-primary">
-          Manage Schema Columns
-        </h1>
-
-        <div className="flex space-x-4">
-          <button
-            onClick={() =>
-              router.push(
-                `/project/${projectId}/schema/map?schemaId=${schemaId}`
-              )
-            }
-            className="px-4 py-2 bg-accent-secondary text-white rounded-md hover:bg-accent-secondary-hover"
-          >
-            Map Columns
-          </button>
-
-          <button
-            onClick={() =>
-              router.push(
-                `/project/${projectId}/schema/versions?schemaId=${schemaId}`
-              )
-            }
-            className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
-          >
-            View Versions
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-ui-secondary dark:bg-ui-secondary rounded-lg p-6 shadow-sm mb-6">
-        <h2 className="text-xl font-semibold mb-4 text-primary dark:text-primary">
-          Schema Information
-        </h2>
-
-        <div className="mb-4">
-          <p className="text-secondary dark:text-secondary">
-            <span className="font-medium">Schema Name:</span> {schema.name}
-          </p>
-          {schema.description && (
-            <p className="text-secondary dark:text-secondary mt-2">
-              <span className="font-medium">Description:</span>{" "}
-              {schema.description}
-            </p>
-          )}
-          <p className="text-secondary dark:text-secondary mt-2">
-            <span className="font-medium">Version:</span> {schema.version}
-          </p>
-          <p className="text-secondary dark:text-secondary mt-2">
-            <span className="font-medium">Status:</span>{" "}
-            {schema.isActive ? (
-              <span className="text-green-600 dark:text-green-400">Active</span>
-            ) : (
-              <span className="text-gray-500 dark:text-gray-400">Inactive</span>
-            )}
-          </p>
-        </div>
-      </div>
-
-      <SchemaColumnManager
-        schemaId={schemaId as string}
-        initialColumns={schema.columns}
-        onColumnsUpdated={handleColumnsUpdated}
+      <SchemaManagementInterface
+        projectId={projectId}
+        schemaId={activeSchemaId}
       />
     </div>
   );
+};
+
+export const getServerSideProps: GetServerSideProps = async (context) => {
+  const session = await getSession(context);
+
+  if (!session) {
+    return {
+      redirect: {
+        destination: "/auth/signin",
+        permanent: false,
+      },
+    };
+  }
+
+  try {
+    const { id: projectId, schemaId } = context.query;
+
+    if (!projectId) {
+      return {
+        redirect: {
+          destination: "/project",
+          permanent: false,
+        },
+      };
+    }
+
+    return {
+      props: {
+        projectId,
+        schemaId: schemaId || null,
+      },
+    };
+  } catch (error) {
+    console.error("Error in getServerSideProps:", error);
+    return {
+      props: {
+        projectId: context.query.id,
+        error: "Failed to load schema data",
+      },
+    };
+  }
 };
 
 export default SchemaColumnsPage;

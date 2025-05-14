@@ -1,73 +1,77 @@
-import { NextApiRequest, NextApiResponse } from "next";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "./auth/[...nextauth]";
-import {
-  get95thPercentileMetrics,
-  getRecentMetrics,
-} from "../../../lib/nlToSql/performanceMonitoring";
+import type { NextApiRequest, NextApiResponse } from "next";
+import { getSession } from "next-auth/react";
+import { PrismaClient } from "@prisma/client";
+import { MetricType } from "../../../lib/batchProcessing/batchProcessingService";
 
 /**
- * API endpoint for getting performance metrics
- * @param req Request object
- * @param res Response object
- * @returns Response with performance metrics
+ * API handler for performance metrics
+ *
+ * GET: Get performance metrics
  */
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  // Only allow GET requests
-  if (req.method !== "GET") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+  const session = await getSession({ req });
 
-  // Check authentication
-  const session = await getServerSession(req, res, authOptions);
-
-  // In development, allow requests without authentication for testing
-  const isDevelopment = process.env.NODE_ENV === "development";
-  if ((!session || !session.user) && !isDevelopment) {
+  if (!session) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
   try {
+    // Only allow GET requests
+    if (req.method !== "GET") {
+      return res.status(405).json({ error: "Method not allowed" });
+    }
+
+    // Create Prisma client
+    const prisma = new PrismaClient();
+
+    // Get query parameters
+    const { jobId, component, metricName, startDate, endDate, limit, offset } =
+      req.query;
+
+    // Build filter
+    const filter: any = {};
+
+    if (jobId) {
+      filter.jobId = jobId as string;
+    }
+
+    if (component) {
+      filter.component = component as string;
+    }
+
+    if (metricName) {
+      filter.metricName = metricName as string;
+    }
+
+    if (startDate || endDate) {
+      filter.timestamp = {};
+
+      if (startDate) {
+        filter.timestamp.gte = new Date(startDate as string);
+      }
+
+      if (endDate) {
+        filter.timestamp.lte = new Date(endDate as string);
+      }
+    }
+
     // Get performance metrics
-    const percentileMetrics = get95thPercentileMetrics();
-    const recentMetrics = getRecentMetrics();
-
-    // Calculate average execution time
-    const avgExecutionTime =
-      recentMetrics.length > 0
-        ? recentMetrics.reduce((sum, metric) => sum + metric.executionTime, 0) /
-          recentMetrics.length
-        : 0;
-
-    // Calculate median execution time
-    const sortedExecutionTimes = [...recentMetrics].sort(
-      (a, b) => a.executionTime - b.executionTime
-    );
-    const medianExecutionTime =
-      recentMetrics.length > 0
-        ? sortedExecutionTimes[Math.floor(sortedExecutionTimes.length / 2)]
-            ?.executionTime || 0
-        : 0;
-
-    // Return the metrics
-    return res.status(200).json({
-      percentileMetrics,
-      recentMetrics: recentMetrics.slice(0, 10), // Only return the 10 most recent metrics
-      stats: {
-        count: recentMetrics.length,
-        avgExecutionTime,
-        medianExecutionTime,
-        p95ExecutionTime: percentileMetrics.executionTime,
+    const metrics = await prisma.performanceMetric.findMany({
+      where: filter,
+      orderBy: {
+        timestamp: "desc",
       },
+      take: limit ? parseInt(limit as string) : undefined,
+      skip: offset ? parseInt(offset as string) : undefined,
     });
+
+    // Return metrics
+    return res.status(200).json(metrics);
   } catch (error) {
     console.error("Error getting performance metrics:", error);
-    return res.status(500).json({
-      error: "Failed to get performance metrics",
-      details: error instanceof Error ? error.message : "Unknown error",
-    });
+    return res.status(500).json({ error: "Internal server error" });
   }
 }

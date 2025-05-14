@@ -3,6 +3,16 @@ import { v4 as uuidv4 } from "uuid";
 import { GlobalSchema, SchemaColumn } from "./globalSchemaService";
 
 /**
+ * Interface for schema change
+ */
+export interface SchemaChange {
+  type: "add" | "remove" | "modify";
+  columnName: string;
+  before?: Partial<SchemaColumn>;
+  after?: Partial<SchemaColumn>;
+}
+
+/**
  * Interface for schema version
  */
 export interface SchemaVersion {
@@ -17,16 +27,6 @@ export interface SchemaVersion {
 }
 
 /**
- * Interface for schema change
- */
-export interface SchemaChange {
-  type: "add" | "remove" | "modify";
-  columnName: string;
-  before?: Partial<SchemaColumn>;
-  after?: Partial<SchemaColumn>;
-}
-
-/**
  * Interface for schema comparison result
  */
 export interface SchemaComparisonResult {
@@ -37,28 +37,27 @@ export interface SchemaComparisonResult {
     before: Partial<SchemaColumn>;
     after: Partial<SchemaColumn>;
   }[];
-  unchanged: SchemaColumn[];
 }
 
 /**
- * Interface for schema rollback result
+ * Interface for rollback result
  */
-export interface SchemaRollbackResult {
+export interface RollbackResult {
   success: boolean;
   message: string;
   schema?: GlobalSchema;
 }
 
 /**
- * SchemaVersionService class for managing schema versions
+ * Service for managing schema versions
  */
 export class SchemaVersionService {
   /**
    * Create a new schema version
-   * @param schema Global schema
+   * @param schema Schema to version
    * @param userId User ID
-   * @param comment Comment for the version
-   * @returns Promise<SchemaVersion> Created schema version
+   * @param comment Comment
+   * @returns Promise<SchemaVersion> Created version
    */
   async createSchemaVersion(
     schema: GlobalSchema,
@@ -85,86 +84,86 @@ export class SchemaVersionService {
         `);
       }
 
-      // Get the previous version if it exists
-      const previousVersion = await this.getLatestSchemaVersion(schema.id);
+      // Generate version ID
+      const versionId = `version_${uuidv4()}`;
 
-      // Calculate the version number
-      const version = previousVersion ? previousVersion.version + 1 : 1;
-
-      // Calculate the change log if there's a previous version
+      // Get previous version if exists
+      let previousVersion: SchemaVersion | null = null;
       let changeLog: SchemaChange[] = [];
-      if (previousVersion) {
-        const comparison = this.compareSchemas(
-          previousVersion.columns,
-          schema.columns
+
+      if (schema.version > 1) {
+        previousVersion = await this.getSchemaVersion(
+          schema.id,
+          schema.version - 1
         );
 
-        // Convert comparison to change log
-        changeLog = [
-          ...comparison.added.map((column) => ({
-            type: "add" as const,
-            columnName: column.name,
-            after: column,
-          })),
-          ...comparison.removed.map((column) => ({
-            type: "remove" as const,
-            columnName: column.name,
-            before: column,
-          })),
-          ...comparison.modified.map((mod) => ({
-            type: "modify" as const,
-            columnName: mod.columnName,
-            before: mod.before,
-            after: mod.after,
-          })),
-        ];
+        if (previousVersion) {
+          // Compare schemas to generate change log
+          const comparison = this.compareSchemas(
+            previousVersion.columns,
+            schema.columns
+          );
+
+          // Create change log
+          changeLog = [
+            ...comparison.added.map((column) => ({
+              type: "add" as const,
+              columnName: column.name,
+              after: column,
+            })),
+            ...comparison.removed.map((column) => ({
+              type: "remove" as const,
+              columnName: column.name,
+              before: column,
+            })),
+            ...comparison.modified.map((change) => ({
+              type: "modify" as const,
+              columnName: change.columnName,
+              before: change.before,
+              after: change.after,
+            })),
+          ];
+        }
       }
 
-      // Create the schema version
-      const versionId = `schema_version_${uuidv4()}`;
-      const schemaVersion: SchemaVersion = {
+      // Create version
+      await executeQuery(`
+        INSERT INTO schema_versions (
+          id,
+          schema_id,
+          version,
+          columns,
+          created_at,
+          created_by,
+          comment,
+          change_log
+        )
+        VALUES (
+          '${versionId}',
+          '${schema.id}',
+          ${schema.version},
+          '${JSON.stringify(schema.columns)}',
+          CURRENT_TIMESTAMP,
+          '${userId}',
+          ${comment ? `'${comment}'` : "NULL"},
+          ${changeLog.length > 0 ? `'${JSON.stringify(changeLog)}'` : "NULL"}
+        )
+      `);
+
+      // Return created version
+      return {
         id: versionId,
         schemaId: schema.id,
-        version,
+        version: schema.version,
         columns: schema.columns,
         createdAt: new Date(),
         createdBy: userId,
         comment,
         changeLog,
       };
-
-      // Store the schema version in the database
-      await executeQuery(`
-        INSERT INTO schema_versions (
-          id, 
-          schema_id, 
-          version, 
-          columns, 
-          created_at, 
-          created_by, 
-          comment, 
-          change_log
-        )
-        VALUES (
-          '${schemaVersion.id}',
-          '${schemaVersion.schemaId}',
-          ${schemaVersion.version},
-          '${JSON.stringify(schemaVersion.columns)}',
-          CURRENT_TIMESTAMP,
-          '${schemaVersion.createdBy}',
-          ${schemaVersion.comment ? `'${schemaVersion.comment}'` : "NULL"},
-          ${
-            schemaVersion.changeLog
-              ? `'${JSON.stringify(schemaVersion.changeLog)}'`
-              : "NULL"
-          }
-        )
-      `);
-
-      return schemaVersion;
     } catch (error) {
       console.error(
-        "[SchemaVersionService] Error creating schema version:",
+        `[SchemaVersionService] Error creating version for schema ${schema.id}:`,
         error
       );
       throw error;
@@ -172,88 +171,7 @@ export class SchemaVersionService {
   }
 
   /**
-   * Get all versions of a schema
-   * @param schemaId Schema ID
-   * @returns Promise<SchemaVersion[]> Schema versions
-   */
-  async getSchemaVersions(schemaId: string): Promise<SchemaVersion[]> {
-    try {
-      // Check if the schema_versions table exists
-      const tableExists = await this.checkIfTableExists("schema_versions");
-
-      if (!tableExists) {
-        return [];
-      }
-
-      // Get all versions for the schema
-      const result = (await executeQuery(`
-        SELECT id, schema_id, version, columns, created_at, created_by, comment, change_log
-        FROM schema_versions
-        WHERE schema_id = '${schemaId}'
-        ORDER BY version DESC
-      `)) as Array<{
-        id: string;
-        schema_id: string;
-        version: number;
-        columns: string;
-        created_at: string;
-        created_by: string;
-        comment: string;
-        change_log: string;
-      }>;
-
-      // Convert the result to SchemaVersion objects
-      return (result || []).map((row) => {
-        let parsedColumns = [];
-        let parsedChangeLog = [];
-
-        try {
-          // Parse columns
-          if (row.columns) {
-            if (typeof row.columns === "string") {
-              parsedColumns = JSON.parse(row.columns);
-            } else if (typeof row.columns === "object") {
-              parsedColumns = row.columns;
-            }
-          }
-
-          // Parse change log
-          if (row.change_log) {
-            if (typeof row.change_log === "string") {
-              parsedChangeLog = JSON.parse(row.change_log);
-            } else if (typeof row.change_log === "object") {
-              parsedChangeLog = row.change_log;
-            }
-          }
-        } catch (parseError) {
-          console.error(
-            `[SchemaVersionService] Error parsing data for schema version ${row.id}:`,
-            parseError
-          );
-        }
-
-        return {
-          id: row.id,
-          schemaId: row.schema_id,
-          version: row.version,
-          columns: parsedColumns,
-          createdAt: new Date(row.created_at),
-          createdBy: row.created_by,
-          comment: row.comment,
-          changeLog: parsedChangeLog,
-        };
-      });
-    } catch (error) {
-      console.error(
-        `[SchemaVersionService] Error getting schema versions for schema ${schemaId}:`,
-        error
-      );
-      return [];
-    }
-  }
-
-  /**
-   * Get a specific schema version
+   * Get schema version
    * @param schemaId Schema ID
    * @param version Version number
    * @returns Promise<SchemaVersion | null> Schema version or null if not found
@@ -270,7 +188,7 @@ export class SchemaVersionService {
         return null;
       }
 
-      // Get the version
+      // Get version
       const result = (await executeQuery(`
         SELECT id, schema_id, version, columns, created_at, created_by, comment, change_log
         FROM schema_versions
@@ -290,79 +208,85 @@ export class SchemaVersionService {
         return null;
       }
 
-      const row = result[0];
+      const versionData = result[0];
 
-      // Parse columns and change log
-      let parsedColumns = [];
-      let parsedChangeLog = [];
-
+      // Parse columns
+      let parsedColumns: SchemaColumn[] = [];
       try {
-        // Parse columns
-        if (row.columns) {
-          if (typeof row.columns === "string") {
-            parsedColumns = JSON.parse(row.columns);
-          } else if (typeof row.columns === "object") {
-            parsedColumns = row.columns;
-          }
-        }
-
-        // Parse change log
-        if (row.change_log) {
-          if (typeof row.change_log === "string") {
-            parsedChangeLog = JSON.parse(row.change_log);
-          } else if (typeof row.change_log === "object") {
-            parsedChangeLog = row.change_log;
+        if (versionData.columns) {
+          if (typeof versionData.columns === "string") {
+            parsedColumns = JSON.parse(versionData.columns);
+          } else if (typeof versionData.columns === "object") {
+            parsedColumns = versionData.columns as unknown as SchemaColumn[];
           }
         }
       } catch (parseError) {
         console.error(
-          `[SchemaVersionService] Error parsing data for schema version ${row.id}:`,
+          `[SchemaVersionService] Error parsing columns for version ${versionData.id}:`,
           parseError
         );
+        parsedColumns = [];
       }
 
+      // Parse change log
+      let parsedChangeLog: SchemaChange[] = [];
+      try {
+        if (versionData.change_log) {
+          if (typeof versionData.change_log === "string") {
+            parsedChangeLog = JSON.parse(versionData.change_log);
+          } else if (typeof versionData.change_log === "object") {
+            parsedChangeLog =
+              versionData.change_log as unknown as SchemaChange[];
+          }
+        }
+      } catch (parseError) {
+        console.error(
+          `[SchemaVersionService] Error parsing change log for version ${versionData.id}:`,
+          parseError
+        );
+        parsedChangeLog = [];
+      }
+
+      // Return version
       return {
-        id: row.id,
-        schemaId: row.schema_id,
-        version: row.version,
+        id: versionData.id,
+        schemaId: versionData.schema_id,
+        version: versionData.version,
         columns: parsedColumns,
-        createdAt: new Date(row.created_at),
-        createdBy: row.created_by,
-        comment: row.comment,
+        createdAt: new Date(versionData.created_at),
+        createdBy: versionData.created_by,
+        comment: versionData.comment,
         changeLog: parsedChangeLog,
       };
     } catch (error) {
       console.error(
-        `[SchemaVersionService] Error getting schema version ${version} for schema ${schemaId}:`,
+        `[SchemaVersionService] Error getting version for schema ${schemaId} version ${version}:`,
         error
       );
-      return null;
+      throw error;
     }
   }
 
   /**
-   * Get the latest version of a schema
+   * Get schema versions
    * @param schemaId Schema ID
-   * @returns Promise<SchemaVersion | null> Latest schema version or null if not found
+   * @returns Promise<SchemaVersion[]> Schema versions
    */
-  async getLatestSchemaVersion(
-    schemaId: string
-  ): Promise<SchemaVersion | null> {
+  async getSchemaVersions(schemaId: string): Promise<SchemaVersion[]> {
     try {
       // Check if the schema_versions table exists
       const tableExists = await this.checkIfTableExists("schema_versions");
 
       if (!tableExists) {
-        return null;
+        return [];
       }
 
-      // Get the latest version
+      // Get versions
       const result = (await executeQuery(`
         SELECT id, schema_id, version, columns, created_at, created_by, comment, change_log
         FROM schema_versions
         WHERE schema_id = '${schemaId}'
         ORDER BY version DESC
-        LIMIT 1
       `)) as Array<{
         id: string;
         schema_id: string;
@@ -375,249 +299,83 @@ export class SchemaVersionService {
       }>;
 
       if (!result || result.length === 0) {
-        return null;
+        return [];
       }
 
-      const row = result[0];
-
-      // Parse columns and change log
-      let parsedColumns = [];
-      let parsedChangeLog = [];
-
-      try {
+      // Parse versions
+      return result.map((versionData) => {
         // Parse columns
-        if (row.columns) {
-          if (typeof row.columns === "string") {
-            parsedColumns = JSON.parse(row.columns);
-          } else if (typeof row.columns === "object") {
-            parsedColumns = row.columns;
+        let parsedColumns: SchemaColumn[] = [];
+        try {
+          if (versionData.columns) {
+            if (typeof versionData.columns === "string") {
+              parsedColumns = JSON.parse(versionData.columns);
+            } else if (typeof versionData.columns === "object") {
+              parsedColumns = versionData.columns as unknown as SchemaColumn[];
+            }
           }
+        } catch (parseError) {
+          console.error(
+            `[SchemaVersionService] Error parsing columns for version ${versionData.id}:`,
+            parseError
+          );
+          parsedColumns = [];
         }
 
         // Parse change log
-        if (row.change_log) {
-          if (typeof row.change_log === "string") {
-            parsedChangeLog = JSON.parse(row.change_log);
-          } else if (typeof row.change_log === "object") {
-            parsedChangeLog = row.change_log;
+        let parsedChangeLog: SchemaChange[] = [];
+        try {
+          if (versionData.change_log) {
+            if (typeof versionData.change_log === "string") {
+              parsedChangeLog = JSON.parse(versionData.change_log);
+            } else if (typeof versionData.change_log === "object") {
+              parsedChangeLog =
+                versionData.change_log as unknown as SchemaChange[];
+            }
           }
+        } catch (parseError) {
+          console.error(
+            `[SchemaVersionService] Error parsing change log for version ${versionData.id}:`,
+            parseError
+          );
+          parsedChangeLog = [];
         }
-      } catch (parseError) {
-        console.error(
-          `[SchemaVersionService] Error parsing data for schema version ${row.id}:`,
-          parseError
-        );
-      }
 
-      return {
-        id: row.id,
-        schemaId: row.schema_id,
-        version: row.version,
-        columns: parsedColumns,
-        createdAt: new Date(row.created_at),
-        createdBy: row.created_by,
-        comment: row.comment,
-        changeLog: parsedChangeLog,
-      };
+        // Return version
+        return {
+          id: versionData.id,
+          schemaId: versionData.schema_id,
+          version: versionData.version,
+          columns: parsedColumns,
+          createdAt: new Date(versionData.created_at),
+          createdBy: versionData.created_by,
+          comment: versionData.comment,
+          changeLog: parsedChangeLog,
+        };
+      });
     } catch (error) {
       console.error(
-        `[SchemaVersionService] Error getting latest schema version for schema ${schemaId}:`,
+        `[SchemaVersionService] Error getting versions for schema ${schemaId}:`,
         error
       );
-      return null;
+      throw error;
     }
   }
 
   /**
-   * Compare two schemas
-   * @param oldColumns Old schema columns
-   * @param newColumns New schema columns
-   * @returns SchemaComparisonResult Comparison result
-   */
-  compareSchemas(
-    oldColumns: SchemaColumn[],
-    newColumns: SchemaColumn[]
-  ): SchemaComparisonResult {
-    const oldColumnMap = new Map<string, SchemaColumn>();
-    for (const column of oldColumns) {
-      oldColumnMap.set(column.name, column);
-    }
-
-    const newColumnMap = new Map<string, SchemaColumn>();
-    for (const column of newColumns) {
-      newColumnMap.set(column.name, column);
-    }
-
-    const added: SchemaColumn[] = [];
-    const removed: SchemaColumn[] = [];
-    const modified: {
-      columnName: string;
-      before: Partial<SchemaColumn>;
-      after: Partial<SchemaColumn>;
-    }[] = [];
-    const unchanged: SchemaColumn[] = [];
-
-    // Find added and modified columns
-    for (const column of newColumns) {
-      const oldColumn = oldColumnMap.get(column.name);
-      if (!oldColumn) {
-        added.push(column);
-      } else {
-        // Check if the column has been modified
-        const changes: Partial<SchemaColumn> = {};
-        let hasChanges = false;
-
-        // Check each property
-        if (column.type !== oldColumn.type) {
-          changes.type = column.type;
-          hasChanges = true;
-        }
-        if (column.description !== oldColumn.description) {
-          changes.description = column.description;
-          hasChanges = true;
-        }
-        if (column.isRequired !== oldColumn.isRequired) {
-          changes.isRequired = column.isRequired;
-          hasChanges = true;
-        }
-        if (column.isPrimaryKey !== oldColumn.isPrimaryKey) {
-          changes.isPrimaryKey = column.isPrimaryKey;
-          hasChanges = true;
-        }
-        if (column.isForeignKey !== oldColumn.isForeignKey) {
-          changes.isForeignKey = column.isForeignKey;
-          hasChanges = true;
-        }
-        if (column.referencesTable !== oldColumn.referencesTable) {
-          changes.referencesTable = column.referencesTable;
-          hasChanges = true;
-        }
-        if (column.referencesColumn !== oldColumn.referencesColumn) {
-          changes.referencesColumn = column.referencesColumn;
-          hasChanges = true;
-        }
-        if (column.defaultValue !== oldColumn.defaultValue) {
-          changes.defaultValue = column.defaultValue;
-          hasChanges = true;
-        }
-
-        // Check validation rules
-        if (
-          JSON.stringify(column.validationRules) !==
-          JSON.stringify(oldColumn.validationRules)
-        ) {
-          changes.validationRules = column.validationRules;
-          hasChanges = true;
-        }
-
-        if (hasChanges) {
-          modified.push({
-            columnName: column.name,
-            before: oldColumn,
-            after: column,
-          });
-        } else {
-          unchanged.push(column);
-        }
-      }
-    }
-
-    // Find removed columns
-    for (const column of oldColumns) {
-      if (!newColumnMap.has(column.name)) {
-        removed.push(column);
-      }
-    }
-
-    return {
-      added,
-      removed,
-      modified,
-      unchanged,
-    };
-  }
-
-  /**
-   * Generate a change script for schema changes
-   * @param comparison Schema comparison result
-   * @returns string Change script
-   */
-  generateChangeScript(comparison: SchemaComparisonResult): string {
-    let script = "";
-
-    // Add columns
-    for (const column of comparison.added) {
-      script += `-- Add column ${column.name}\n`;
-      script += `ALTER TABLE data ADD COLUMN ${column.name} ${this.getSqlType(
-        column.type
-      )}`;
-
-      if (column.isRequired) {
-        script += " NOT NULL";
-      }
-
-      if (column.defaultValue) {
-        script += ` DEFAULT ${column.defaultValue}`;
-      }
-
-      script += ";\n\n";
-    }
-
-    // Modify columns
-    for (const mod of comparison.modified) {
-      script += `-- Modify column ${mod.columnName}\n`;
-
-      // Type change
-      if (mod.after.type !== mod.before.type) {
-        script += `ALTER TABLE data ALTER COLUMN ${
-          mod.columnName
-        } TYPE ${this.getSqlType(mod.after.type || "text")};\n`;
-      }
-
-      // Required change
-      if (mod.after.isRequired !== mod.before.isRequired) {
-        if (mod.after.isRequired) {
-          script += `ALTER TABLE data ALTER COLUMN ${mod.columnName} SET NOT NULL;\n`;
-        } else {
-          script += `ALTER TABLE data ALTER COLUMN ${mod.columnName} DROP NOT NULL;\n`;
-        }
-      }
-
-      // Default value change
-      if (mod.after.defaultValue !== mod.before.defaultValue) {
-        if (mod.after.defaultValue) {
-          script += `ALTER TABLE data ALTER COLUMN ${mod.columnName} SET DEFAULT ${mod.after.defaultValue};\n`;
-        } else {
-          script += `ALTER TABLE data ALTER COLUMN ${mod.columnName} DROP DEFAULT;\n`;
-        }
-      }
-
-      script += "\n";
-    }
-
-    // Remove columns
-    for (const column of comparison.removed) {
-      script += `-- Remove column ${column.name}\n`;
-      script += `ALTER TABLE data DROP COLUMN ${column.name};\n\n`;
-    }
-
-    return script;
-  }
-
-  /**
-   * Rollback a schema to a specific version
+   * Rollback schema to a previous version
    * @param schemaId Schema ID
-   * @param version Version number to rollback to
+   * @param version Version to rollback to
    * @param userId User ID
-   * @returns Promise<SchemaRollbackResult> Rollback result
+   * @returns Promise<RollbackResult> Rollback result
    */
   async rollbackSchema(
     schemaId: string,
     version: number,
     userId: string
-  ): Promise<SchemaRollbackResult> {
+  ): Promise<RollbackResult> {
     try {
-      // Get the target version
+      // Get the version to rollback to
       const targetVersion = await this.getSchemaVersion(schemaId, version);
 
       if (!targetVersion) {
@@ -628,70 +386,45 @@ export class SchemaVersionService {
       }
 
       // Get the current schema
-      const result = (await executeQuery(`
-        SELECT id, user_id, project_id, name, description, columns, created_at, updated_at, is_active, version, previous_version_id
-        FROM global_schemas
-        WHERE id = '${schemaId}'
-      `)) as Array<{
-        id: string;
-        user_id: string;
-        project_id: string;
-        name: string;
-        description: string;
-        columns: string;
-        created_at: string;
-        updated_at: string;
-        is_active: boolean;
-        version: number;
-        previous_version_id: string;
-      }>;
+      const globalSchemaService = new (
+        await import("./globalSchemaService")
+      ).GlobalSchemaService();
+      const currentSchema = await globalSchemaService.getGlobalSchemaById(
+        schemaId
+      );
 
-      if (!result || result.length === 0) {
+      if (!currentSchema) {
         return {
           success: false,
           message: `Schema ${schemaId} not found`,
         };
       }
 
-      const row = result[0];
-
-      // Create a new schema with the target version's columns
-      const schema: GlobalSchema = {
-        id: row.id,
-        userId: row.user_id,
-        projectId: row.project_id,
-        name: row.name,
-        description: row.description,
+      // Create a new schema version with the rolled back columns
+      const rolledBackSchema: GlobalSchema = {
+        ...currentSchema,
         columns: targetVersion.columns,
-        createdAt: new Date(row.created_at),
+        version: currentSchema.version + 1,
+        previousVersionId: currentSchema.id,
         updatedAt: new Date(),
-        isActive: row.is_active,
-        version: row.version + 1,
-        previousVersionId: row.id,
       };
 
-      // Update the schema in the database
-      await executeQuery(`
-        UPDATE global_schemas
-        SET 
-          columns = '${JSON.stringify(schema.columns)}',
-          updated_at = CURRENT_TIMESTAMP,
-          version = ${schema.version},
-          previous_version_id = '${schema.previousVersionId}'
-        WHERE id = '${schema.id}'
-      `);
-
-      // Create a new version for the rollback
+      // Create a new version
       await this.createSchemaVersion(
-        schema,
+        rolledBackSchema,
         userId,
-        `Rollback to version ${version}`
+        `Rolled back to version ${version}`
+      );
+
+      // Update the schema
+      const updatedSchema = await globalSchemaService.updateGlobalSchema(
+        rolledBackSchema
       );
 
       return {
         success: true,
-        message: `Schema ${schemaId} rolled back to version ${version}`,
-        schema,
+        message: `Successfully rolled back schema ${schemaId} to version ${version}`,
+        schema: updatedSchema,
       };
     } catch (error) {
       console.error(
@@ -700,31 +433,101 @@ export class SchemaVersionService {
       );
       return {
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error",
+        message: `Error rolling back schema: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
       };
     }
   }
 
   /**
-   * Get SQL type for a schema column type
-   * @param type Schema column type
-   * @returns string SQL type
+   * Compare two schemas to find differences
+   * @param oldColumns Old columns
+   * @param newColumns New columns
+   * @returns SchemaComparisonResult Comparison result
    */
-  private getSqlType(type: string): string {
-    switch (type.toLowerCase()) {
-      case "text":
-        return "TEXT";
-      case "integer":
-        return "INTEGER";
-      case "numeric":
-        return "NUMERIC";
-      case "boolean":
-        return "BOOLEAN";
-      case "timestamp":
-        return "TIMESTAMP";
-      default:
-        return "TEXT";
+  compareSchemas(
+    oldColumns: SchemaColumn[],
+    newColumns: SchemaColumn[]
+  ): SchemaComparisonResult {
+    // Create maps for faster lookup
+    const oldColumnsMap = new Map<string, SchemaColumn>();
+    for (const column of oldColumns) {
+      oldColumnsMap.set(column.name, column);
     }
+
+    const newColumnsMap = new Map<string, SchemaColumn>();
+    for (const column of newColumns) {
+      newColumnsMap.set(column.name, column);
+    }
+
+    // Find added columns
+    const added: SchemaColumn[] = [];
+    for (const column of newColumns) {
+      if (!oldColumnsMap.has(column.name)) {
+        added.push(column);
+      }
+    }
+
+    // Find removed columns
+    const removed: SchemaColumn[] = [];
+    for (const column of oldColumns) {
+      if (!newColumnsMap.has(column.name)) {
+        removed.push(column);
+      }
+    }
+
+    // Find modified columns
+    const modified: {
+      columnName: string;
+      before: Partial<SchemaColumn>;
+      after: Partial<SchemaColumn>;
+    }[] = [];
+
+    for (const oldColumn of oldColumns) {
+      const newColumn = newColumnsMap.get(oldColumn.name);
+      if (newColumn) {
+        const changes: Partial<SchemaColumn> = {};
+        let hasChanges = false;
+
+        // Compare properties
+        for (const key of Object.keys(oldColumn) as Array<keyof SchemaColumn>) {
+          if (key === "id") continue; // Skip ID
+
+          if (
+            JSON.stringify(oldColumn[key]) !== JSON.stringify(newColumn[key])
+          ) {
+            // Type-safe assignment
+            if (key === "name" || key === "type" || key === "description") {
+              changes[key] = newColumn[key];
+            } else if (
+              key === "isRequired" ||
+              key === "isPrimaryKey" ||
+              key === "isNewColumn"
+            ) {
+              changes[key] = newColumn[key];
+            } else if (key === "defaultValue" || key === "derivationFormula") {
+              changes[key] = newColumn[key];
+            }
+            hasChanges = true;
+          }
+        }
+
+        if (hasChanges) {
+          modified.push({
+            columnName: oldColumn.name,
+            before: oldColumn,
+            after: changes,
+          });
+        }
+      }
+    }
+
+    return {
+      added,
+      removed,
+      modified,
+    };
   }
 
   /**
@@ -751,3 +554,5 @@ export class SchemaVersionService {
     }
   }
 }
+
+export default new SchemaVersionService();

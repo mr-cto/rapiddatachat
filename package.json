@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev",
+    "dev:turbo": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -16,6 +17,7 @@
   },
   "dependencies": {
     "@duckdb/duckdb-wasm": "^1.29.1-dev132.0",
+    "@headlessui/react": "^2.2.3",
     "@prisma/client": "^6.7.0",
     "@types/formidable": "^3.4.5",
     "@types/uuid": "^10.0.0",
@@ -29,6 +31,7 @@
     "node-cache": "^5.1.2",
     "openai": "^4.97.0",
     "parquetjs": "^0.11.2",
+    "pg": "^8.16.0",
     "prisma": "^6.7.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -47,6 +50,7 @@
     "@faker-js/faker": "^8.4.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pg": "^8.15.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/react-window": "^1.8.8",

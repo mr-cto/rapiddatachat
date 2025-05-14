@@ -111,8 +111,8 @@ export class SchemaService {
 
             // Try to recreate the view by reactivating the file
             try {
-              // Use the simplified version that doesn't rely on activation_progress columns
-              const { activateFile } = require("../fileActivationSimple.js");
+              // Use the compatibility version that doesn't rely on activation_progress columns
+              const { activateFile } = require("../fileActivationCompat.js");
               const result = await activateFile(file.id, userId);
 
               if (result.success) {
@@ -162,8 +162,8 @@ export class SchemaService {
 
             // Try to recreate the view by reactivating the file
             try {
-              // Use the simplified version that doesn't rely on activation_progress columns
-              const { activateFile } = require("../fileActivationSimple.js");
+              // Use the compatibility version that doesn't rely on activation_progress columns
+              const { activateFile } = require("../fileActivationCompat.js");
               const result = await activateFile(file.id, userId);
 
               if (result.success) {
