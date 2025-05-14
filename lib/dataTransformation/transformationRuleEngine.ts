@@ -597,370 +597,8 @@ export class TransformationRuleEngine {
       switch (format) {
         case "decimal":
           formattedValue = numValue.toFixed(precision);
-/**
-   * Apply aggregate transformation
-   * 
-   * @param value Value to transform
-   * @param params Transformation parameters
-   * @param context Transformation context
-   * @returns Transformation result
-   */
-  applyAggregateTransformation(
-    value: any,
-    params: any,
-    context: TransformationContext
-  ): TransformationResult {
-    const originalValue = value;
-    
-    try {
-      const { operation = 'sum', field, filter } = params;
-      
-      if (!context.allRows || !Array.isArray(context.allRows) || context.allRows.length === 0) {
-        return {
-          success: false,
-          value: originalValue,
-          originalValue,
-          errors: ['No data available for aggregation'],
-        };
-      }
-      
-      // Filter rows if filter is provided
-      let rows = context.allRows;
-      
-      if (filter) {
-        rows = rows.filter(row => this.evaluateCondition(filter, row, context));
-      }
-      
-      // Get values to aggregate
-      let values: any[];
-      
-      if (field) {
-        values = rows.map(row => row[field]).filter(v => v !== undefined && v !== null);
-      } else {
-        values = [value];
-      }
-      
-      if (values.length === 0) {
-        return {
-          success: false,
-          value: originalValue,
-          originalValue,
-          errors: ['No values available for aggregation'],
-        };
-      }
-      
-      // Apply aggregation
-      let result: any;
-      
-      switch (operation) {
-        case 'sum':
-          result = values.reduce((sum, v) => sum + Number(v), 0);
           break;
-        case 'avg':
-          result = values.reduce((sum, v) => sum + Number(v), 0) / values.length;
-          break;
-        case 'min':
-          result = Math.min(...values.map(v => Number(v)));
-          break;
-        case 'max':
-          result = Math.max(...values.map(v => Number(v)));
-          break;
-        case 'count':
-          result = values.length;
-          break;
-        case 'concat':
-          const separator = params.separator || '';
-          result = values.join(separator);
-          break;
-        default:
-          return {
-            success: false,
-            value: originalValue,
-            originalValue,
-            errors: [`Unsupported aggregate operation: ${operation}`],
-          };
-      }
-      
-      return {
-        success: true,
-        value: result,
-        originalValue,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        value: originalValue,
-        originalValue,
-        errors: [error instanceof Error ? error.message : 'Unknown error'],
-      };
-    }
-  }
-
-  /**
-   * Apply calculation transformation
-   * 
-   * @param value Value to transform
-   * @param params Transformation parameters
-   * @param context Transformation context
-   * @returns Transformation result
-   */
-  applyCalculationTransformation(
-    value: any,
-    params: any,
-    context: TransformationContext
-  ): TransformationResult {
-    const originalValue = value;
-    
-    try {
-      const { formula, variables = {} } = params;
-      
-      if (!formula) {
-        return {
-          success: false,
-          value: originalValue,
-          originalValue,
-          errors: ['Formula is required for calculation transformation'],
-        };
-      }
-      
-      // Create evaluation context
-      const evalContext: Record<string, any> = {
-        value: originalValue,
-        ...variables,
-      };
-      
-      // Add row values to context
-      if (context.row) {
-        Object.entries(context.row).forEach(([key, val]) => {
-          evalContext[key] = val;
-        });
-      }
-      
-      // Add safe math functions
-      const mathFunctions = {
-        abs: Math.abs,
-        ceil: Math.ceil,
-        floor: Math.floor,
-        round: Math.round,
-        min: Math.min,
-        max: Math.max,
-        pow: Math.pow,
-        sqrt: Math.sqrt,
-        log: Math.log,
-        log10: Math.log10,
-        exp: Math.exp,
-        sin: Math.sin,
-        cos: Math.cos,
-        tan: Math.tan,
-        asin: Math.asin,
-        acos: Math.acos,
-        atan: Math.atan,
-        atan2: Math.atan2,
-        random: Math.random,
-      };
-      
-      Object.entries(mathFunctions).forEach(([key, func]) => {
-        evalContext[key] = func;
-      });
-      
-      // Evaluate formula
-      const result = this.evaluateFormula(formula, evalContext);
-      
-      return {
-        success: true,
-        value: result,
-        originalValue,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        value: originalValue,
-        originalValue,
-        errors: [error instanceof Error ? error.message : 'Unknown error'],
-      };
-    }
-  }
-
-  /**
-   * Apply conditional transformation
-   * 
-   * @param value Value to transform
-   * @param params Transformation parameters
-   * @param context Transformation context
-   * @returns Transformation result
-   */
-  applyConditionalTransformation(
-    value: any,
-    params: any,
-    context: TransformationContext
-  ): TransformationResult {
-    const originalValue = value;
-    
-    try {
-      const { condition, trueValue, falseValue } = params;
-      
-      if (!condition) {
-        return {
-          success: false,
-          value: originalValue,
-          originalValue,
-          errors: ['Condition is required for conditional transformation'],
-        };
-      }
-      
-      // Evaluate condition
-      const conditionMet = this.evaluateCondition(condition, context.row || {}, context);
-      
-      // Return appropriate value
-      return {
-        success: true,
-        value: conditionMet
-          ? trueValue !== undefined ? trueValue : originalValue
-          : falseValue !== undefined ? falseValue : originalValue,
-        originalValue,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        value: originalValue,
-        originalValue,
-        errors: [error instanceof Error ? error.message : 'Unknown error'],
-      };
-    }
-  }
-
-  /**
-   * Apply custom transformation
-   * 
-   * @param value Value to transform
-   * @param params Transformation parameters
-   * @param context Transformation context
-   * @returns Transformation result
-   */
-  applyCustomTransformation(
-    value: any,
-    params: any,
-    context: TransformationContext
-  ): TransformationResult {
-    const originalValue = value;
-    
-    try {
-      const { code } = params;
-      
-      if (!code) {
-        return {
-          success: false,
-          value: originalValue,
-          originalValue,
-          errors: ['Code is required for custom transformation'],
-        };
-      }
-      
-      // Create evaluation context
-      const evalContext: Record<string, any> = {
-        value: originalValue,
-        row: context.row || {},
-        allRows: context.allRows || [],
-        rowIndex: context.rowIndex || 0,
-        variables: context.variables || {},
-      };
-      
-      // Add safe math functions
-      const mathFunctions = {
-        abs: Math.abs,
-        ceil: Math.ceil,
-        floor: Math.floor,
-        round: Math.round,
-        min: Math.min,
-        max: Math.max,
-        pow: Math.pow,
-        sqrt: Math.sqrt,
-        log: Math.log,
-        log10: Math.log10,
-        exp: Math.exp,
-        sin: Math.sin,
-        cos: Math.cos,
-        tan: Math.tan,
-        asin: Math.asin,
-        acos: Math.acos,
-        atan: Math.atan,
-        atan2: Math.atan2,
-        random: Math.random,
-      };
-      
-      Object.entries(mathFunctions).forEach(([key, func]) => {
-        evalContext[key] = func;
-      });
-      
-      // Evaluate code
-      const result = this.evaluateFormula(`(function() { ${code} })()`, evalContext);
-      
-      return {
-        success: true,
-        value: result,
-        originalValue,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        value: originalValue,
-        originalValue,
-        errors: [error instanceof Error ? error.message : 'Unknown error'],
-      };
-    }
-  }
-
-  /**
-   * Evaluate a formula safely
-   * 
-   * @param formula Formula to evaluate
-   * @param context Evaluation context
-   * @returns Evaluation result
-   */
-  private evaluateFormula(formula: string, context: Record<string, any>): any {
-    // Create a safe evaluation function
-    const safeEval = (code: string, context: Record<string, any>) => {
-      // Create parameter names and values arrays
-      const paramNames = Object.keys(context);
-      const paramValues = Object.values(context);
-      
-      // Create a new function with the context variables as parameters
-      const func = new Function(...paramNames, `return ${code}`);
-      
-      // Call the function with the context values
-      return func(...paramValues);
-    };
-    
-    // Evaluate the formula
-    return safeEval(formula, context);
-  }
-
-  /**
-   * Check if a table exists
-   * 
-   * @param tableName Table name
-   * @returns True if the table exists
-   */
-  private async checkIfTableExists(tableName: string): Promise<boolean> {
-    try {
-      const result = await executeQuery(`
-        SELECT EXISTS (
-          SELECT 1 FROM information_schema.tables
-          WHERE table_name = '${tableName}'
-        ) as exists
-      `) as Array<{ exists: boolean }>;
-      
-      return result && result.length > 0 && result[0].exists;
-    } catch (error) {
-      console.error(`Error checking if table ${tableName} exists:`, error);
-      return false;
-    }
-  }
-}
-
-export default new TransformationRuleEngine();
-          break;
-        case "currency":
+        case "currency": {
           const currency = params.currency || "USD";
           formattedValue = new Intl.NumberFormat(locale, {
             style: "currency",
@@ -969,22 +607,26 @@ export default new TransformationRuleEngine();
             maximumFractionDigits: precision,
           }).format(numValue);
           break;
-        case "percent":
+        }
+        case "percent": {
           formattedValue = new Intl.NumberFormat(locale, {
             style: "percent",
             minimumFractionDigits: precision,
             maximumFractionDigits: precision,
           }).format(numValue / 100);
           break;
-        case "scientific":
+        }
+        case "scientific": {
           formattedValue = numValue.toExponential(precision);
           break;
-        case "compact":
+        }
+        case "compact": {
           formattedValue = new Intl.NumberFormat(locale, {
             notation: "compact",
             compactDisplay: params.compactDisplay || "short",
           }).format(numValue);
           break;
+        }
         default:
           return {
             success: false,
@@ -1006,6 +648,387 @@ export default new TransformationRuleEngine();
         originalValue,
         errors: [error instanceof Error ? error.message : "Unknown error"],
       };
+    }
+  }
+
+  /**
+   * Apply aggregate transformation
+   *
+   * @param value Value to transform
+   * @param params Transformation parameters
+   * @param context Transformation context
+   * @returns Transformation result
+   */
+  applyAggregateTransformation(
+    value: any,
+    params: any,
+    context: TransformationContext
+  ): TransformationResult {
+    const originalValue = value;
+
+    try {
+      const { operation = "sum", field, filter } = params;
+
+      if (
+        !context.allRows ||
+        !Array.isArray(context.allRows) ||
+        context.allRows.length === 0
+      ) {
+        return {
+          success: false,
+          value: originalValue,
+          originalValue,
+          errors: ["No data available for aggregation"],
+        };
+      }
+
+      // Filter rows if filter is provided
+      let rows = context.allRows;
+
+      if (filter) {
+        rows = rows.filter((row) =>
+          this.evaluateCondition(filter, row, context)
+        );
+      }
+
+      // Get values to aggregate
+      let values: any[];
+
+      if (field) {
+        values = rows
+          .map((row) => row[field])
+          .filter((v) => v !== undefined && v !== null);
+      } else {
+        values = [value];
+      }
+
+      if (values.length === 0) {
+        return {
+          success: false,
+          value: originalValue,
+          originalValue,
+          errors: ["No values available for aggregation"],
+        };
+      }
+
+      // Apply aggregation
+      let result: any;
+
+      switch (operation) {
+        case "sum":
+          result = values.reduce((sum, v) => sum + Number(v), 0);
+          break;
+        case "avg":
+          result =
+            values.reduce((sum, v) => sum + Number(v), 0) / values.length;
+          break;
+        case "min":
+          result = Math.min(...values.map((v) => Number(v)));
+          break;
+        case "max":
+          result = Math.max(...values.map((v) => Number(v)));
+          break;
+        case "count":
+          result = values.length;
+          break;
+        case "concat": {
+          const separator = params.separator || "";
+          result = values.join(separator);
+          break;
+        }
+        default:
+          return {
+            success: false,
+            value: originalValue,
+            originalValue,
+            errors: [`Unsupported aggregate operation: ${operation}`],
+          };
+      }
+
+      return {
+        success: true,
+        value: result,
+        originalValue,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        value: originalValue,
+        originalValue,
+        errors: [error instanceof Error ? error.message : "Unknown error"],
+      };
+    }
+  }
+
+  /**
+   * Apply calculation transformation
+   *
+   * @param value Value to transform
+   * @param params Transformation parameters
+   * @param context Transformation context
+   * @returns Transformation result
+   */
+  applyCalculationTransformation(
+    value: any,
+    params: any,
+    context: TransformationContext
+  ): TransformationResult {
+    const originalValue = value;
+
+    try {
+      const { formula, variables = {} } = params;
+
+      if (!formula) {
+        return {
+          success: false,
+          value: originalValue,
+          originalValue,
+          errors: ["Formula is required for calculation transformation"],
+        };
+      }
+
+      // Create evaluation context
+      const evalContext: Record<string, any> = {
+        value: originalValue,
+        ...variables,
+      };
+
+      // Add row values to context
+      if (context.row) {
+        Object.entries(context.row).forEach(([key, val]) => {
+          evalContext[key] = val;
+        });
+      }
+
+      // Add safe math functions
+      const mathFunctions = {
+        abs: Math.abs,
+        ceil: Math.ceil,
+        floor: Math.floor,
+        round: Math.round,
+        min: Math.min,
+        max: Math.max,
+        pow: Math.pow,
+        sqrt: Math.sqrt,
+        log: Math.log,
+        log10: Math.log10,
+        exp: Math.exp,
+        sin: Math.sin,
+        cos: Math.cos,
+        tan: Math.tan,
+        asin: Math.asin,
+        acos: Math.acos,
+        atan: Math.atan,
+        atan2: Math.atan2,
+        random: Math.random,
+      };
+
+      Object.entries(mathFunctions).forEach(([key, func]) => {
+        evalContext[key] = func;
+      });
+
+      // Evaluate formula
+      const result = this.evaluateFormula(formula, evalContext);
+
+      return {
+        success: true,
+        value: result,
+        originalValue,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        value: originalValue,
+        originalValue,
+        errors: [error instanceof Error ? error.message : "Unknown error"],
+      };
+    }
+  }
+
+  /**
+   * Apply conditional transformation
+   *
+   * @param value Value to transform
+   * @param params Transformation parameters
+   * @param context Transformation context
+   * @returns Transformation result
+   */
+  applyConditionalTransformation(
+    value: any,
+    params: any,
+    context: TransformationContext
+  ): TransformationResult {
+    const originalValue = value;
+
+    try {
+      const { condition, trueValue, falseValue } = params;
+
+      if (!condition) {
+        return {
+          success: false,
+          value: originalValue,
+          originalValue,
+          errors: ["Condition is required for conditional transformation"],
+        };
+      }
+
+      // Evaluate condition
+      const conditionMet = this.evaluateCondition(
+        condition,
+        context.row || {},
+        context
+      );
+
+      // Return appropriate value
+      return {
+        success: true,
+        value: conditionMet
+          ? trueValue !== undefined
+            ? trueValue
+            : originalValue
+          : falseValue !== undefined
+          ? falseValue
+          : originalValue,
+        originalValue,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        value: originalValue,
+        originalValue,
+        errors: [error instanceof Error ? error.message : "Unknown error"],
+      };
+    }
+  }
+
+  /**
+   * Apply custom transformation
+   *
+   * @param value Value to transform
+   * @param params Transformation parameters
+   * @param context Transformation context
+   * @returns Transformation result
+   */
+  applyCustomTransformation(
+    value: any,
+    params: any,
+    context: TransformationContext
+  ): TransformationResult {
+    const originalValue = value;
+
+    try {
+      const { code } = params;
+
+      if (!code) {
+        return {
+          success: false,
+          value: originalValue,
+          originalValue,
+          errors: ["Code is required for custom transformation"],
+        };
+      }
+
+      // Create evaluation context
+      const evalContext: Record<string, any> = {
+        value: originalValue,
+        row: context.row || {},
+        allRows: context.allRows || [],
+        rowIndex: context.rowIndex || 0,
+        variables: context.variables || {},
+      };
+
+      // Add safe math functions
+      const mathFunctions = {
+        abs: Math.abs,
+        ceil: Math.ceil,
+        floor: Math.floor,
+        round: Math.round,
+        min: Math.min,
+        max: Math.max,
+        pow: Math.pow,
+        sqrt: Math.sqrt,
+        log: Math.log,
+        log10: Math.log10,
+        exp: Math.exp,
+        sin: Math.sin,
+        cos: Math.cos,
+        tan: Math.tan,
+        asin: Math.asin,
+        acos: Math.acos,
+        atan: Math.atan,
+        atan2: Math.atan2,
+        random: Math.random,
+      };
+
+      Object.entries(mathFunctions).forEach(([key, func]) => {
+        evalContext[key] = func;
+      });
+
+      // Evaluate code
+      const result = this.evaluateFormula(
+        `(function() { ${code} })()`,
+        evalContext
+      );
+
+      return {
+        success: true,
+        value: result,
+        originalValue,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        value: originalValue,
+        originalValue,
+        errors: [error instanceof Error ? error.message : "Unknown error"],
+      };
+    }
+  }
+
+  /**
+   * Evaluate a formula safely
+   *
+   * @param formula Formula to evaluate
+   * @param context Evaluation context
+   * @returns Evaluation result
+   */
+  private evaluateFormula(formula: string, context: Record<string, any>): any {
+    // Create a safe evaluation function
+    const safeEval = (code: string, context: Record<string, any>) => {
+      // Create parameter names and values arrays
+      const paramNames = Object.keys(context);
+      const paramValues = Object.values(context);
+
+      // Create a new function with the context variables as parameters
+      const func = new Function(...paramNames, `return ${code}`);
+
+      // Call the function with the context values
+      return func(...paramValues);
+    };
+
+    // Evaluate the formula
+    return safeEval(formula, context);
+  }
+
+  /**
+   * Check if a table exists
+   *
+   * @param tableName Table name
+   * @returns True if the table exists
+   */
+  private async checkIfTableExists(tableName: string): Promise<boolean> {
+    try {
+      const result = (await executeQuery(`
+        SELECT EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_name = '${tableName}'
+        ) as exists
+      `)) as Array<{ exists: boolean }>;
+
+      return result && result.length > 0 && result[0].exists;
+    } catch (error) {
+      console.error(`Error checking if table ${tableName} exists:`, error);
+      return false;
     }
   }
 
@@ -1064,7 +1087,7 @@ export default new TransformationRuleEngine();
             timeZone: timezone,
           }).format(dateValue);
           break;
-        case "custom":
+        case "custom": {
           const customFormat = params.customFormat || "yyyy-MM-dd";
           formattedValue = this.formatDateWithPattern(
             dateValue,
@@ -1072,6 +1095,7 @@ export default new TransformationRuleEngine();
             locale
           );
           break;
+        }
         default:
           return {
             success: false,

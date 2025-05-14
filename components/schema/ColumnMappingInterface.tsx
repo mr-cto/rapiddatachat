@@ -639,7 +639,7 @@ const ColumnMappingInterface: React.FC<ColumnMappingInterfaceProps> = ({
                 {mappings.length === 0 ? (
                   <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-md text-gray-500 dark:text-gray-400">
                     No mappings created yet. Select a file column and a schema
-                    column, then click "Map Selected Columns".
+                    column, then click &quot;Map Selected Columns&quot;.
                   </div>
                 ) : (
                   <div className="overflow-x-auto">

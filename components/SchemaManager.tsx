@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { GlobalSchema, SchemaColumn } from "../lib/schemaManagement";
 import { ViewStateManager } from "../lib/viewStateManager";
 import Modal from "./Modal";
+import { v4 as uuidv4 } from "uuid";
 
 interface SchemaManagerProps {
   userId: string;
@@ -28,7 +29,7 @@ export const SchemaManager: React.FC<SchemaManagerProps> = ({
   const [editingSchema, setEditingSchema] = useState<GlobalSchema | null>(null);
   const [createCustomSchema, setCreateCustomSchema] = useState(false);
   const [customColumns, setCustomColumns] = useState<SchemaColumn[]>([
-    { name: "", type: "text" },
+    { id: uuidv4(), name: "", type: "text" },
   ]);
 
   // Fetch schemas on component mount
@@ -74,7 +75,10 @@ export const SchemaManager: React.FC<SchemaManagerProps> = ({
 
   // Add a custom column to the schema
   const addCustomColumn = () => {
-    setCustomColumns([...customColumns, { name: "", type: "text" }]);
+    setCustomColumns([
+      ...customColumns,
+      { id: uuidv4(), name: "", type: "text" },
+    ]);
   };
 
   // Remove a custom column from the schema
@@ -138,7 +142,7 @@ export const SchemaManager: React.FC<SchemaManagerProps> = ({
         setShowCreateModal(false);
         setNewSchemaName("");
         setNewSchemaDescription("");
-        setCustomColumns([{ name: "", type: "text" }]);
+        setCustomColumns([{ id: uuidv4(), name: "", type: "text" }]);
         setCreateCustomSchema(false);
         setIsLoading(false);
 
@@ -435,7 +439,7 @@ export const SchemaManager: React.FC<SchemaManagerProps> = ({
         onClose={() => {
           setShowCreateModal(false);
           setCreateCustomSchema(false);
-          setCustomColumns([{ name: "", type: "text" }]);
+          setCustomColumns([{ id: uuidv4(), name: "", type: "text" }]);
         }}
         title="Create New Schema"
       >
@@ -559,7 +563,7 @@ export const SchemaManager: React.FC<SchemaManagerProps> = ({
 
                 {customColumns.length === 0 && (
                   <div className="text-center text-gray-500 py-2">
-                    No columns added. Click "Add Column" to add one.
+                    No columns added. Click &quot;Add Column&quot; to add one.
                   </div>
                 )}
               </div>
@@ -571,7 +575,7 @@ export const SchemaManager: React.FC<SchemaManagerProps> = ({
               onClick={() => {
                 setShowCreateModal(false);
                 setCreateCustomSchema(false);
-                setCustomColumns([{ name: "", type: "text" }]);
+                setCustomColumns([{ id: uuidv4(), name: "", type: "text" }]);
               }}
               className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
             >

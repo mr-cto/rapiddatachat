@@ -154,8 +154,10 @@ export class RelationshipService {
           targetField: input.targetField,
           constraints: input.constraints
             ? JSON.stringify(input.constraints)
-            : null,
-          cascading: input.cascading ? JSON.stringify(input.cascading) : null,
+            : undefined,
+          cascading: input.cascading
+            ? JSON.stringify(input.cascading)
+            : undefined,
           projectId: input.projectId,
         },
       });

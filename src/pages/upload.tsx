@@ -424,8 +424,8 @@ const UploadPage: React.FC = () => {
               {activeSchema && (
                 <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
                   <p className="text-blue-700 dark:text-blue-300 text-sm">
-                    You have an active schema. Click the "Map Columns" button
-                    below to map your file columns to the schema.
+                    You have an active schema. Click the &quot;Map Columns&quot;
+                    button below to map your file columns to the schema.
                   </p>
                 </div>
               )}
@@ -529,9 +529,9 @@ const UploadPage: React.FC = () => {
               <div className="bg-red-50 p-3 mb-4 rounded-md border border-red-200">
                 <h3 className="text-red-700 font-bold mb-1">Delete Schemas</h3>
                 <p className="text-sm text-red-600">
-                  To delete a schema, click the "Delete Schema" button next to
-                  each schema below. You can also delete a schema while editing
-                  it.
+                  To delete a schema, click the &quot;Delete Schema&quot; button
+                  next to each schema below. You can also delete a schema while
+                  editing it.
                 </p>
               </div>
 

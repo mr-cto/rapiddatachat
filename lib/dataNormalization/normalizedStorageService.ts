@@ -1,7 +1,10 @@
 import { executeQuery } from "../database";
 import { v4 as uuidv4 } from "uuid";
 import { GlobalSchema, SchemaColumn } from "../globalSchemaService";
-import { NormalizedData, NormalizationResult } from "./dataNormalizationService";
+import {
+  NormalizedData,
+  NormalizationResult,
+} from "./dataNormalizationService";
 
 /**
  * Storage architecture patterns
@@ -9,7 +12,7 @@ import { NormalizedData, NormalizationResult } from "./dataNormalizationService"
 export enum StorageArchitecturePattern {
   CENTRALIZED = "centralized",
   DECENTRALIZED = "decentralized",
-  POLYGLOT = "polyglot"
+  POLYGLOT = "polyglot",
 }
 
 /**
@@ -103,18 +106,20 @@ export class NormalizedStorageService {
     architecturePattern: StorageArchitecturePattern.CENTRALIZED,
     enableVersioning: true,
     enableHistorization: true,
-    compressionEnabled: false
+    compressionEnabled: false,
   };
 
   /**
    * Constructor
    * @param storageOptions Storage options
    */
-  constructor(private storageOptions: StorageOptions = {
-    architecturePattern: StorageArchitecturePattern.CENTRALIZED,
-    enableVersioning: true,
-    enableHistorization: true
-  }) {
+  constructor(
+    private storageOptions: StorageOptions = {
+      architecturePattern: StorageArchitecturePattern.CENTRALIZED,
+      enableVersioning: true,
+      enableHistorization: true,
+    }
+  ) {
     this.storageOptions = { ...this.defaultStorageOptions, ...storageOptions };
   }
 
@@ -125,7 +130,9 @@ export class NormalizedStorageService {
   async initializeStorage(): Promise<boolean> {
     try {
       // Create the normalized_records table if it doesn't exist
-      const normalizedRecordsExists = await this.checkIfTableExists("normalized_records");
+      const normalizedRecordsExists = await this.checkIfTableExists(
+        "normalized_records"
+      );
       if (!normalizedRecordsExists) {
         await executeQuery(`
           CREATE TABLE normalized_records (
@@ -157,7 +164,9 @@ export class NormalizedStorageService {
 
       // Create the normalized_record_history table if historization is enabled
       if (this.storageOptions.enableHistorization) {
-        const historyTableExists = await this.checkIfTableExists("normalized_record_history");
+        const historyTableExists = await this.checkIfTableExists(
+          "normalized_record_history"
+        );
         if (!historyTableExists) {
           await executeQuery(`
             CREATE TABLE normalized_record_history (
@@ -187,8 +196,13 @@ export class NormalizedStorageService {
       }
 
       // Create the normalized_record_metadata table for polyglot storage
-      if (this.storageOptions.architecturePattern === StorageArchitecturePattern.POLYGLOT) {
-        const metadataTableExists = await this.checkIfTableExists("normalized_record_metadata");
+      if (
+        this.storageOptions.architecturePattern ===
+        StorageArchitecturePattern.POLYGLOT
+      ) {
+        const metadataTableExists = await this.checkIfTableExists(
+          "normalized_record_metadata"
+        );
         if (!metadataTableExists) {
           await executeQuery(`
             CREATE TABLE normalized_record_metadata (
@@ -197,7 +211,30 @@ export class NormalizedStorageService {
               storage_type TEXT NOT NULL,
               storage_location TEXT NOT NULL,
               created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-/**
+              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              metadata JSONB
+            )
+          `);
+
+          // Create indexes
+          await executeQuery(`
+            CREATE INDEX idx_normalized_record_metadata_record_id ON normalized_record_metadata (record_id);
+            CREATE INDEX idx_normalized_record_metadata_storage_type ON normalized_record_metadata (storage_type);
+          `);
+        }
+      }
+
+      return true;
+    } catch (error) {
+      console.error(
+        "[NormalizedStorageService] Error initializing storage:",
+        error
+      );
+      return false;
+    }
+  }
+
+  /**
    * Store normalized data
    * @param projectId Project ID
    * @param fileId File ID
@@ -215,7 +252,10 @@ export class NormalizedStorageService {
   ): Promise<NormalizationResult> {
     try {
       console.log(
-        "[NormalizedStorageService] Storing normalized data for file " + fileId + " in project " + projectId
+        "[NormalizedStorageService] Storing normalized data for file " +
+          fileId +
+          " in project " +
+          projectId
       );
 
       // Merge options with defaults
@@ -232,8 +272,18 @@ export class NormalizedStorageService {
 
       // Process each data record
       const normalizedCount = data.length;
-      const errors = [];
-      const warnings = [];
+      const errors: Array<{
+        rowIndex: number;
+        column: string;
+        value: any;
+        error: string;
+      }> = [];
+      const warnings: Array<{
+        rowIndex: number;
+        column: string;
+        value: any;
+        warning: string;
+      }> = [];
 
       for (const record of data) {
         try {
@@ -241,7 +291,7 @@ export class NormalizedStorageService {
           const recordId = `record_${uuidv4()}`;
 
           // Generate partition key if a partition strategy is defined
-          let partitionKey = null;
+          let partitionKey: string | undefined = undefined;
           if (mergedOptions.partitionStrategy) {
             partitionKey = this.generatePartitionKey(
               record,
@@ -285,10 +335,15 @@ export class NormalizedStorageService {
               );
               break;
             default:
-              throw new Error(`Unsupported architecture pattern: ${mergedOptions.architecturePattern}`);
+              throw new Error(
+                `Unsupported architecture pattern: ${mergedOptions.architecturePattern}`
+              );
           }
         } catch (error) {
-          console.error("[NormalizedStorageService] Error storing record:", error);
+          console.error(
+            "[NormalizedStorageService] Error storing record:",
+            error
+          );
           errors.push({
             rowIndex: data.indexOf(record),
             column: "",
@@ -432,7 +487,10 @@ export class NormalizedStorageService {
     }
 
     // Create a table for the schema if it doesn't exist
-    const tableName = `normalized_data_${schemaId.replace(/[^a-zA-Z0-9_]/g, "_")}`;
+    const tableName = `normalized_data_${schemaId.replace(
+      /[^a-zA-Z0-9_]/g,
+      "_"
+    )}`;
     const tableExists = await this.checkIfTableExists(tableName);
 
     if (!tableExists) {
@@ -474,7 +532,10 @@ export class NormalizedStorageService {
             columnType = "TEXT";
         }
 
-        createTableSQL += `${column.name.replace(/[^a-zA-Z0-9_]/g, "_")} ${columnType}${column.isRequired ? " NOT NULL" : ""},\n`;
+        createTableSQL += `${column.name.replace(
+          /[^a-zA-Z0-9_]/g,
+          "_"
+        )} ${columnType}${column.isRequired ? " NOT NULL" : ""},\n`;
       }
 
       // Remove the trailing comma and close the statement
@@ -489,7 +550,11 @@ export class NormalizedStorageService {
         CREATE INDEX idx_${tableName}_file_id ON ${tableName} (file_id);
         CREATE INDEX idx_${tableName}_version ON ${tableName} (version);
         CREATE INDEX idx_${tableName}_is_active ON ${tableName} (is_active);
-        ${partitionKey ? `CREATE INDEX idx_${tableName}_partition_key ON ${tableName} (partition_key);` : ""}
+        ${
+          partitionKey
+            ? `CREATE INDEX idx_${tableName}_partition_key ON ${tableName} (partition_key);`
+            : ""
+        }
       `);
     }
 
@@ -513,10 +578,10 @@ export class NormalizedStorageService {
     for (const column of schema.columns) {
       const columnName = column.name.replace(/[^a-zA-Z0-9_]/g, "_");
       columnNames.push(columnName);
-      
+
       // Get the value from the data
       const value = data[column.name];
-      
+
       // Format the value based on the column type
       if (value === null || value === undefined) {
         columnValues.push("NULL");
@@ -656,7 +721,7 @@ export class NormalizedStorageService {
           version,
           schemaId,
           projectId,
-          fileId
+          fileId,
         })}'
       )
     `);
@@ -688,25 +753,6 @@ export class NormalizedStorageService {
           'INSERT'
         )
       `);
-    }
-  }
-              updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-              metadata JSONB
-            )
-          `);
-
-          // Create indexes
-          await executeQuery(`
-            CREATE INDEX idx_normalized_record_metadata_record_id ON normalized_record_metadata (record_id);
-            CREATE INDEX idx_normalized_record_metadata_storage_type ON normalized_record_metadata (storage_type);
-          `);
-        }
-      }
-
-      return true;
-    } catch (error) {
-      console.error("[NormalizedStorageService] Error initializing storage:", error);
-      return false;
     }
   }
 
@@ -758,13 +804,13 @@ export class NormalizedStorageService {
       // Add version filter
       if (options?.version) {
         query += ` AND version = $${paramIndex++}`;
-        queryParams.push(options.version);
+        queryParams.push(String(options.version));
       }
 
       // Add as-of-date filter
       if (options?.asOfDate) {
         query += ` AND created_at <= $${paramIndex++}`;
-        queryParams.push(options.asOfDate);
+        queryParams.push(options.asOfDate.toISOString());
       }
 
       // Add custom filters
@@ -772,46 +818,48 @@ export class NormalizedStorageService {
         for (const [field, value] of Object.entries(options.filters)) {
           if (value === null) {
             query += ` AND data->>'${field}' IS NULL`;
-          } else if (typeof value === 'object' && value !== null) {
+          } else if (typeof value === "object" && value !== null) {
             // Handle operator-based filters
-            if ('eq' in value) {
+            if ("eq" in value) {
               query += ` AND data->>'${field}' = $${paramIndex++}`;
               queryParams.push(value.eq);
             }
-            if ('neq' in value) {
+            if ("neq" in value) {
               query += ` AND data->>'${field}' != $${paramIndex++}`;
               queryParams.push(value.neq);
             }
-            if ('gt' in value) {
+            if ("gt" in value) {
               query += ` AND (data->>'${field}')::numeric > $${paramIndex++}`;
               queryParams.push(value.gt);
             }
-            if ('gte' in value) {
+            if ("gte" in value) {
               query += ` AND (data->>'${field}')::numeric >= $${paramIndex++}`;
               queryParams.push(value.gte);
             }
-            if ('lt' in value) {
+            if ("lt" in value) {
               query += ` AND (data->>'${field}')::numeric < $${paramIndex++}`;
               queryParams.push(value.lt);
             }
-            if ('lte' in value) {
+            if ("lte" in value) {
               query += ` AND (data->>'${field}')::numeric <= $${paramIndex++}`;
               queryParams.push(value.lte);
             }
-            if ('contains' in value) {
+            if ("contains" in value) {
               query += ` AND data->>'${field}' LIKE $${paramIndex++}`;
               queryParams.push(`%${value.contains}%`);
             }
-            if ('startsWith' in value) {
+            if ("startsWith" in value) {
               query += ` AND data->>'${field}' LIKE $${paramIndex++}`;
               queryParams.push(`${value.startsWith}%`);
             }
-            if ('endsWith' in value) {
+            if ("endsWith" in value) {
               query += ` AND data->>'${field}' LIKE $${paramIndex++}`;
               queryParams.push(`%${value.endsWith}`);
             }
-            if ('in' in value && Array.isArray(value.in)) {
-              const placeholders = value.in.map(() => `$${paramIndex++}`).join(', ');
+            if ("in" in value && Array.isArray(value.in)) {
+              const placeholders = value.in
+                .map(() => `$${paramIndex++}`)
+                .join(", ");
               query += ` AND data->>'${field}' IN (${placeholders})`;
               queryParams.push(...value.in);
             }
@@ -825,7 +873,9 @@ export class NormalizedStorageService {
 
       // Add order by
       if (options?.orderBy) {
-        query += ` ORDER BY data->>'${options.orderBy}' ${options.orderDirection || 'ASC'}`;
+        query += ` ORDER BY data->>'${options.orderBy}' ${
+          options.orderDirection || "ASC"
+        }`;
       } else {
         query += ` ORDER BY created_at DESC`;
       }
@@ -833,11 +883,11 @@ export class NormalizedStorageService {
       // Add limit and offset
       if (options?.limit) {
         query += ` LIMIT $${paramIndex++}`;
-        queryParams.push(options.limit);
+        queryParams.push(String(options.limit));
 
         if (options.offset) {
           query += ` OFFSET $${paramIndex++}`;
-          queryParams.push(options.offset);
+          queryParams.push(String(options.offset));
         }
       }
 
@@ -929,13 +979,13 @@ export class NormalizedStorageService {
       // Add version filter
       if (options?.version) {
         query += ` AND version = $${paramIndex++}`;
-        queryParams.push(options.version);
+        queryParams.push(String(options.version));
       }
 
       // Add as-of-date filter
       if (options?.asOfDate) {
         query += ` AND created_at <= $${paramIndex++}`;
-        queryParams.push(options.asOfDate);
+        queryParams.push(options.asOfDate.toISOString());
       }
 
       // Add custom filters
@@ -943,46 +993,48 @@ export class NormalizedStorageService {
         for (const [field, value] of Object.entries(options.filters)) {
           if (value === null) {
             query += ` AND data->>'${field}' IS NULL`;
-          } else if (typeof value === 'object' && value !== null) {
+          } else if (typeof value === "object" && value !== null) {
             // Handle operator-based filters
-            if ('eq' in value) {
+            if ("eq" in value) {
               query += ` AND data->>'${field}' = $${paramIndex++}`;
               queryParams.push(value.eq);
             }
-            if ('neq' in value) {
+            if ("neq" in value) {
               query += ` AND data->>'${field}' != $${paramIndex++}`;
               queryParams.push(value.neq);
             }
-            if ('gt' in value) {
+            if ("gt" in value) {
               query += ` AND (data->>'${field}')::numeric > $${paramIndex++}`;
               queryParams.push(value.gt);
             }
-            if ('gte' in value) {
+            if ("gte" in value) {
               query += ` AND (data->>'${field}')::numeric >= $${paramIndex++}`;
               queryParams.push(value.gte);
             }
-            if ('lt' in value) {
+            if ("lt" in value) {
               query += ` AND (data->>'${field}')::numeric < $${paramIndex++}`;
               queryParams.push(value.lt);
             }
-            if ('lte' in value) {
+            if ("lte" in value) {
               query += ` AND (data->>'${field}')::numeric <= $${paramIndex++}`;
               queryParams.push(value.lte);
             }
-            if ('contains' in value) {
+            if ("contains" in value) {
               query += ` AND data->>'${field}' LIKE $${paramIndex++}`;
               queryParams.push(`%${value.contains}%`);
             }
-            if ('startsWith' in value) {
+            if ("startsWith" in value) {
               query += ` AND data->>'${field}' LIKE $${paramIndex++}`;
               queryParams.push(`${value.startsWith}%`);
             }
-            if ('endsWith' in value) {
+            if ("endsWith" in value) {
               query += ` AND data->>'${field}' LIKE $${paramIndex++}`;
               queryParams.push(`%${value.endsWith}`);
             }
-            if ('in' in value && Array.isArray(value.in)) {
-              const placeholders = value.in.map(() => `$${paramIndex++}`).join(', ');
+            if ("in" in value && Array.isArray(value.in)) {
+              const placeholders = value.in
+                .map(() => `$${paramIndex++}`)
+                .join(", ");
               query += ` AND data->>'${field}' IN (${placeholders})`;
               queryParams.push(...value.in);
             }
@@ -996,7 +1048,9 @@ export class NormalizedStorageService {
 
       // Add order by
       if (options?.orderBy) {
-        query += ` ORDER BY data->>'${options.orderBy}' ${options.orderDirection || 'ASC'}`;
+        query += ` ORDER BY data->>'${options.orderBy}' ${
+          options.orderDirection || "ASC"
+        }`;
       } else {
         query += ` ORDER BY created_at DESC`;
       }
@@ -1004,11 +1058,11 @@ export class NormalizedStorageService {
       // Add limit and offset
       if (options?.limit) {
         query += ` LIMIT $${paramIndex++}`;
-        queryParams.push(options.limit);
+        queryParams.push(String(options.limit));
 
         if (options.offset) {
           query += ` OFFSET $${paramIndex++}`;
-          queryParams.push(options.offset);
+          queryParams.push(String(options.offset));
         }
       }
 
@@ -1074,7 +1128,7 @@ export class NormalizedStorageService {
       `;
 
       const result = await executeQuery(query, [schemaId]);
-      
+
       if (!result || result.rows.length === 0) {
         return null;
       }
@@ -1103,7 +1157,7 @@ export class NormalizedStorageService {
       `;
 
       const columnsResult = await executeQuery(columnsQuery, [schemaId]);
-      
+
       if (columnsResult && columnsResult.rows.length > 0) {
         schema.columns = columnsResult.rows;
       } else {
@@ -1112,7 +1166,10 @@ export class NormalizedStorageService {
 
       return schema;
     } catch (error) {
-      console.error(`[NormalizedStorageService] Error getting schema ${schemaId}:`, error);
+      console.error(
+        `[NormalizedStorageService] Error getting schema ${schemaId}:`,
+        error
+      );
       throw error;
     }
   }
@@ -1135,7 +1192,10 @@ export class NormalizedStorageService {
       const result = await executeQuery(query, [tableName]);
       return result.rows[0].exists;
     } catch (error) {
-      console.error(`[NormalizedStorageService] Error checking if table ${tableName} exists:`, error);
+      console.error(
+        `[NormalizedStorageService] Error checking if table ${tableName} exists:`,
+        error
+      );
       throw error;
     }
   }
@@ -1151,60 +1211,67 @@ export class NormalizedStorageService {
     const value = data[field];
 
     if (value === undefined) {
-      return 'default';
+      return "default";
     }
 
     switch (strategy.type) {
-      case 'time':
+      case "time":
         const date = new Date(value);
-        const interval = strategy.interval || 'day';
-        
+        const interval = strategy.interval || "day";
+
         switch (interval) {
-          case 'day':
-            return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
-          case 'week':
+          case "day":
+            return `${date.getFullYear()}-${
+              date.getMonth() + 1
+            }-${date.getDate()}`;
+          case "week":
             const firstDayOfWeek = new Date(date);
             const day = date.getDay();
             const diff = date.getDate() - day + (day === 0 ? -6 : 1);
             firstDayOfWeek.setDate(diff);
-            return `${firstDayOfWeek.getFullYear()}-${firstDayOfWeek.getMonth() + 1}-${firstDayOfWeek.getDate()}`;
-          case 'month':
+            return `${firstDayOfWeek.getFullYear()}-${
+              firstDayOfWeek.getMonth() + 1
+            }-${firstDayOfWeek.getDate()}`;
+          case "month":
             return `${date.getFullYear()}-${date.getMonth() + 1}`;
-          case 'year':
+          case "year":
             return `${date.getFullYear()}`;
           default:
-            return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+            return `${date.getFullYear()}-${
+              date.getMonth() + 1
+            }-${date.getDate()}`;
         }
-      
-      case 'hash':
+
+      case "hash":
         // Simple hash function
         const hash = Array.from(String(value))
-          .reduce((hash, char) => ((hash << 5) - hash) + char.charCodeAt(0), 0)
+          .reduce((hash, char) => (hash << 5) - hash + char.charCodeAt(0), 0)
           .toString(16);
         return hash;
-      
-      case 'range':
+
+      case "range":
         if (!strategy.ranges || !strategy.ranges.length) {
-          return 'default';
+          return "default";
         }
-        
+
         for (let i = 0; i < strategy.ranges.length; i++) {
           const range = strategy.ranges[i];
           if (value >= range.min && value <= range.max) {
             return `range_${i}`;
           }
         }
-        return 'default';
-      
-      case 'list':
+        return "default";
+
+      case "list":
         if (!strategy.values || !strategy.values.length) {
-          return 'default';
+          return "default";
         }
-        
+
         const index = strategy.values.indexOf(value);
-        return index >= 0 ? `list_${index}` : 'default';
-      
+        return index >= 0 ? `list_${index}` : "default";
+
       default:
-        return 'default';
+        return "default";
     }
   }
+}

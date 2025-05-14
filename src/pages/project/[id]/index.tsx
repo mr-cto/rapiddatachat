@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { useSession } from "next-auth/react";
-import ProjectDashboard from "../../../components/project/ProjectDashboard";
+import ProjectDashboard from "../../../../components/project/ProjectDashboard";
 
 interface Project {
   id: string;

@@ -187,10 +187,16 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
       // Filter out mappings with empty schema columns
       const validMappings = mappings.filter((m) => m.schemaColumn);
 
+      // Convert array of mappings to Record<string, string> format
+      const mappingsRecord: Record<string, string> = {};
+      validMappings.forEach((mapping) => {
+        mappingsRecord[mapping.fileColumn] = mapping.schemaColumn;
+      });
+
       const columnMapping: ColumnMapping = {
         fileId,
         schemaId: selectedSchema.id,
-        mappings: validMappings,
+        mappings: mappingsRecord,
       };
 
       const response = await fetch("/api/column-mappings", {

@@ -2,7 +2,7 @@ import { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import {
-  SchemaManagementService,
+  SchemaService as SchemaManagementService,
   ColumnMapping,
 } from "../../../lib/schemaManagement";
 

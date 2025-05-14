@@ -18,7 +18,7 @@ export class TransformationService {
       }
 
       // Convert value to string for most transformations
-      let stringValue = String(value);
+      const stringValue = String(value);
 
       // Apply transformation based on rule type
       switch (rule.type) {
@@ -286,7 +286,7 @@ export class TransformationService {
       };
 
       // Replace function names with context references
-      let safeFormula = formula
+      const safeFormula = formula
         .replace(/CONCAT\(/g, "context.CONCAT(")
         .replace(/SUBSTRING\(/g, "context.SUBSTRING(")
         .replace(/REPLACE\(/g, "context.REPLACE(")

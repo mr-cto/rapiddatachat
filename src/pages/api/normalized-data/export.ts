@@ -119,7 +119,7 @@ async function getDataForExport(
 ): Promise<any[]> {
   try {
     // Start building the query
-    let selectClause = "SELECT nr.data";
+    const selectClause = "SELECT nr.data";
 
     // Build from clause
     const fromClause = "FROM normalized_records nr";

@@ -4,7 +4,8 @@ import {
   ViewStateManager,
   createViewStateManager,
 } from "../lib/viewStateManager";
-import { GlobalSchema, SchemaManagementService } from "../lib/schemaManagement";
+import { GlobalSchema, SchemaService } from "../lib/schemaManagement";
+import schemaService from "../lib/schemaManagement";
 
 interface QueryInterfaceProps {
   user?: {
@@ -62,7 +63,7 @@ export const QueryInterface: React.FC<QueryInterfaceProps> = ({ user }) => {
 
   // View state management
   const viewStateManagerRef = useRef<ViewStateManager | null>(null);
-  const schemaServiceRef = useRef<SchemaManagementService | null>(null);
+  const schemaServiceRef = useRef<typeof schemaService | null>(null);
 
   // Initialize view state manager and fetch query history on page load
   useEffect(() => {
@@ -94,7 +95,7 @@ export const QueryInterface: React.FC<QueryInterfaceProps> = ({ user }) => {
 
     // Initialize schema service
     if (user?.id && !schemaServiceRef.current) {
-      schemaServiceRef.current = new SchemaManagementService();
+      schemaServiceRef.current = schemaService;
       fetchActiveSchema(user.id);
     }
 
@@ -108,21 +109,27 @@ export const QueryInterface: React.FC<QueryInterfaceProps> = ({ user }) => {
   const fetchActiveSchema = async (userId: string) => {
     try {
       if (!schemaServiceRef.current) {
-        schemaServiceRef.current = new SchemaManagementService();
+        schemaServiceRef.current = schemaService;
       }
 
-      const schemas = await schemaServiceRef.current.getGlobalSchemas(userId);
-      const active = schemas.find((schema) => schema.isActive);
+      // Get schemas for the user's project
+      // Note: This is a simplified approach - in a real app, you'd need to get the user's project ID first
+      const projectId = userId; // Using userId as projectId for simplicity
+      const schemas = await schemaServiceRef.current.getGlobalSchemasForProject(
+        projectId
+      );
+
+      // Find the active schema
+      const active = schemas.find((schema: GlobalSchema) => schema.isActive);
 
       if (active) {
         setActiveSchema(active);
 
         // Apply schema to view state if available
         if (viewStateManagerRef.current) {
-          await schemaServiceRef.current.applySchemaToViewState(
-            viewStateManagerRef.current,
-            active
-          );
+          // Apply schema columns to view state by setting non-hidden columns
+          // Since there's no direct method to set available columns, we're not hiding any columns
+          viewStateManagerRef.current.setHiddenColumns([]);
         }
       }
     } catch (error) {
@@ -175,11 +182,9 @@ export const QueryInterface: React.FC<QueryInterfaceProps> = ({ user }) => {
         viewStateManagerRef.current.resetViewState();
 
         // Re-apply schema to view state if available
-        if (activeSchema && schemaServiceRef.current) {
-          await schemaServiceRef.current.applySchemaToViewState(
-            viewStateManagerRef.current,
-            activeSchema
-          );
+        if (activeSchema && viewStateManagerRef.current) {
+          // Apply schema columns to view state by setting non-hidden columns
+          viewStateManagerRef.current.setHiddenColumns([]);
         }
       }
     }

@@ -130,13 +130,15 @@ export class ErrorHandlingService {
           id,
           errorType: input.type,
           errorMessage: input.message,
-          errorContext: input.context ? JSON.stringify(input.context) : null,
+          errorContext: input.context
+            ? JSON.stringify(input.context)
+            : undefined,
           errorStack: input.stack,
           requestId: input.requestId,
           userId: input.userId,
           systemState: input.systemState
             ? JSON.stringify(input.systemState)
-            : null,
+            : undefined,
           projectId: input.projectId,
         },
       });
@@ -247,15 +249,13 @@ export class ErrorHandlingService {
       await this.prisma.deadLetterQueueItem.create({
         data: {
           id,
-          operationType: input.operationType,
-          operationData: JSON.stringify(input.operationData),
-          errorType: input.errorType,
-          errorMessage: input.errorMessage,
+          operation: input.operationType,
+          payload: JSON.stringify(input.operationData),
+          error: input.errorMessage,
           retryCount: 0,
-          maxRetries: input.maxRetries,
-          nextRetryAt,
-          projectId: input.projectId,
-          fileId: input.fileId,
+          timestamp: new Date(),
+          projectId: input.projectId || undefined,
+          fileId: input.fileId || "unknown", // fileId is required
         },
       });
 
@@ -316,7 +316,7 @@ export class ErrorHandlingService {
         await this.prisma.deadLetterQueueItem.findMany({
           where: filter,
           orderBy: {
-            createdAt: "desc",
+            timestamp: "desc",
           },
           take: limit,
           skip: offset,
@@ -339,15 +339,15 @@ export class ErrorHandlingService {
       // Get items ready for retry
       const items = await this.prisma.deadLetterQueueItem.findMany({
         where: {
-          nextRetryAt: {
+          lastRetryAt: {
             lte: new Date(),
           },
           retryCount: {
-            lt: this.prisma.deadLetterQueueItem.fields.maxRetries,
+            lt: 3, // Default max retries
           },
         },
         orderBy: {
-          nextRetryAt: "asc",
+          timestamp: "asc",
         },
         take: limit,
       });
@@ -374,7 +374,7 @@ export class ErrorHandlingService {
             },
             data: {
               retryCount,
-              nextRetryAt,
+              lastRetryAt: new Date(),
             },
           });
 
@@ -383,11 +383,11 @@ export class ErrorHandlingService {
           // For now, we just log the retry attempt
 
           await this.logError({
-            type: item.errorType as ErrorType,
-            message: `Retry ${retryCount}/${item.maxRetries} for operation ${item.operationType}`,
+            type: ErrorType.SYSTEM_ERROR,
+            message: `Retry ${retryCount}/3 for operation ${item.operation}`,
             context: {
-              operationType: item.operationType,
-              operationData: JSON.parse(item.operationData as string),
+              operation: item.operation,
+              payload: JSON.parse(item.payload),
               deadLetterQueueItemId: item.id,
             },
             projectId: item.projectId || undefined,
@@ -459,7 +459,7 @@ export class ErrorHandlingService {
         },
         data: {
           retryCount,
-          nextRetryAt,
+          lastRetryAt: new Date(),
         },
       });
 
@@ -468,11 +468,11 @@ export class ErrorHandlingService {
       // For now, we just log the retry attempt
 
       await this.logError({
-        type: item.errorType as ErrorType,
-        message: `Manual retry ${retryCount}/${item.maxRetries} for operation ${item.operationType}`,
+        type: ErrorType.SYSTEM_ERROR,
+        message: `Manual retry ${retryCount}/3 for operation ${item.operation}`,
         context: {
-          operationType: item.operationType,
-          operationData: JSON.parse(item.operationData as string),
+          operation: item.operation,
+          payload: JSON.parse(item.payload),
           deadLetterQueueItemId: item.id,
         },
         projectId: item.projectId || undefined,
@@ -562,9 +562,7 @@ export class ErrorHandlingService {
             status: input.status,
             lastCheckAt: new Date(),
             lastError: input.lastError,
-            metrics: input.metrics
-              ? JSON.stringify(input.metrics)
-              : existingHealth.metrics,
+            metrics: input.metrics ? JSON.stringify(input.metrics) : undefined,
             updatedAt: new Date(),
           },
         });
@@ -577,7 +575,7 @@ export class ErrorHandlingService {
             status: input.status,
             lastCheckAt: new Date(),
             lastError: input.lastError,
-            metrics: input.metrics ? JSON.stringify(input.metrics) : null,
+            metrics: input.metrics ? JSON.stringify(input.metrics) : undefined,
             createdAt: new Date(),
             updatedAt: new Date(),
           },

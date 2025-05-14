@@ -385,7 +385,9 @@ export class ValidationService {
       }
 
       const requiredFields = parameters.requiredFields;
-      const missingFields = requiredFields.filter((field) => !(field in value));
+      const missingFields = requiredFields.filter(
+        (field: string) => !(field in value)
+      );
 
       return {
         valid: missingFields.length === 0,
@@ -453,7 +455,7 @@ export class ValidationService {
           type: input.type,
           parameters: input.parameters
             ? JSON.stringify(input.parameters)
-            : null,
+            : undefined,
           message: input.message,
           severity: input.severity,
           remediation: input.remediation,

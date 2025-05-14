@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { useSession } from "next-auth/react";
-import SchemaDocumentation from "../../../../components/schema/SchemaDocumentation";
-import { GlobalSchema } from "../../../../lib/globalSchemaService";
+import SchemaDocumentation from "../../../../../components/schema/SchemaDocumentation";
+import { GlobalSchema } from "../../../../../lib/globalSchemaService";
 
 /**
  * Schema Documentation Page

@@ -553,6 +553,125 @@ export class SchemaVersionService {
       return false;
     }
   }
+
+  /**
+   * Generate a change script for schema comparison
+   * @param comparison Schema comparison result
+   * @returns string Change script
+   */
+  generateChangeScript(comparison: SchemaComparisonResult): string {
+    const lines: string[] = [];
+
+    // Add header
+    lines.push("-- Schema Change Script");
+    lines.push("-- Generated at " + new Date().toISOString());
+    lines.push("");
+
+    // Add added columns
+    if (comparison.added.length > 0) {
+      lines.push("-- Added Columns");
+      for (const column of comparison.added) {
+        const typeStr = this.getSqlType(column.type);
+        const nullStr = column.isRequired ? "NOT NULL" : "NULL";
+        const defaultStr = column.defaultValue
+          ? `DEFAULT ${column.defaultValue}`
+          : "";
+        const primaryKeyStr = column.isPrimaryKey ? "PRIMARY KEY" : "";
+
+        lines.push(
+          `ALTER TABLE [table_name] ADD COLUMN ${column.name} ${typeStr} ${nullStr} ${defaultStr} ${primaryKeyStr};`
+        );
+      }
+      lines.push("");
+    }
+
+    // Add removed columns
+    if (comparison.removed.length > 0) {
+      lines.push("-- Removed Columns");
+      for (const column of comparison.removed) {
+        lines.push(`ALTER TABLE [table_name] DROP COLUMN ${column.name};`);
+      }
+      lines.push("");
+    }
+
+    // Add modified columns
+    if (comparison.modified.length > 0) {
+      lines.push("-- Modified Columns");
+      for (const change of comparison.modified) {
+        const before = change.before;
+        const after = change.after;
+
+        // Type change
+        if (after.type && before.type !== after.type) {
+          const typeStr = this.getSqlType(after.type);
+          lines.push(
+            `ALTER TABLE [table_name] ALTER COLUMN ${change.columnName} TYPE ${typeStr};`
+          );
+        }
+
+        // Nullability change
+        if (
+          after.isRequired !== undefined &&
+          before.isRequired !== after.isRequired
+        ) {
+          const nullStr = after.isRequired ? "NOT NULL" : "NULL";
+          lines.push(
+            `ALTER TABLE [table_name] ALTER COLUMN ${change.columnName} SET ${nullStr};`
+          );
+        }
+
+        // Default value change
+        if (
+          after.defaultValue !== undefined &&
+          before.defaultValue !== after.defaultValue
+        ) {
+          if (after.defaultValue) {
+            lines.push(
+              `ALTER TABLE [table_name] ALTER COLUMN ${change.columnName} SET DEFAULT ${after.defaultValue};`
+            );
+          } else {
+            lines.push(
+              `ALTER TABLE [table_name] ALTER COLUMN ${change.columnName} DROP DEFAULT;`
+            );
+          }
+        }
+      }
+      lines.push("");
+    }
+
+    // Add footer
+    lines.push("-- End of Change Script");
+
+    return lines.join("\n");
+  }
+
+  /**
+   * Get SQL type from schema column type
+   * @param type Schema column type
+   * @returns string SQL type
+   */
+  private getSqlType(type: string): string {
+    switch (type) {
+      case "string":
+        return "VARCHAR(255)";
+      case "integer":
+        return "INTEGER";
+      case "decimal":
+        return "DECIMAL(18,2)";
+      case "boolean":
+        return "BOOLEAN";
+      case "date":
+        return "DATE";
+      case "timestamp":
+        return "TIMESTAMP";
+      case "json":
+        return "JSONB";
+      case "array":
+        return "JSONB";
+      default:
+        return "VARCHAR(255)";
+    }
+  }
 }
 
 export default new SchemaVersionService();

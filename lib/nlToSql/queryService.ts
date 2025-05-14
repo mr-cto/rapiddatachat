@@ -652,10 +652,7 @@ export class QueryService {
       ];
 
       for (const operation of dangerousOperations) {
-        // Use a more precise regex to check for actual SQL operations
-        // This looks for the operation as a standalone word, not as part of another word
-        const operationRegex = new RegExp(`\\b${operation}\\b`, "i");
-        if (operationRegex.test(fixedQuery.toUpperCase())) {
+        if (fixedQuery.toUpperCase().includes(operation)) {
           return {
             isValid: false,
             error: `Query contains dangerous operation: ${operation}`,

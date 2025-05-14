@@ -502,7 +502,9 @@ async function applyMappingsWithTransformations(
  */
 async function checkIfTableExists(tableName: string): Promise<boolean> {
   try {
-    const { executeQuery: dbExecuteQuery } = require("../../../lib/database");
+    // Use dynamic import instead of require
+    const database = await import("../../../lib/database");
+    const { executeQuery: dbExecuteQuery } = database;
     const result = (await dbExecuteQuery(`
       SELECT EXISTS (
         SELECT 1 FROM information_schema.tables
@@ -526,6 +528,8 @@ async function checkIfTableExists(tableName: string): Promise<boolean> {
  * @returns Promise<any> Query result
  */
 async function executeQuery(query: string): Promise<any> {
-  const { executeQuery: dbExecuteQuery } = require("../../../lib/database");
+  // Use dynamic import instead of require
+  const database = await import("../../../lib/database");
+  const { executeQuery: dbExecuteQuery } = database;
   return dbExecuteQuery(query);
 }

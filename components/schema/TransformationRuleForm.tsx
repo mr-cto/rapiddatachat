@@ -528,8 +528,9 @@ const TransformationRuleForm: React.FC<TransformationRuleFormProps> = ({
               </p>
             )}
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              Use 'value' to refer to the column value. Supported functions:
-              CONCAT, SUBSTRING, REPLACE, ROUND, FLOOR, CEILING, ABS, etc.
+              Use &apos;value&apos; to refer to the column value. Supported
+              functions: CONCAT, SUBSTRING, REPLACE, ROUND, FLOOR, CEILING, ABS,
+              etc.
             </p>
           </div>
         );

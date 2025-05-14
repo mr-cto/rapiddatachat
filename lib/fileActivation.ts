@@ -1,38 +1,34 @@
 import { executeQuery } from "./database";
-import { ErrorType, ErrorSeverity, handleFileError } from "./errorHandling";
+import { handleFileError, ErrorType, ErrorSeverity } from "./errorHandling";
 
 /**
- * Check if a file exists
- * @param fileId File ID
- * @returns Promise<boolean> True if file exists, false otherwise
+ * Check if a view exists
+ * @param viewName View name
+ * @returns Promise<boolean> True if the view exists
  */
-export async function fileExists(fileId: string): Promise<boolean> {
+async function checkIfViewExists(viewName: string): Promise<boolean> {
   try {
+    console.log(`[FileActivation] Checking if view ${viewName} exists`);
+
     const result = (await executeQuery(`
-      SELECT COUNT(*) as count FROM files
-      WHERE id = '${fileId}'
-    `)) as { count: number }[];
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.views
+        WHERE table_name = '${viewName}'
+      ) as exists
+    `)) as Array<{ exists: boolean }>;
 
-    return result && result.length > 0 && result[0].count > 0;
+    const exists = result && result.length > 0 && result[0].exists;
+    console.log(`[FileActivation] View ${viewName} exists: ${exists}`);
+
+    return exists;
   } catch (error) {
-    // Check if this is a database server environment error
-    if (
-      error instanceof Error &&
-      (error.message.includes(
-        "DuckDB is only available in browser environments"
-      ) ||
-        error.message.includes("Worker is not defined") ||
-        error.message === "DuckDB is not available in server environments" ||
-        error.message.includes("Can't reach database server"))
-    ) {
-      console.warn(
-        `Database operation skipped (server environment): Unable to check if file ${fileId} exists`
-      );
-      // Assume file exists to allow the operation to continue
-      return true;
-    }
-
-    console.error(`Error checking if file exists: ${error}`);
+    console.error(
+      `[FileActivation] Error checking if view ${viewName} exists:`,
+      error
+    );
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    console.error(`[FileActivation] Error details: ${errorMessage}`);
     return false;
   }
 }
@@ -77,241 +73,6 @@ export enum FileStatus {
   ERROR = "error",
 }
 
-// In-memory storage for activation progress (fallback until database migration is applied)
-const activationProgressMap = new Map<string, {
-  progress: number;
-  startedAt: Date | null;
-  completedAt: Date | null;
-  error: string | null;
-}>();
-
-/**
- * Update activation progress in memory (fallback until database migration is applied)
- * @param fileId File ID
- * @param progress Progress percentage (0-100)
- * @param error Optional error message
- * @returns Promise<boolean> True if successful, false otherwise
- */
-export async function updateActivationProgress(
-  fileId: string,
-  progress: number,
-  error?: string
-): Promise<boolean> {
-  try {
-    // Try to update in database first (will work once migration is applied)
-    try {
-      const updateFields = error 
-        ? `activation_progress = ${progress}, activation_error = '${error}'` 
-        : `activation_progress = ${progress}`;
-      
-      await executeQuery(`
-        UPDATE files
-        SET ${updateFields}
-        WHERE id = '${fileId}'
-      `);
-    } catch (dbError) {
-      // If database update fails, use in-memory fallback
-      const currentData = activationProgressMap.get(fileId) || {
-        progress: 0,
-        startedAt: null,
-        completedAt: null,
-        error: null
-      };
-      
-      activationProgressMap.set(fileId, {
-        ...currentData,
-        progress,
-        error: error || currentData.error
-      });
-    }
-
-    console.log(`Updated file ${fileId} activation progress to ${progress}%${error ? ` with error: ${error}` : ''}`);
-    return true;
-  } catch (error) {
-    console.error(`Error updating activation progress: ${error}`);
-    return false;
-  }
-}
-
-/**
- * Start activation tracking
- * @param fileId File ID
- * @returns Promise<boolean> True if successful, false otherwise
- */
-export async function startActivation(
-  fileId: string
-): Promise<boolean> {
-  try {
-    // Try to update in database first (will work once migration is applied)
-    try {
-      await executeQuery(`
-        UPDATE files
-        SET activation_progress = 0, 
-            activation_started_at = CURRENT_TIMESTAMP,
-            activation_completed_at = NULL,
-            activation_error = NULL
-        WHERE id = '${fileId}'
-      `);
-    } catch (dbError) {
-      // If database update fails, use in-memory fallback
-      activationProgressMap.set(fileId, {
-        progress: 0,
-        startedAt: new Date(),
-        completedAt: null,
-        error: null
-      });
-    }
-
-    console.log(`Started activation tracking for file ${fileId}`);
-    return true;
-  } catch (error) {
-    console.error(`Error starting activation tracking: ${error}`);
-    return false;
-  }
-}
-
-/**
- * Complete activation tracking
- * @param fileId File ID
- * @param success Whether activation was successful
- * @param error Optional error message
- * @returns Promise<boolean> True if successful, false otherwise
- */
-export async function completeActivation(
-  fileId: string,
-  success: boolean,
-  error?: string
-): Promise<boolean> {
-  try {
-    // Try to update in database first (will work once migration is applied)
-    try {
-      const updateFields = success
-        ? `activation_progress = 100, activation_completed_at = CURRENT_TIMESTAMP, activation_error = NULL`
-        : `activation_completed_at = CURRENT_TIMESTAMP, activation_error = '${error || "Unknown error"}'`;
-      
-      await executeQuery(`
-        UPDATE files
-        SET ${updateFields}
-        WHERE id = '${fileId}'
-      `);
-    } catch (dbError) {
-      // If database update fails, use in-memory fallback
-      const currentData = activationProgressMap.get(fileId) || {
-        progress: 0,
-        startedAt: new Date(),
-        completedAt: null,
-        error: null
-      };
-      
-      activationProgressMap.set(fileId, {
-        ...currentData,
-        progress: success ? 100 : currentData.progress,
-        completedAt: new Date(),
-        error: success ? null : (error || "Unknown error")
-      });
-    }
-
-    console.log(`Completed activation tracking for file ${fileId} with ${success ? 'success' : 'failure'}`);
-    return true;
-  } catch (error) {
-    console.error(`Error completing activation tracking: ${error}`);
-    return false;
-  }
-}
-
-/**
- * Get activation progress for a file
- * @param fileId File ID
- * @returns Promise<{progress: number, startedAt: Date | null, completedAt: Date | null, error: string | null} | null> Activation progress or null if not found
- */
-export async function getActivationProgress(
-  fileId: string
-): Promise<{
-  progress: number;
-  startedAt: Date | null;
-  completedAt: Date | null;
-  error: string | null;
-} | null> {
-  try {
-    // Try to get from database first (will work once migration is applied)
-    try {
-      const result = (await executeQuery(`
-        SELECT 
-          activation_progress, 
-          activation_started_at, 
-          activation_completed_at, 
-          activation_error 
-        FROM files 
-        WHERE id = '${fileId}'
-      `)) as Array<{
-        activation_progress: number | null;
-        activation_started_at: string | null;
-        activation_completed_at: string | null;
-        activation_error: string | null;
-      }>;
-
-      if (result && result.length > 0) {
-        return {
-          progress: result[0].activation_progress || 0,
-          startedAt: result[0].activation_started_at ? new Date(result[0].activation_started_at) : null,
-          completedAt: result[0].activation_completed_at ? new Date(result[0].activation_completed_at) : null,
-          error: result[0].activation_error
-        };
-      }
-    } catch (dbError) {
-      // If database query fails, use in-memory fallback
-    }
-    
-    // Use in-memory fallback
-    const inMemoryProgress = activationProgressMap.get(fileId);
-    if (inMemoryProgress) {
-      return inMemoryProgress;
-    }
-    
-    // If no progress info found, get file status and return appropriate progress
-    const fileResult = (await executeQuery(`
-      SELECT status FROM files WHERE id = '${fileId}'
-    `)) as { status: string }[];
-    
-    if (fileResult && fileResult.length > 0) {
-      const status = fileResult[0].status;
-      if (status === FileStatus.ACTIVE) {
-        return {
-          progress: 100,
-          startedAt: null,
-          completedAt: new Date(),
-          error: null
-        };
-      } else if (status === FileStatus.PROCESSING) {
-        return {
-          progress: 50, // Estimate
-          startedAt: new Date(),
-          completedAt: null,
-          error: null
-        };
-      } else if (status === FileStatus.ERROR) {
-        return {
-          progress: 0,
-          startedAt: null,
-          completedAt: new Date(),
-          error: "Activation failed"
-        };
-      }
-    }
-    
-    // Default fallback
-    return {
-      progress: 0,
-      startedAt: null,
-      completedAt: null,
-      error: null
-    };
-  } catch (error) {
-    console.error(`Error getting activation progress: ${error}`);
-    return null;
-  }
-}
-
 /**
  * Update file status in the database
  * @param fileId File ID
@@ -343,13 +104,77 @@ export async function updateFileStatus(
         error.message.includes("Can't reach database server"))
     ) {
       console.warn(
-        `Database operation skipped (server environment): Unable to update file status for file ${fileId}`
+        `Database operation skipped (server environment): Unable to update file status to ${status} for file ${fileId}`
       );
       // Return true to allow the operation to continue
       return true;
     }
 
     console.error(`Error updating file status: ${error}`);
+
+    try {
+      await handleFileError(
+        fileId,
+        ErrorType.DATABASE,
+        ErrorSeverity.MEDIUM,
+        `Failed to update file status to ${status}`,
+        { error }
+      );
+    } catch (errorHandlingError) {
+      // If error handling itself fails due to database issues, just log it
+      if (
+        errorHandlingError instanceof Error &&
+        (errorHandlingError.message.includes(
+          "DuckDB is only available in browser environments"
+        ) ||
+          errorHandlingError.message.includes("Worker is not defined") ||
+          errorHandlingError.message ===
+            "DuckDB is not available in server environments" ||
+          errorHandlingError.message.includes("Can't reach database server"))
+      ) {
+        console.warn(
+          "Database operation skipped (server environment): Unable to store error in database"
+        );
+      } else {
+        console.error("Error handling failed:", errorHandlingError);
+      }
+    }
+
+    return false;
+  }
+}
+
+/**
+ * Check if a file exists in the database
+ * @param fileId File ID
+ * @returns Promise<boolean> True if file exists, false otherwise
+ */
+export async function fileExists(fileId: string): Promise<boolean> {
+  try {
+    const result = (await executeQuery(`
+      SELECT COUNT(*) as count FROM files WHERE id = '${fileId}'
+    `)) as { count: number }[];
+
+    return result && result.length > 0 && result[0].count > 0;
+  } catch (error) {
+    // Check if this is a database server environment error
+    if (
+      error instanceof Error &&
+      (error.message.includes(
+        "DuckDB is only available in browser environments"
+      ) ||
+        error.message.includes("Worker is not defined") ||
+        error.message === "DuckDB is not available in server environments" ||
+        error.message.includes("Can't reach database server"))
+    ) {
+      console.warn(
+        `Database operation skipped (server environment): Unable to check if file ${fileId} exists`
+      );
+      // Assume file exists to allow the operation to continue
+      return true;
+    }
+
+    console.error(`Error checking if file exists: ${error}`);
     return false;
   }
 }
@@ -612,46 +437,24 @@ export async function activateFile(
   success: boolean;
   message: string;
   dbOperationsSkipped?: boolean;
-  progress?: number;
 }> {
   try {
     let dbOperationsSkipped = false;
 
-    // Start activation tracking
-    await startActivation(fileId);
-    
-    // Update file status to processing
-    await updateFileStatus(fileId, FileStatus.PROCESSING);
-    
-    // Update progress - 10%
-    await updateActivationProgress(fileId, 10);
-
     // Check if file exists
     if (!(await fileExists(fileId))) {
-      await completeActivation(fileId, false, "File not found");
-      return { success: false, message: "File not found", progress: 0 };
+      return { success: false, message: "File not found" };
     }
-
-    // Update progress - 20%
-    await updateActivationProgress(fileId, 20);
 
     // Check if file belongs to user
     if (!(await fileExistsForUser(fileId, userId))) {
-      await completeActivation(fileId, false, "Access denied");
-      return { success: false, message: "Access denied", progress: 20 };
+      return { success: false, message: "Access denied" };
     }
-
-    // Update progress - 30%
-    await updateActivationProgress(fileId, 30);
 
     // Check if file table exists
     if (!(await fileTableExists(fileId))) {
-      await completeActivation(fileId, false, "File data not found");
-      return { success: false, message: "File data not found", progress: 30 };
+      return { success: false, message: "File data not found" };
     }
-
-    // Update progress - 40%
-    await updateActivationProgress(fileId, 40);
 
     // Get current file status
     let fileStatus = "";
@@ -679,22 +482,16 @@ export async function activateFile(
         );
         dbOperationsSkipped = true;
       } else {
-        await completeActivation(fileId, false, `Failed to get file status: ${error instanceof Error ? error.message : "Unknown error"}`);
         throw error;
       }
     }
 
-    // Update progress - 50%
-    await updateActivationProgress(fileId, 50);
-
     // Check if file is already active
     if (fileStatus === FileStatus.ACTIVE) {
-      await completeActivation(fileId, true);
       return {
         success: true,
         message: "File is already active",
         dbOperationsSkipped,
-        progress: 100
       };
     }
 
@@ -706,95 +503,49 @@ export async function activateFile(
       // Continue with activation instead of returning error
     }
 
-    // Check if file is still processing (from a previous attempt)
+    // Check if file is still processing
     if (fileStatus === FileStatus.PROCESSING) {
-      // We're already processing it now, so continue
-      console.log(
-        `[FileActivation] File ${fileId} was already in processing state, continuing with activation`
-      );
+      return {
+        success: false,
+        message: "File is still being processed and cannot be activated yet",
+        dbOperationsSkipped,
+      };
     }
-
-    // Update progress - 60%
-    await updateActivationProgress(fileId, 60);
 
     // Attach file to user workspace
-    let attachResult = false;
-    try {
-      attachResult = await attachFileToUserWorkspace(fileId, userId);
-    } catch (attachError) {
-      console.error(`[FileActivation] Error attaching file to workspace:`, attachError);
-      const errorMessage = attachError instanceof Error ? attachError.message : "Unknown error";
-      await updateActivationProgress(fileId, 60, errorMessage);
-      
-      // Try to recover by using a different approach
-      try {
-        console.log(`[FileActivation] Attempting recovery with alternative approach`);
-        attachResult = await attachFileToUserWorkspace(fileId, userId);
-      } catch (recoveryError) {
-        console.error(`[FileActivation] Recovery attempt failed:`, recoveryError);
-        await completeActivation(fileId, false, `Failed to attach file to workspace after recovery attempt: ${errorMessage}`);
-        return {
-          success: false,
-          message: `Failed to attach file to workspace: ${errorMessage}`,
-          dbOperationsSkipped,
-          progress: 60
-        };
-      }
-    }
-    
-    if (!attachResult) {
-      await completeActivation(fileId, false, "Failed to attach file to user workspace");
+    if (!(await attachFileToUserWorkspace(fileId, userId))) {
       return {
         success: false,
         message: "Failed to attach file to user workspace",
         dbOperationsSkipped,
-        progress: 60
       };
     }
 
-    // Update progress - 80%
-    await updateActivationProgress(fileId, 80);
-
     // Update file status to active
     if (!(await updateFileStatus(fileId, FileStatus.ACTIVE))) {
-      await completeActivation(fileId, false, "Failed to update file status");
       return {
         success: false,
         message: "Failed to update file status",
         dbOperationsSkipped,
-        progress: 80
       };
     }
-
-    // Update progress - 100%
-    await updateActivationProgress(fileId, 100);
-    
-    // Complete activation tracking
-    await completeActivation(fileId, true);
 
     return {
       success: true,
       message: "File activated successfully",
       dbOperationsSkipped,
-      progress: 100
     };
   } catch (error) {
     console.error(`Error activating file: ${error}`);
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
     try {
-      // Complete activation with error
-      await completeActivation(fileId, false, errorMessage);
-      
-      // Update file status to error
-      await updateFileStatus(fileId, FileStatus.ERROR);
-      
-      // Log the error
       await handleFileError(
         fileId,
         ErrorType.DATABASE,
         ErrorSeverity.MEDIUM,
-        `Failed to activate file: ${errorMessage}`,
+        `Failed to activate file: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
         { error, userId }
       );
     } catch (errorHandlingError) {
@@ -804,8 +555,9 @@ export async function activateFile(
 
     return {
       success: false,
-      message: `Failed to activate file: ${errorMessage}`,
-      progress: 0
+      message: `Failed to activate file: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`,
     };
   }
 }
@@ -830,65 +582,163 @@ export async function activateAvailableFiles(userId: string): Promise<{
       `[FileActivation] Querying for non-active files for user ${userId}`
     );
 
-    const files = (await executeQuery(`
-      SELECT id FROM files
+    // First, let's check all files for this user to see what's available
+    const allFiles = (await executeQuery(`
+      SELECT id, filename, status FROM files
+      WHERE user_id = '${userId}'
+    `)) as Array<{ id: string; filename: string; status: string }>;
+
+    console.log(
+      `[FileActivation] All files for user ${userId}:`,
+      JSON.stringify(allFiles)
+    );
+
+    // Get pending/processing files (not active, not error)
+    const pendingFiles = (await executeQuery(`
+      SELECT id, filename, status FROM files
       WHERE user_id = '${userId}'
       AND status != '${FileStatus.ACTIVE}'
-      AND status != '${FileStatus.PROCESSING}'
-    `)) as Array<{ id: string }>;
+      AND status != '${FileStatus.ERROR}'
+    `)) as Array<{ id: string; filename: string; status: string }>;
+
+    console.log(
+      `[FileActivation] Found ${pendingFiles.length} pending files for user ${userId}`
+    );
+    if (pendingFiles.length > 0) {
+      console.log(
+        `[FileActivation] Pending files:`,
+        JSON.stringify(pendingFiles)
+      );
+    }
+
+    // Also get files in error state that we can try to reactivate
+    const errorFiles = (await executeQuery(`
+      SELECT id, filename, status FROM files
+      WHERE user_id = '${userId}'
+      AND status = '${FileStatus.ERROR}'
+    `)) as Array<{ id: string; filename: string; status: string }>;
+
+    console.log(
+      `[FileActivation] Found ${errorFiles.length} error files for user ${userId}`
+    );
+    if (errorFiles.length > 0) {
+      console.log(`[FileActivation] Error files:`, JSON.stringify(errorFiles));
+    }
+
+    // Combine pending and error files for activation
+    const files = [...pendingFiles, ...errorFiles];
+    console.log(
+      `[FileActivation] Total files to attempt activation: ${files.length}`
+    );
 
     if (!files || files.length === 0) {
+      // Check for files that are already marked as active but don't have a view
       console.log(
-        `[FileActivation] No non-active files found for user ${userId}`
+        `[FileActivation] No non-active files found, checking for active files with missing views`
       );
+
+      const activeFiles = (await executeQuery(`
+        SELECT id, filename, status FROM files
+        WHERE user_id = '${userId}'
+        AND status = '${FileStatus.ACTIVE}'
+      `)) as Array<{ id: string; filename: string; status: string }>;
+
+      console.log(
+        `[FileActivation] Found ${activeFiles.length} active files for user ${userId}`
+      );
+
+      if (activeFiles.length > 0) {
+        console.log(
+          `[FileActivation] Active files:`,
+          JSON.stringify(activeFiles)
+        );
+
+        // Check each active file to see if its view exists
+        let reactivatedCount = 0;
+        for (const file of activeFiles) {
+          // Create a sanitized user ID for the view name
+          const sanitizedUserId = userId.replace(/[^a-zA-Z0-9]/g, "_");
+          const viewName = `user_${sanitizedUserId}_file_${file.id}`;
+
+          // Check if the view exists
+          const viewExists = await checkIfViewExists(viewName);
+          console.log(
+            `[FileActivation] View ${viewName} exists: ${viewExists}`
+          );
+
+          if (!viewExists) {
+            console.log(
+              `[FileActivation] View for active file ${file.id} (${file.filename}) doesn't exist, recreating it`
+            );
+
+            // Recreate the view
+            const attachResult = await attachFileToUserWorkspace(
+              file.id,
+              userId
+            );
+            if (attachResult) {
+              reactivatedCount++;
+              console.log(
+                `[FileActivation] Successfully recreated view for file ${file.id}`
+              );
+            } else {
+              console.warn(
+                `[FileActivation] Failed to recreate view for file ${file.id}`
+              );
+            }
+          }
+        }
+
+        if (reactivatedCount > 0) {
+          return {
+            success: true,
+            activatedCount: reactivatedCount,
+            message: `Successfully reactivated ${reactivatedCount} of ${activeFiles.length} files`,
+          };
+        }
+      }
+
       return {
         success: true,
         activatedCount: 0,
-        message: "No files to activate",
+        message: "No files available for activation",
       };
     }
 
-    console.log(
-      `[FileActivation] Found ${files.length} non-active files for user ${userId}`
-    );
-
-    let activatedCount = 0;
-    let failedCount = 0;
-
     // Activate each file
+    let activatedCount = 0;
     for (const file of files) {
-      console.log(`[FileActivation] Activating file ${file.id}`);
-
+      console.log(
+        `[FileActivation] Auto-activating file ${file.id} (${file.filename})`
+      );
       const result = await activateFile(file.id, userId);
 
       if (result.success) {
         activatedCount++;
+        console.log(
+          `[FileActivation] Successfully auto-activated file ${file.id}`
+        );
       } else {
-        failedCount++;
-        console.error(
-          `[FileActivation] Failed to activate file ${file.id}: ${result.message}`
+        console.warn(
+          `[FileActivation] Failed to auto-activate file ${file.id}: ${result.message}`
         );
       }
     }
 
-    console.log(
-      `[FileActivation] Activated ${activatedCount} files for user ${userId}, ${failedCount} failed`
-    );
-
     return {
       success: true,
       activatedCount,
-      message: `Activated ${activatedCount} files, ${failedCount} failed`,
+      message: `Successfully activated ${activatedCount} of ${files.length} files`,
     };
   } catch (error) {
-    console.error(`Error activating available files: ${error}`);
+    console.error(`[FileActivation] Error auto-activating files:`, error);
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
 
     return {
       success: false,
       activatedCount: 0,
-      message: `Failed to activate files: ${
-        error instanceof Error ? error.message : "Unknown error"
-      }`,
+      message: `Failed to auto-activate files: ${errorMessage}`,
     };
   }
 }

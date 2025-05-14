@@ -2,21 +2,6 @@
 
 A data chat application that allows users to upload and interact with their data.
 
-## Features
-
-### Simplified Data Upload Flow with Global Schema Management
-
-RapidDataChat now includes a streamlined data upload flow with global schema management:
-
-- **Project-Based Organization**: Create projects to group related data files
-- **Global Schema**: Define a unified schema across multiple uploads
-- **Simplified Upload Process**: Upload CSV or XLSX files without manual activation
-- **Schema Evolution**: Add new columns to your schema as your data grows
-- **Column Mapping**: Map columns from different files to your global schema
-- **Normalized Data Storage**: All data is stored in a normalized structure for efficient querying
-
-For more details, see the [Data Flow Overview](docs/data-flow-overview.md).
-
 ## Local Development Setup
 
 ### Prerequisites
@@ -77,8 +62,6 @@ For more details, see the [Data Flow Overview](docs/data-flow-overview.md).
 
    - Copy `.env.example` to `.env` if it doesn't exist
    - Update the `DATABASE_URL` if needed (default should work with the setup above)
-   - You can also use the setup script: `node scripts/setup-env.js`
-   - For more details on environment variables, see [Environment Variables Documentation](docs/environment-variables.md)
 
 3. Run Prisma migrations:
 
@@ -112,64 +95,6 @@ This script will:
 2. Run Prisma migrations
 3. Start the Next.js development server
 
-## Project Structure
-
-For an overview of the project structure and how the new data upload flow is integrated, see the [Project Structure Documentation](docs/project-structure.md).
-
-## Dependencies for Simplified Data Upload Flow
-
-The simplified data upload flow with global schema management uses the following key dependencies:
-
-- **react-hook-form**: For form handling and validation in project creation, schema creation, and column mapping forms
-- **zod**: For schema validation of form inputs and API requests
-- **uuid**: For generating unique IDs for projects, schemas, and mappings
-- **csv-parser** and **xlsx**: For parsing uploaded CSV and Excel files
-- **prisma**: For database operations to store projects, schemas, and normalized data
-
-To install these dependencies:
-
-```bash
-npm install react-hook-form zod
-```
-
-Note: Other dependencies like uuid, csv-parser, xlsx, and prisma are already included in the project.
-
-## Environment Variables
-
-The simplified data upload flow requires several environment variables to be configured:
-
-- **PROJECT_STORAGE_PATH**: Path to store project-related data
-- **MAX_PROJECTS_PER_USER**: Maximum number of projects a user can create
-- **SCHEMA_VALIDATION_LEVEL**: Level of schema validation (strict, lenient)
-- **COLUMN_MAPPING_STRATEGY**: Strategy for automatic column mapping (exact, fuzzy, none)
-- **ENABLE_SCHEMA_EVOLUTION**: Allow adding new columns to existing schemas
-
-For a complete list and detailed descriptions, see the [Environment Variables Documentation](docs/environment-variables.md).
-
-## CI/CD Pipeline
-
-RapidDataChat includes a GitHub Actions workflow for continuous integration and deployment:
-
-- **Lint**: Runs ESLint to check code quality
-- **Test**: Runs tests with a PostgreSQL test database
-- **Build**: Builds the Next.js application
-- **Deploy Preview**: Deploys to a preview environment for pull requests
-- **Deploy Production**: Deploys to production for pushes to the main branch
-
-For more details on the CI/CD pipeline, see the [CI/CD Pipeline Documentation](docs/ci-cd-pipeline.md).
-
 ## Deployment
 
 The application is designed to be deployed on Vercel with a PostgreSQL database.
-
-When deploying to Vercel, make sure to add all the required environment variables in the Vercel dashboard under Project Settings > Environment Variables.
-
-For detailed deployment instructions, see the [Deployment Guide](DEPLOYMENT.md).
-
-## Contributing
-
-1. Create a new branch for your feature or bugfix
-2. Make your changes
-3. Submit a pull request with a clear description of the changes
-
-For major features, please open an issue first to discuss what you would like to change.

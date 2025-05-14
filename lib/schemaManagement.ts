@@ -34,9 +34,158 @@ export interface GlobalSchema {
 }
 
 /**
+ * Interface for column mapping
+ */
+export interface ColumnMapping {
+  fileId: string;
+  schemaId: string;
+  mappings: Record<string, string>;
+}
+
+/**
  * Service for managing schemas
  */
 export class SchemaService {
+  /**
+   * Get column mapping for a file and schema
+   * @param fileId File ID
+   * @param schemaId Schema ID
+   * @returns Promise<ColumnMapping | null> Column mapping or null if not found
+   */
+  async getColumnMapping(
+    fileId: string,
+    schemaId: string
+  ): Promise<ColumnMapping | null> {
+    try {
+      // Check if the column_mappings table exists
+      const tableExists = await this.checkIfTableExists("column_mappings");
+
+      if (!tableExists) {
+        return null;
+      }
+
+      // Get mapping
+      const result = (await executeQuery(`
+        SELECT file_id, schema_id, mappings
+        FROM column_mappings
+        WHERE file_id = '${fileId}' AND schema_id = '${schemaId}'
+      `)) as Array<{
+        file_id: string;
+        schema_id: string;
+        mappings: string;
+      }>;
+
+      if (!result || result.length === 0) {
+        return null;
+      }
+
+      const mapping = result[0];
+
+      // Parse mappings
+      let parsedMappings: Record<string, string> = {};
+      try {
+        if (mapping.mappings) {
+          if (typeof mapping.mappings === "string") {
+            parsedMappings = JSON.parse(mapping.mappings);
+          } else if (typeof mapping.mappings === "object") {
+            parsedMappings = mapping.mappings as unknown as Record<
+              string,
+              string
+            >;
+          }
+        }
+      } catch (parseError) {
+        console.error(
+          `[SchemaService] Error parsing mappings for file ${fileId} and schema ${schemaId}:`,
+          parseError
+        );
+        parsedMappings = {};
+      }
+
+      // Return mapping
+      return {
+        fileId: mapping.file_id,
+        schemaId: mapping.schema_id,
+        mappings: parsedMappings,
+      };
+    } catch (error) {
+      console.error(
+        `[SchemaService] Error getting column mapping for file ${fileId} and schema ${schemaId}:`,
+        error
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Save column mapping
+   * @param mapping Column mapping
+   * @returns Promise<boolean> Success
+   */
+  async saveColumnMapping(mapping: ColumnMapping): Promise<boolean> {
+    try {
+      // Check if the column_mappings table exists
+      const tableExists = await this.checkIfTableExists("column_mappings");
+
+      if (!tableExists) {
+        // Create the table if it doesn't exist
+        await executeQuery(`
+          CREATE TABLE column_mappings (
+            file_id TEXT NOT NULL,
+            schema_id TEXT NOT NULL,
+            mappings JSONB NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (file_id, schema_id)
+          )
+        `);
+      }
+
+      // Check if mapping already exists
+      const existingMapping = await this.getColumnMapping(
+        mapping.fileId,
+        mapping.schemaId
+      );
+
+      if (existingMapping) {
+        // Update existing mapping
+        await executeQuery(`
+          UPDATE column_mappings
+          SET mappings = '${JSON.stringify(mapping.mappings)}',
+              updated_at = CURRENT_TIMESTAMP
+          WHERE file_id = '${mapping.fileId}' AND schema_id = '${
+          mapping.schemaId
+        }'
+        `);
+      } else {
+        // Insert new mapping
+        await executeQuery(`
+          INSERT INTO column_mappings (
+            file_id,
+            schema_id,
+            mappings,
+            created_at,
+            updated_at
+          )
+          VALUES (
+            '${mapping.fileId}',
+            '${mapping.schemaId}',
+            '${JSON.stringify(mapping.mappings)}',
+            CURRENT_TIMESTAMP,
+            CURRENT_TIMESTAMP
+          )
+        `);
+      }
+
+      return true;
+    } catch (error) {
+      console.error(
+        `[SchemaService] Error saving column mapping for file ${mapping.fileId} and schema ${mapping.schemaId}:`,
+        error
+      );
+      throw error;
+    }
+  }
   /**
    * Create a new global schema
    * @param userId User ID

@@ -208,45 +208,37 @@ const FileList: React.FC<FileListProps> = ({
       let columnsFromMetadata: string[] = [];
 
       try {
-        if (file.metadata) {
-          if (Array.isArray(file.metadata.columns)) {
-            columnsFromMetadata = file.metadata.columns.map(safeToString);
+        if (file.metadata && typeof file.metadata === "object") {
+          const metadata = file.metadata as Record<string, any>;
+          if (Array.isArray(metadata.columns)) {
+            columnsFromMetadata = metadata.columns.map(safeToString);
           } else if (
-            typeof file.metadata.columns === "object" &&
-            file.metadata.columns !== null
+            typeof metadata.columns === "object" &&
+            metadata.columns !== null
           ) {
-            columnsFromMetadata = Object.keys(file.metadata.columns);
+            columnsFromMetadata = Object.keys(metadata.columns);
           } else if (
-            file.metadata.schema?.fields &&
-            Array.isArray(file.metadata.schema.fields)
+            metadata.schema?.fields &&
+            Array.isArray(metadata.schema.fields)
           ) {
-            columnsFromMetadata = file.metadata.schema.fields.map(
-              (field: any) => safeToString(field.name || field)
-            );
-          } else if (
-            file.metadata.schema &&
-            typeof file.metadata.schema === "object"
-          ) {
-            columnsFromMetadata = Object.keys(file.metadata.schema);
-          } else if (
-            file.metadata.fields &&
-            Array.isArray(file.metadata.fields)
-          ) {
-            columnsFromMetadata = file.metadata.fields.map((field: any) =>
+            columnsFromMetadata = metadata.schema.fields.map((field: any) =>
               safeToString(field.name || field)
             );
-          } else if (Array.isArray(file.metadata.headers)) {
-            columnsFromMetadata = file.metadata.headers.map(safeToString);
+          } else if (metadata.schema && typeof metadata.schema === "object") {
+            columnsFromMetadata = Object.keys(metadata.schema);
+          } else if (metadata.fields && Array.isArray(metadata.fields)) {
+            columnsFromMetadata = metadata.fields.map((field: any) =>
+              safeToString(field.name || field)
+            );
+          } else if (Array.isArray(metadata.headers)) {
+            columnsFromMetadata = metadata.headers.map(safeToString);
           } else if (
-            file.metadata.columnNames &&
-            Array.isArray(file.metadata.columnNames)
+            metadata.columnNames &&
+            Array.isArray(metadata.columnNames)
           ) {
-            columnsFromMetadata = file.metadata.columnNames.map(safeToString);
-          } else if (
-            file.metadata.header &&
-            Array.isArray(file.metadata.header)
-          ) {
-            columnsFromMetadata = file.metadata.header.map(safeToString);
+            columnsFromMetadata = metadata.columnNames.map(safeToString);
+          } else if (metadata.header && Array.isArray(metadata.header)) {
+            columnsFromMetadata = metadata.header.map(safeToString);
           }
         }
       } catch (error) {

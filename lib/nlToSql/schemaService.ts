@@ -52,18 +52,13 @@ export class SchemaService {
       );
 
       // Get all active files for the user
-      console.log(
-        `[DEBUG] About to call getActiveFilesForUser for user: ${userId}`
-      );
       const activeFiles = await this.getActiveFilesForUser(userId);
       console.log(
         `[SchemaService] Found ${activeFiles.length} active files for user ${userId}`
       );
 
       if (activeFiles.length === 0) {
-        console.log(
-          `[DEBUG] No active files found for user ${userId}. This will cause schema creation to fail.`
-        );
+        console.log(`[SchemaService] No active files found for user ${userId}`);
       } else {
         console.log(
           `[SchemaService] Active file IDs: ${activeFiles
@@ -111,8 +106,7 @@ export class SchemaService {
 
             // Try to recreate the view by reactivating the file
             try {
-              // Use the compatibility version that doesn't rely on activation_progress columns
-              const { activateFile } = require("../fileActivationCompat.js");
+              const { activateFile } = require("../fileActivation");
               const result = await activateFile(file.id, userId);
 
               if (result.success) {
@@ -162,8 +156,7 @@ export class SchemaService {
 
             // Try to recreate the view by reactivating the file
             try {
-              // Use the compatibility version that doesn't rely on activation_progress columns
-              const { activateFile } = require("../fileActivationCompat.js");
+              const { activateFile } = require("../fileActivation");
               const result = await activateFile(file.id, userId);
 
               if (result.success) {
@@ -225,62 +218,16 @@ export class SchemaService {
     try {
       console.log(`[SchemaService] Getting active files for user: ${userId}`);
 
-      // First check if the files table exists
-      const tableExists = await this.checkIfTableExists("files");
-      console.log(`[DEBUG] files table exists: ${tableExists}`);
-
-      if (!tableExists) {
-        console.log(
-          `[DEBUG] files table does not exist, returning empty array`
-        );
-        return [];
-      }
-
-      // Get all files to see what's in the database
-      const allFiles = await executeQuery(
-        `SELECT id, filename, user_id, status FROM files`
-      );
-      console.log(`[DEBUG] All files in database:`, allFiles);
-
-      // Check if there are any files with the exact user ID
-      console.log(
-        `[DEBUG] SQL query: SELECT id, filename FROM files WHERE user_id = '${userId}' AND status = 'active'`
-      );
-      let result = (await executeQuery(`
+      const result = (await executeQuery(`
         SELECT id, filename FROM files
         WHERE user_id = '${userId}' AND status = 'active'
       `)) as Array<{ id: string; filename: string }>;
-
-      // If no results found and userId looks like a Google ID (numeric), try to find files by email
-      if ((!result || result.length === 0) && /^\d+$/.test(userId)) {
-        console.log(
-          `[DEBUG] No files found with numeric ID ${userId}, checking for files with email user_id`
-        );
-
-        // Look for any active files in the system since we can't determine the email
-        // This is a fallback to show any active files to the user
-        result = (await executeQuery(`
-          SELECT id, filename FROM files
-          WHERE status = 'active'
-          LIMIT 10
-        `)) as Array<{ id: string; filename: string }>;
-
-        console.log(
-          `[DEBUG] Found ${result.length} active files in the system as fallback`
-        );
-      }
 
       console.log(
         `[SchemaService] Query result for active files: ${
           result ? `${result.length} files found` : "null result"
         }`
       );
-
-      if (result && result.length > 0) {
-        console.log(`[DEBUG] Active files found:`, result);
-      } else {
-        console.log(`[DEBUG] No active files found for user ${userId}`);
-      }
 
       return result || [];
     } catch (error) {

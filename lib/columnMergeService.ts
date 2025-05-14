@@ -162,7 +162,7 @@ export async function createMergedColumnView(
 
       // Use a CASE expression to check if each value is empty
       // Only include the delimiter if both adjacent values are non-empty
-      let parts = [];
+      const parts = [];
 
       for (let i = 0; i < colExprs.length; i++) {
         // For the first element, just add it
@@ -336,7 +336,7 @@ export async function updateMergedColumnView(
 
       // Use a CASE expression to check if each value is empty
       // Only include the delimiter if both adjacent values are non-empty
-      let parts = [];
+      const parts = [];
 
       for (let i = 0; i < colExprs.length; i++) {
         // For the first element, just add it

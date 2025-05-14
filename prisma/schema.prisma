@@ -198,6 +198,7 @@ model FileError {
 model DeadLetterQueueItem {
   id          String    @id @default(uuid())
   fileId      String    @map("file_id")
+  projectId   String?   @map("project_id")
   operation   String
   payload     String
   error       String
@@ -207,6 +208,7 @@ model DeadLetterQueueItem {
   
   // Relations
   file        File      @relation(fields: [fileId], references: [id])
+  project     Project?  @relation(fields: [projectId], references: [id])
 
   @@map("dead_letter_queue")
 }
@@ -479,32 +481,8 @@ model ErrorLog {
   @@map("error_logs")
 }
 
-// Dead letter queue model
-model DeadLetterQueueItem {
-  id            String    @id
-  operationType String    @map("operation_type")
-  operationData Json      @map("operation_data")
-  errorType     String    @map("error_type")
-  errorMessage  String    @map("error_message")
-  retryCount    Int       @default(0) @map("retry_count")
-  maxRetries    Int       @map("max_retries")
-  nextRetryAt   DateTime? @map("next_retry_at")
-  projectId     String?   @map("project_id")
-  fileId        String?   @map("file_id")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @default(now()) @map("updated_at")
-
-  // Relations
-  project       Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  file          File?     @relation(fields: [fileId], references: [id], onDelete: SetNull)
-
-  @@index([operationType], name: "idx_dead_letter_queue_operation_type")
-  @@index([errorType], name: "idx_dead_letter_queue_error_type")
-  @@index([nextRetryAt], name: "idx_dead_letter_queue_next_retry_at")
-  @@index([projectId], name: "idx_dead_letter_queue_project_id")
-  @@index([fileId], name: "idx_dead_letter_queue_file_id")
-  @@map("dead_letter_queue")
-}
+// Dead letter queue model - Removed duplicate definition
+// This model is already defined at line 198
 
 // System health model
 model SystemHealth {

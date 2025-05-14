@@ -1,7 +1,7 @@
 import React from "react";
 import { useRouter } from "next/router";
 import { useSession } from "next-auth/react";
-import ProjectCreation from "../../components/project/ProjectCreation";
+import ProjectCreation from "../../../components/project/ProjectCreation";
 
 /**
  * CreateProject page for creating a new project

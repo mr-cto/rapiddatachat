@@ -476,8 +476,8 @@ const QueryResultsPane: React.FC<QueryResultsPaneProps> = ({
               No Results Found
             </h3>
             <p className="mt-2 text-slate-500 text-center max-w-md">
-              Your query executed successfully, but didn't return any data. Try
-              modifying your query or checking your data source.
+              Your query executed successfully, but didn&apos;t return any data.
+              Try modifying your query or checking your data source.
             </p>
           </div>
         )}

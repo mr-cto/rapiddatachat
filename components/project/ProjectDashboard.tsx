@@ -277,7 +277,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ projectId }) => {
         </h2>
         <div className="flex justify-between items-center">
           <p className="text-secondary dark:text-secondary">
-            Manage your project's global schema
+            Manage your project&apos;s global schema
           </p>
           <button
             onClick={() => router.push(`/project/${projectId}/schema`)}

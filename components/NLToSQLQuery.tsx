@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import Link from "next/link";
 import { FilterControls } from "./FilterControls";
 import { ShareQueryResults } from "./ShareQueryResults";
 import { DataTable } from "./DataTable";
@@ -190,12 +191,12 @@ export const NLToSQLResult: React.FC<NLToSQLResultProps> = ({
               <ol className="list-decimal pl-5 text-secondary dark:text-secondary">
                 <li className="mb-1">
                   Go to the{" "}
-                  <a
+                  <Link
                     href="/files"
                     className="text-accent-primary hover:underline"
                   >
                     Files page
-                  </a>
+                  </Link>
                 </li>
                 <li className="mb-1">
                   Upload a CSV or Excel file with your data

@@ -1,8 +1,42 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { useSession } from "next-auth/react";
-import { GlobalSchema } from "../../../../lib/globalSchemaService";
-import { SchemaChange } from "../../../../lib/schemaMetadataService";
+
+// Define interfaces locally to avoid import issues
+interface SchemaColumn {
+  id: string;
+  name: string;
+  type: string;
+  description?: string;
+  isPrimaryKey?: boolean;
+  isRequired?: boolean;
+  defaultValue?: string;
+  derivationFormula?: string;
+}
+
+interface GlobalSchema {
+  id: string;
+  userId: string;
+  projectId: string;
+  name: string;
+  description?: string;
+  columns: SchemaColumn[];
+  createdAt: Date;
+  updatedAt: Date;
+  isActive: boolean;
+  version: number;
+  previousVersionId?: string;
+}
+
+interface SchemaChange {
+  id: string;
+  schemaId: string;
+  changeType: string;
+  description: string;
+  details?: any;
+  createdAt: Date;
+  createdBy?: string;
+}
 
 /**
  * Schema Changes Page

@@ -21,6 +21,7 @@ const SchemaColumnManager: React.FC<SchemaColumnManagerProps> = ({
   const router = useRouter();
   const [columns, setColumns] = useState<SchemaColumn[]>(initialColumns);
   const [newColumn, setNewColumn] = useState<SchemaColumn>({
+    id: "", // Add empty id that will be replaced when adding the column
     name: "",
     type: "text",
     description: "",
@@ -100,6 +101,7 @@ const SchemaColumnManager: React.FC<SchemaColumnManagerProps> = ({
 
       // Reset the new column form
       setNewColumn({
+        id: "", // Add empty id
         name: "",
         type: "text",
         description: "",

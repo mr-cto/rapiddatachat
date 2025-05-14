@@ -3,7 +3,10 @@ import { createSchemaService, SchemaService } from "./schemaService";
 import { createQueryService, QueryService } from "./queryService";
 import { activateAvailableFiles } from "../fileActivation";
 import { executeQuery } from "../database";
-import { SchemaManagementService, GlobalSchema } from "../schemaManagement";
+import {
+  SchemaService as SchemaManagementService,
+  GlobalSchema,
+} from "../schemaManagement";
 
 // Import DatabaseSchema interface from schemaService or define it here
 interface Table {

@@ -93,8 +93,6 @@ If you prefer a GUI approach:
 
 Set the following environment variables in your Vercel project settings:
 
-#### Core Environment Variables
-
 | Variable         | Description                   | Example                                         |
 | ---------------- | ----------------------------- | ----------------------------------------------- |
 | DATABASE_URL     | PostgreSQL connection string  | `postgresql://user:password@host:port/database` |
@@ -104,21 +102,6 @@ Set the following environment variables in your Vercel project settings:
 | OPENAI_MODEL     | OpenAI model to use           | `gpt-4`                                         |
 | STORAGE_PROVIDER | Storage provider for files    | `local` or `s3`                                 |
 | LOG_LEVEL        | Logging level                 | `info`                                          |
-
-#### Simplified Data Upload Flow Variables
-
-| Variable                 | Description                                       | Default Value |
-| ------------------------ | ------------------------------------------------- | ------------- |
-| PROJECT_STORAGE_PATH     | Path to store project-related data                | `./projects`  |
-| MAX_PROJECTS_PER_USER    | Maximum number of projects a user can create      | `50`          |
-| SCHEMA_VALIDATION_LEVEL  | Level of schema validation (strict, lenient)      | `strict`      |
-| MAX_SCHEMA_COLUMNS       | Maximum number of columns allowed in a schema     | `100`         |
-| COLUMN_MAPPING_STRATEGY  | Strategy for column mapping (exact, fuzzy, none)  | `fuzzy`       |
-| ENABLE_SCHEMA_EVOLUTION  | Allow adding new columns to existing schemas      | `true`        |
-| NORMALIZATION_BATCH_SIZE | Number of records to process in a batch           | `1000`        |
-| ENABLE_DATA_VALIDATION   | Validate data against schema during normalization | `true`        |
-
-For more details on these environment variables, see the [Environment Variables Documentation](docs/environment-variables.md).
 
 If using S3 for storage, also set:
 
@@ -142,40 +125,9 @@ npx prisma migrate deploy
 1. Visit your deployed application URL
 2. Verify that you can:
    - Sign in
-   - Create a project
-   - Upload files to the project
-   - Create and manage global schemas
-   - Map columns from different files to the global schema
-   - Query data using the normalized view
-
-## CI/CD Pipeline
-
-RapidDataChat includes a GitHub Actions workflow for continuous integration and deployment.
-
-### GitHub Actions Workflow
-
-The workflow is defined in `.github/workflows/ci-cd.yml` and includes the following stages:
-
-1. **Lint**: Runs ESLint to check code quality
-2. **Test**: Runs tests with a PostgreSQL test database
-3. **Build**: Builds the Next.js application
-4. **Deploy Preview**: Deploys to a preview environment for pull requests
-5. **Deploy Production**: Deploys to production for pushes to the main branch
-
-### Setting Up GitHub Actions
-
-To use the GitHub Actions workflow, you need to set up the following secrets in your GitHub repository:
-
-1. `VERCEL_TOKEN`: Your Vercel API token
-2. `VERCEL_PROJECT_ID`: Your Vercel project ID
-3. `VERCEL_ORG_ID`: Your Vercel organization ID
-
-You can find these values in your Vercel account settings or by running:
-
-```bash
-vercel whoami
-vercel projects
-```
+   - Upload files
+   - Query data
+   - View performance metrics
 
 ## Troubleshooting
 
@@ -196,12 +148,6 @@ vercel projects
 - If using S3, check S3 bucket permissions
 - Verify AWS credentials are correct
 - For local storage, ensure the storage directory is writable
-
-### Schema Management Issues
-
-- Check that `PROJECT_STORAGE_PATH` is writable
-- Verify that `SCHEMA_VALIDATION_LEVEL` and `COLUMN_MAPPING_STRATEGY` are set correctly
-- Check database logs for any errors related to schema operations
 
 ## Monitoring and Maintenance
 
@@ -231,7 +177,6 @@ For optimal performance:
 1. Enable Vercel Edge Caching for static assets
 2. Configure `Cache-Control` headers for API responses
 3. Use Vercel Analytics to monitor performance
-4. Consider setting `NORMALIZATION_BATCH_SIZE` to a value that balances processing speed and memory usage
 
 ## Security Considerations
 
@@ -239,7 +184,6 @@ For optimal performance:
 2. Regularly update dependencies
 3. Enable Vercel's security headers
 4. Set up authentication properly
-5. Consider setting `MAX_PROJECTS_PER_USER` and `MAX_SCHEMA_COLUMNS` to prevent abuse
 
 ## Support
 

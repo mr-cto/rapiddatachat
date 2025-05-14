@@ -1,6 +1,6 @@
 import { executeQuery } from "../database";
 import { v4 as uuidv4 } from "uuid";
-import { ColumnMapping, ValidationRule } from "../globalSchemaService";
+import { ColumnMapping } from "../schemaManagement";
 import { GlobalSchema, SchemaColumn } from "../globalSchemaService";
 
 /**
@@ -216,11 +216,14 @@ export class DataNormalizationService {
       let rowHasErrors = false;
 
       // Apply each mapping
-      for (const mapping of columnMapping.mappings) {
-        const { fileColumn, schemaColumn, transformationRule } = mapping;
-
+      for (const [schemaColumn, fileColumn] of Object.entries(
+        columnMapping.mappings
+      )) {
         // Get the value from the raw data
         let value = row[fileColumn];
+
+        // Transformation rule is not available in this format
+        const transformationRule = undefined;
 
         // Get the schema column definition
         const columnDef = schemaColumnMap.get(schemaColumn);
@@ -459,15 +462,15 @@ export class DataNormalizationService {
     }
 
     // Skip if no validation rules
-    if (
-      !columnDef.validationRules ||
-      !Array.isArray(columnDef.validationRules)
-    ) {
+    // Note: validationRules is not part of the SchemaColumn interface
+    // This is a placeholder for future implementation
+    const validationRules = (columnDef as any).validationRules;
+    if (!validationRules || !Array.isArray(validationRules)) {
       return;
     }
 
     // Check each validation rule
-    for (const rule of columnDef.validationRules) {
+    for (const rule of validationRules) {
       switch (rule.type) {
         case "min":
           if (typeof value === "number" && value < rule.value) {

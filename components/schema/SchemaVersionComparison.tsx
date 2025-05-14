@@ -339,11 +339,11 @@ const SchemaVersionComparison: React.FC<SchemaVersionComparisonProps> = ({
               </div>
             )}
 
-            {/* Unchanged columns */}
-            {comparison.unchanged.length > 0 && (
-              <div>
+            {/* Uncomment and implement this section if you need to show unchanged columns
+            {computeUnchangedColumns().length > 0 && (
+              <div className="mb-6">
                 <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                  Unchanged Columns ({comparison.unchanged.length})
+                  Unchanged Columns
                 </h4>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -361,7 +361,7 @@ const SchemaVersionComparison: React.FC<SchemaVersionComparisonProps> = ({
                       </tr>
                     </thead>
                     <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
-                      {comparison.unchanged.map((column) => (
+                      {computeUnchangedColumns().map((column) => (
                         <tr key={`unchanged-${column.name}`}>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
                             {column.name}
@@ -379,6 +379,7 @@ const SchemaVersionComparison: React.FC<SchemaVersionComparisonProps> = ({
                 </div>
               </div>
             )}
+            */}
           </div>
         ) : (
           <div>

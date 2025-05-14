@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from "uuid";
 import {
   ErrorHandlingService,
   ErrorType,
+  ErrorSeverity,
 } from "../errorHandling/errorHandlingService";
 import * as os from "os";
 import { EventEmitter } from "events";
@@ -279,7 +280,7 @@ export class BatchProcessingService {
         context: {
           input,
         },
-        severity: "error",
+        severity: ErrorSeverity.ERROR,
       });
       throw error;
     }
@@ -427,7 +428,7 @@ export class BatchProcessingService {
         context: {
           jobId: id,
         },
-        severity: "error",
+        severity: ErrorSeverity.ERROR,
       });
 
       throw error;
@@ -637,7 +638,7 @@ export class BatchProcessingService {
           context: {
             jobId: job.id,
           },
-          severity: "error",
+          severity: ErrorSeverity.ERROR,
         })
         .catch((err) => {
           console.error(`Error logging error for batch job ${job.id}:`, err);
@@ -744,7 +745,7 @@ export class BatchProcessingService {
             jobId: job.id,
             partitionId: partition.id,
           },
-          severity: "error",
+          severity: ErrorSeverity.ERROR,
         });
 
         // Update job progress
@@ -776,7 +777,7 @@ export class BatchProcessingService {
           jobId: job.id,
           partitionId: partition.id,
         },
-        severity: "error",
+        severity: ErrorSeverity.ERROR,
       });
 
       // Update job progress
@@ -861,7 +862,7 @@ export class BatchProcessingService {
         context: {
           jobId: job.id,
         },
-        severity: "error",
+        severity: ErrorSeverity.ERROR,
       });
     }
   }
@@ -977,6 +978,185 @@ export class BatchProcessingService {
         `Error recording performance metrics for batch job ${job.id}:`,
         error
       );
+    }
+  }
+
+  /**
+   * Pause a batch job
+   * @param id Batch job ID
+   * @returns Promise<any> Updated batch job
+   */
+  async pauseJob(id: string): Promise<any> {
+    try {
+      // Get batch job
+      const job = await this.getJob(id);
+
+      // Check if job can be paused
+      if (job.status !== BatchJobStatus.RUNNING) {
+        throw new Error(
+          `Cannot pause batch job ${id} with status ${job.status}`
+        );
+      }
+
+      // Pause workers
+      for (const partition of job.partitions) {
+        const workerId = `worker_${partition.id}`;
+        const worker = this.workers.get(workerId);
+        if (worker) {
+          worker.pause();
+        }
+      }
+
+      // Update job status
+      const updatedJob = await this.prisma.batchJob.update({
+        where: {
+          id,
+        },
+        data: {
+          status: BatchJobStatus.PAUSED,
+        },
+        include: {
+          partitions: true,
+        },
+      });
+
+      // Update running partition status
+      await this.prisma.batchPartition.updateMany({
+        where: {
+          jobId: id,
+          status: BatchPartitionStatus.RUNNING,
+        },
+        data: {
+          status: BatchPartitionStatus.PAUSED,
+        },
+      });
+
+      return updatedJob;
+    } catch (error) {
+      console.error(`Error pausing batch job ${id}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Resume a batch job
+   * @param id Batch job ID
+   * @returns Promise<any> Updated batch job
+   */
+  async resumeJob(id: string): Promise<any> {
+    try {
+      // Get batch job
+      const job = await this.getJob(id);
+
+      // Check if job can be resumed
+      if (job.status !== BatchJobStatus.PAUSED) {
+        throw new Error(
+          `Cannot resume batch job ${id} with status ${job.status}`
+        );
+      }
+
+      // Resume workers
+      for (const partition of job.partitions) {
+        const workerId = `worker_${partition.id}`;
+        const worker = this.workers.get(workerId);
+        if (worker) {
+          worker.resume();
+        }
+      }
+
+      // Update job status
+      const updatedJob = await this.prisma.batchJob.update({
+        where: {
+          id,
+        },
+        data: {
+          status: BatchJobStatus.RUNNING,
+        },
+        include: {
+          partitions: true,
+        },
+      });
+
+      // Update paused partition status
+      await this.prisma.batchPartition.updateMany({
+        where: {
+          jobId: id,
+          status: BatchPartitionStatus.PAUSED,
+        },
+        data: {
+          status: BatchPartitionStatus.RUNNING,
+        },
+      });
+
+      return updatedJob;
+    } catch (error) {
+      console.error(`Error resuming batch job ${id}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Retry a batch job
+   * @param id Batch job ID
+   * @returns Promise<any> Updated batch job
+   */
+  async retryJob(id: string): Promise<any> {
+    try {
+      // Get batch job
+      const job = await this.getJob(id);
+
+      // Check if job can be retried
+      if (
+        job.status !== BatchJobStatus.FAILED &&
+        job.status !== BatchJobStatus.CANCELLED
+      ) {
+        throw new Error(
+          `Cannot retry batch job ${id} with status ${job.status}`
+        );
+      }
+
+      // Parse configuration
+      const configuration = JSON.parse(job.configuration);
+
+      // Update job status
+      const updatedJob = await this.prisma.batchJob.update({
+        where: {
+          id,
+        },
+        data: {
+          status: BatchJobStatus.PENDING,
+          startedAt: null,
+          completedAt: null,
+          processedRecords: 0,
+          failedRecords: 0,
+        },
+        include: {
+          partitions: true,
+        },
+      });
+
+      // Reset failed partitions
+      await this.prisma.batchPartition.updateMany({
+        where: {
+          jobId: id,
+          status: {
+            in: [BatchPartitionStatus.FAILED, BatchPartitionStatus.CANCELLED],
+          },
+        },
+        data: {
+          status: BatchPartitionStatus.PENDING,
+          startedAt: null,
+          completedAt: null,
+          processedRecords: 0,
+          failedRecords: 0,
+        },
+      });
+
+      // Start the job
+      return await this.startJob(id);
+    } catch (error) {
+      console.error(`Error retrying batch job ${id}:`, error);
+      throw error;
     }
   }
 }

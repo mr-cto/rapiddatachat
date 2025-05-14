@@ -1,14 +1,8 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../auth/[...nextauth]";
-import { activateFile } from "../../../../lib/fileActivationCompat";
+import { activateFile } from "../../../../lib/fileActivation";
 
-/**
- * API handler for file activation (compatibility endpoint)
- *
- * This endpoint is maintained for backward compatibility with existing code.
- * In the simplified upload flow, files are automatically activated after upload.
- */
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -40,7 +34,7 @@ export default async function handler(
       return res.status(400).json({ error: "File ID is required" });
     }
 
-    // Activate the file using compatibility layer
+    // Activate the file
     const result = await activateFile(fileId, userId);
 
     if (!result.success) {
@@ -62,7 +56,7 @@ export default async function handler(
       message: result.message,
       fileId,
       status: "active",
-      progress: result.progress || 100,
+      dbOperationsSkipped: result.dbOperationsSkipped,
     });
   } catch (error) {
     console.error("File activation error:", error);

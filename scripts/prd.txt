@@ -1,144 +1,20 @@
-# RapidDataChat Project Restructuring PRD
+# PRD: Column Merging
 
-## 1. Overview
+## Overview
+Users should be able to merge two or more columns into a single derived column (e.g., `first_name` + `last_name` → `full_name`) to support more meaningful querying.
 
-### 1.1 Problem Statement
+## Goals
+- Simplify queries and prompt engineering
+- Allow creation of derived fields without modifying raw data
 
-RapidDataChat's Next.js application is currently experiencing compilation issues due to a misaligned directory structure. The project uses a `src` directory pattern but has critical components and libraries located outside this directory, causing import path problems and potential build failures.
+## Requirements
+- UI for selecting multiple columns and defining a new merged column name
+- Preview of merged results (first 5 rows)
+- Store merged column config as metadata
+- Use PostgreSQL `VIEW` or computed column to represent the result
+- Merged columns should be included in LLM prompt context
 
-### 1.2 Project Background
-
-RapidDataChat is a data processing and visualization application that allows users to upload CSV/Excel files, query them using natural language, and visualize the results. The application was likely started without a `src` directory and later partially migrated to this pattern, resulting in the current inconsistent structure.
-
-### 1.3 Scope
-
-This PRD focuses exclusively on restructuring the project directory organization to resolve compilation issues while maintaining all existing functionality.
-
-## 2. Objectives
-
-### 2.1 Primary Objective
-
-Restructure the RapidDataChat project to follow Next.js best practices for the `src` directory pattern, ensuring all components and libraries are properly located and referenced.
-
-### 2.2 Success Criteria
-
-- Application builds without compilation errors
-- All existing functionality works as before
-- Directory structure follows Next.js best practices
-- Import paths are consistent throughout the codebase
-
-## 3. Requirements
-
-### 3.1 Directory Structure Requirements
-
-| ID  | Requirement                                                 | Priority |
-| --- | ----------------------------------------------------------- | -------- |
-| R1  | Move all components from `/components` to `/src/components` | High     |
-| R2  | Move all library files from `/lib` to `/src/lib`            | High     |
-| R3  | Update all import paths to reflect the new structure        | High     |
-| R4  | Ensure Next.js configuration supports the new structure     | High     |
-| R5  | Maintain separation between Pages Router and App Router     | Medium   |
-
-### 3.2 Technical Requirements
-
-| ID  | Requirement                                        | Priority |
-| --- | -------------------------------------------------- | -------- |
-| T1  | No changes to core functionality or business logic | High     |
-| T2  | No changes to database interactions                | High     |
-| T3  | No changes to API endpoints                        | High     |
-| T4  | Maintain all existing component interfaces         | High     |
-| T5  | Update any path references in configuration files  | Medium   |
-| T6  | Document any deployment changes required           | Medium   |
-
-### 3.3 Testing Requirements
-
-| ID  | Requirement                             | Priority |
-| --- | --------------------------------------- | -------- |
-| TS1 | Verify all pages load without errors    | High     |
-| TS2 | Verify file upload and processing works | High     |
-| TS3 | Verify natural language queries work    | High     |
-| TS4 | Verify authentication flows work        | High     |
-| TS5 | Verify project management features work | High     |
-
-## 4. Implementation Plan
-
-### 4.1 Phase 1: Preparation
-
-- Create a complete backup of the project
-- Create the target directories (`src/components` and `src/lib`)
-- Document all current import patterns for reference
-
-### 4.2 Phase 2: Component Migration
-
-- Move all component files to `src/components` maintaining the same subdirectory structure
-- Update import paths in the moved components
-- Update import paths in pages that reference these components
-- Test basic page rendering after migration
-
-### 4.3 Phase 3: Library Migration
-
-- Move all library files to `src/lib` maintaining the same subdirectory structure
-- Update import paths in the moved library files
-- Update import paths in components and pages that reference these libraries
-- Test core functionality that depends on these libraries
-
-### 4.4 Phase 4: Configuration Updates
-
-- Update Next.js configuration if needed
-- Update any build scripts or deployment configurations
-- Ensure environment variables and paths are correctly set
-
-### 4.5 Phase 5: Testing and Validation
-
-- Comprehensive testing of all application features
-- Verify build process works in development and production modes
-- Document any changes required for deployment
-
-## 5. Migration Details
-
-### 5.1 Directory Mapping
-
-| Current Path    | Target Path         |
-| --------------- | ------------------- |
-| `/components/*` | `/src/components/*` |
-| `/lib/*`        | `/src/lib/*`        |
-
-### 5.2 Import Path Updates
-
-| Current Import Pattern               | New Import Pattern                |
-| ------------------------------------ | --------------------------------- |
-| `import X from "../../components/Y"` | `import X from "../components/Y"` |
-| `import X from "../../../lib/Y"`     | `import X from "../lib/Y"`        |
-
-### 5.3 Key Files Requiring Updates
-
-- All files in `/src/pages/*` that import from components or lib
-- All files in `/src/app/*` that import from components or lib
-- Configuration files like `next.config.ts`
-- Any utility scripts that reference these paths
-
-## 6. Risks and Mitigation
-
-| Risk                             | Impact | Likelihood | Mitigation                                                   |
-| -------------------------------- | ------ | ---------- | ------------------------------------------------------------ |
-| Breaking changes to import paths | High   | High       | Systematic approach to updating paths; thorough testing      |
-| Missed file dependencies         | Medium | Medium     | Use search tools to find all imports; incremental testing    |
-| Build configuration issues       | High   | Medium     | Review Next.js documentation; test builds frequently         |
-| Deployment pipeline failures     | High   | Low        | Update deployment documentation; test in staging environment |
-
-## 7. Timeline
-
-| Phase                  | Estimated Duration |
-| ---------------------- | ------------------ |
-| Preparation            | 0.5 day            |
-| Component Migration    | 1 day              |
-| Library Migration      | 1 day              |
-| Configuration Updates  | 0.5 day            |
-| Testing and Validation | 1 day              |
-| **Total**              | **4 days**         |
-
-## 8. Future Considerations
-
-- Consider standardizing on either Pages Router or App Router for future development
-- Implement automated tests to prevent regression issues
-- Document the new project structure for onboarding new developers
+## Technical Considerations
+- Avoid overwriting raw data
+- Store mapping in a `column_merges` table: `{ user_id, dataset_id, merge_name, column_list, delimiter }`
+- Update prompt injection engine to include merged columns
