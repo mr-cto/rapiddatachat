@@ -32,8 +32,13 @@ export default async function handler(
       return res.status(200).json(cachedQuery);
     }
 
-    // If not in cache, try to get from database
+    // If not in cache, return not found
+    // In development mode, we're only using the in-memory cache
+    // In production, we would implement database storage
+    return res.status(404).json({ error: "Shared query not found" });
 
+    // The following code is commented out because the shared_queries table doesn't exist yet
+    /*
     const result = (await executeQuery(`
       SELECT * FROM shared_queries WHERE id = '${id}'
     `)) as Array<Record<string, any>>;
@@ -69,6 +74,7 @@ export default async function handler(
       accessCount: 0,
       columnMerges: parsedColumnMerges,
     };
+    */
 
     // Add to cache for future requests
     sharedQueryCache.set(id, sharedQuery);

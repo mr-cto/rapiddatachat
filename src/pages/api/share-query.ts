@@ -34,8 +34,15 @@ export default async function handler(
     session?.user?.email || (isDevelopment ? "dev@example.com" : "");
 
   try {
-    const { queryId, naturalLanguageQuery, sqlQuery, results, columnMerges } =
-      req.body;
+    const {
+      queryId,
+      naturalLanguageQuery,
+      sqlQuery,
+      results,
+      columnMerges,
+      virtualColumns,
+      columnOrder,
+    } = req.body;
 
     if (!naturalLanguageQuery || !sqlQuery || !results) {
       return res.status(400).json({ error: "Missing required fields" });
@@ -57,6 +64,8 @@ export default async function handler(
       accessCount: 0,
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days expiration
       columnMerges: columnMerges || [],
+      columnOrder: columnOrder || [],
+      virtualColumns: virtualColumns || [],
     };
 
     // Store in cache

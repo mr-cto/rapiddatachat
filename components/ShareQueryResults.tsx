@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React from "react";
+import { downloadCSV } from "../utils/exportUtils";
 
 interface ShareQueryResultsProps {
   queryId?: string;
@@ -11,165 +12,103 @@ interface ShareQueryResultsProps {
     columnList: string[];
     delimiter: string;
   }[];
+  columnOrder?: string[]; // Array of column names in the desired order
 }
 
 /**
- * ShareQueryResults component for sharing query results
+ * ExportQueryResults component for downloading query results as CSV
  * @param props Component props
  * @returns JSX.Element
  */
 export const ShareQueryResults: React.FC<ShareQueryResultsProps> = ({
-  queryId,
-  naturalLanguageQuery,
-  sqlQuery,
   results,
   columnMerges = [],
+  columnOrder = [],
 }) => {
-  const [isGeneratingLink, setIsGeneratingLink] = useState(false);
-  const [shareLink, setShareLink] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   /**
-   * Generate a shareable link for the query results
+   * Process results to include merged columns, virtual columns, and respect column order
+   * @returns Processed results with all columns properly handled
    */
-  const generateShareLink = async () => {
-    setIsGeneratingLink(true);
-    setError(null);
-    setCopied(false);
+  const processResultsForExport = () => {
+    if (!results || results.length === 0) return [];
 
-    try {
-      // Call the share-query API endpoint
-      const response = await fetch("/api/share-query", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          queryId,
-          naturalLanguageQuery,
-          sqlQuery,
-          results,
-          columnMerges,
-        }),
+    // Create a deep copy of the results to avoid modifying the original
+    const processedResults = JSON.parse(JSON.stringify(results));
+
+    // Process merged columns if they exist
+    if (columnMerges && columnMerges.length > 0) {
+      processedResults.forEach((row: Record<string, unknown>) => {
+        // For each column merge definition
+        columnMerges.forEach((merge) => {
+          const { mergeName, columnList, delimiter } = merge;
+
+          // Create the merged value by joining the values of the columns in the list
+          const mergedValue = columnList
+            .map((col) => {
+              const value = row[col];
+              return value !== null && value !== undefined ? String(value) : "";
+            })
+            .filter(Boolean) // Remove empty values
+            .join(delimiter || " ");
+
+          // Add the merged column to the row
+          row[mergeName] = mergedValue;
+        });
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to share query");
-      }
-
-      setShareLink(data.shareUrl);
-    } catch (error) {
-      console.error("Error generating share link:", error);
-      setError("Failed to generate share link. Please try again.");
-    } finally {
-      setIsGeneratingLink(false);
     }
+
+    return processedResults;
   };
 
   /**
-   * Copy the share link to the clipboard
+   * Download the results as a CSV file
    */
-  const copyToClipboard = async () => {
-    if (!shareLink) return;
-
+  const handleDownloadCSV = () => {
     try {
-      await navigator.clipboard.writeText(shareLink);
-      setCopied(true);
+      const filename = `query-results-${new Date()
+        .toISOString()
+        .slice(0, 10)}.csv`;
 
-      // Reset copied state after 3 seconds
-      setTimeout(() => setCopied(false), 3000);
+      // Process the results to include merged columns
+      const processedResults = processResultsForExport();
+
+      // Use the column order exactly as provided
+      const effectiveColumnOrder = columnOrder ? [...columnOrder] : undefined;
+
+      // Download the processed results with the effective column order
+      downloadCSV(processedResults, filename, effectiveColumnOrder);
     } catch (error) {
-      console.error("Error copying to clipboard:", error);
-      setError("Failed to copy link. Please try manually.");
+      console.error("Error downloading CSV:", error);
     }
   };
 
   return (
     <div className="mt-4">
-      {!shareLink ? (
-        <button
-          onClick={generateShareLink}
-          disabled={isGeneratingLink || results.length === 0}
-          className={`flex items-center px-4 py-2 rounded-md text-white font-medium ${
-            isGeneratingLink || results.length === 0
-              ? "bg-gray-400 cursor-not-allowed"
-              : "bg-blue-600 hover:bg-blue-700 transition-all"
-          }`}
+      <button
+        onClick={handleDownloadCSV}
+        disabled={results.length === 0}
+        className={`flex items-center px-4 py-2 rounded-md text-white font-medium ${
+          results.length === 0
+            ? "bg-gray-400 cursor-not-allowed"
+            : "bg-green-600 hover:bg-green-700 transition-all"
+        }`}
+      >
+        <svg
+          className="w-4 h-4 mr-2"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          xmlns="http://www.w3.org/2000/svg"
         >
-          {isGeneratingLink ? (
-            <>
-              <svg
-                className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                ></circle>
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                ></path>
-              </svg>
-              Generating Link...
-            </>
-          ) : (
-            <>
-              <svg
-                className="w-4 h-4 mr-2"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
-                ></path>
-              </svg>
-              Share Results
-            </>
-          )}
-        </button>
-      ) : (
-        <div className="bg-blue-50 border border-blue-200 rounded-md p-4 animate-fadeIn">
-          <h4 className="text-sm font-medium text-blue-800 mb-2">
-            Share Link Generated
-          </h4>
-          <div className="flex items-center">
-            <input
-              type="text"
-              value={shareLink}
-              readOnly
-              className="flex-1 p-2 border border-gray-300 rounded-l-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <button
-              onClick={copyToClipboard}
-              className="px-4 py-2 bg-blue-600 text-white rounded-r-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {copied ? "Copied!" : "Copy"}
-            </button>
-          </div>
-          <p className="text-xs text-blue-600 mt-2">
-            This link allows anyone to view these query results without
-            requiring authentication.
-          </p>
-        </div>
-      )}
-
-      {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+          />
+        </svg>
+        Download CSV
+      </button>
     </div>
   );
 };

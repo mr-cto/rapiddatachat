@@ -21,6 +21,11 @@ interface SharedQueryData {
     columnList: string[];
     delimiter: string;
   }[];
+  columnOrder?: string[];
+  virtualColumns?: {
+    name: string;
+    expression: string;
+  }[];
 }
 
 /**
@@ -259,6 +264,7 @@ export default function SharedQueryPage() {
                       initialSortDirection={sortDirection}
                       serverSideSort={false}
                       initialColumnMerges={queryData.columnMerges || []}
+                      visibleColumns={queryData.columnOrder}
                     />
                   )}
                 </div>

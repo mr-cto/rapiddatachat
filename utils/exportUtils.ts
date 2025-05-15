@@ -3,11 +3,43 @@
  * @param data Array of objects to convert to CSV
  * @returns CSV string
  */
-export const convertToCSV = (data: Record<string, unknown>[]): string => {
+export const convertToCSV = (
+  data: Record<string, unknown>[],
+  columnOrder?: string[]
+): string => {
   if (!data || data.length === 0) return "";
 
-  // Get headers from the first object
-  const headers = Object.keys(data[0]);
+  // Get all possible headers from all objects in the data
+  const allHeaders = new Set<string>();
+  data.forEach((obj) => {
+    Object.keys(obj).forEach((key) => allHeaders.add(key));
+  });
+
+  // Default headers (all headers from all objects)
+  let headers = Array.from(allHeaders);
+
+  // Use columnOrder if provided
+  if (columnOrder && columnOrder.length > 0) {
+    // Start with the specified column order
+    const orderedHeaders: string[] = [];
+
+    // Add columns in the specified order if they exist in the data
+    columnOrder.forEach((col) => {
+      if (headers.includes(col)) {
+        orderedHeaders.push(col);
+      }
+    });
+
+    // Add any remaining headers not specified in columnOrder
+    headers.forEach((header) => {
+      if (!orderedHeaders.includes(header)) {
+        orderedHeaders.push(header);
+      }
+    });
+
+    // Use the ordered headers
+    headers = orderedHeaders;
+  }
 
   // Create CSV header row
   const headerRow = headers.join(",");
@@ -45,9 +77,10 @@ export const convertToCSV = (data: Record<string, unknown>[]): string => {
  */
 export const downloadCSV = (
   data: Record<string, unknown>[],
-  filename: string = "export.csv"
+  filename: string = "export.csv",
+  columnOrder?: string[]
 ): void => {
-  const csv = convertToCSV(data);
+  const csv = convertToCSV(data, columnOrder);
 
   // Create a blob with the CSV data
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });

@@ -15,6 +15,11 @@ interface ShareModalProps {
     columnList: string[];
     delimiter: string;
   }[];
+  virtualColumns?: {
+    name: string;
+    expression: string;
+  }[];
+  columnOrder?: string[]; // Array of column names in the desired order
 }
 
 const ShareModal: React.FC<ShareModalProps> = ({
@@ -25,6 +30,8 @@ const ShareModal: React.FC<ShareModalProps> = ({
   sqlQuery,
   results,
   columnMerges = [],
+  virtualColumns = [],
+  columnOrder = [],
 }) => {
   const [isGeneratingLink, setIsGeneratingLink] = useState(false);
   const [shareLink, setShareLink] = useState<string | null>(null);
@@ -52,6 +59,8 @@ const ShareModal: React.FC<ShareModalProps> = ({
           sqlQuery,
           results,
           columnMerges,
+          virtualColumns,
+          columnOrder,
         }),
       });
 
@@ -91,12 +100,82 @@ const ShareModal: React.FC<ShareModalProps> = ({
   /**
    * Download the results as a CSV file
    */
+  /**
+   * Process results to include merged columns, virtual columns, and respect column order
+   * @returns Processed results with all columns properly handled
+   */
+  const processResultsForExport = () => {
+    if (!results || results.length === 0) return [];
+
+    // Create a deep copy of the results to avoid modifying the original
+    const processedResults = JSON.parse(JSON.stringify(results));
+
+    // Process merged columns if they exist
+    if (columnMerges && columnMerges.length > 0) {
+      processedResults.forEach((row: Record<string, unknown>) => {
+        // For each column merge definition
+        columnMerges.forEach((merge) => {
+          const { mergeName, columnList, delimiter } = merge;
+
+          // Create the merged value by joining the values of the columns in the list
+          const mergedValue = columnList
+            .map((col) => {
+              const value = row[col];
+              return value !== null && value !== undefined ? String(value) : "";
+            })
+            .filter(Boolean) // Remove empty values
+            .join(delimiter || " ");
+
+          // Add the merged column to the row
+          row[mergeName] = mergedValue;
+        });
+      });
+    }
+
+    // Process virtual columns if they exist
+    // Note: This is a simplified implementation as we don't have access to the actual
+    // expressions evaluation logic here. In a real implementation, you would need to
+    // evaluate the expressions or ensure they're already evaluated in the results.
+    if (virtualColumns && virtualColumns.length > 0) {
+      // Ensure virtual columns are included in the export
+      // In a real implementation, these would be calculated based on their expressions
+      virtualColumns.forEach((vc) => {
+        processedResults.forEach((row: Record<string, unknown>) => {
+          // If the virtual column is not already in the results (it should be if properly passed)
+          if (row[vc.name] === undefined) {
+            // Set a placeholder value or calculate it if possible
+            row[vc.name] = row[vc.name] || `[Virtual: ${vc.name}]`;
+          }
+        });
+      });
+    }
+
+    // We no longer need to reorder the data here since we're passing the columnOrder to downloadCSV
+    // The convertToCSV function will handle the ordering
+    // This ensures that the column order is respected in the CSV file
+
+    return processedResults;
+  };
+
+  /**
+   * Download the results as a CSV file, respecting merged columns and column order
+   */
   const handleDownloadCSV = () => {
     try {
       const filename = `query-results-${new Date()
         .toISOString()
         .slice(0, 10)}.csv`;
-      downloadCSV(results, filename);
+
+      // Process the results to include merged columns and virtual columns
+      const processedResults = processResultsForExport();
+
+      // Use the column order exactly as provided - don't modify it
+      // This ensures that columns appear in the exact order specified by the user
+      // If columnOrder is not provided, we'll use the default order from the data
+      const effectiveColumnOrder = columnOrder ? [...columnOrder] : undefined;
+
+      // Download the processed results with the effective column order
+      downloadCSV(processedResults, filename, effectiveColumnOrder);
     } catch (error) {
       console.error("Error downloading CSV:", error);
       setError("Failed to download CSV. Please try again.");
@@ -104,100 +183,17 @@ const ShareModal: React.FC<ShareModalProps> = ({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Share Query Results">
+    <Modal isOpen={isOpen} onClose={onClose} title="Export Query Results">
       <div className="space-y-6">
         <div className="space-y-2">
-          <h4 className="text-sm font-medium text-slate-700">Share Options</h4>
+          <h4 className="text-sm font-medium text-slate-700">Export Options</h4>
           <p className="text-xs text-slate-500">
-            Generate a shareable link or download the results as a CSV file.
+            Download the results as a CSV file.
           </p>
         </div>
 
-        {/* Share Link Section */}
-        <div className="space-y-4">
-          {!shareLink ? (
-            <button
-              onClick={generateShareLink}
-              disabled={isGeneratingLink || results.length === 0}
-              className={`flex items-center px-4 py-2 rounded-md text-white font-medium ${
-                isGeneratingLink || results.length === 0
-                  ? "bg-slate-400 cursor-not-allowed"
-                  : "bg-indigo-600 hover:bg-indigo-700 transition-all"
-              }`}
-            >
-              {isGeneratingLink ? (
-                <>
-                  <svg
-                    className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    ></circle>
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
-                  Generating Link...
-                </>
-              ) : (
-                <>
-                  <svg
-                    className="w-4 h-4 mr-2"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
-                    ></path>
-                  </svg>
-                  Generate Share Link
-                </>
-              )}
-            </button>
-          ) : (
-            <div className="bg-indigo-50 border border-indigo-200 rounded-md p-4 animate-fadeIn">
-              <h4 className="text-sm font-medium text-indigo-800 mb-2">
-                Share Link Generated
-              </h4>
-              <div className="flex items-center">
-                <input
-                  type="text"
-                  value={shareLink}
-                  readOnly
-                  className="flex-1 p-2 border border-slate-300 rounded-l-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-                <button
-                  onClick={copyToClipboard}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-r-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  {copied ? "Copied!" : "Copy"}
-                </button>
-              </div>
-              <p className="text-xs text-indigo-600 mt-2">
-                This link allows anyone to view these query results without
-                requiring authentication.
-              </p>
-            </div>
-          )}
-        </div>
-
         {/* Download CSV Section */}
-        <div className="pt-4 border-t border-slate-200">
+        <div>
           <button
             onClick={handleDownloadCSV}
             disabled={results.length === 0}

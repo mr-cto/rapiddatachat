@@ -78,12 +78,12 @@ const ProjectList: React.FC = () => {
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold text-primary dark:text-primary">
+        <h1 className="text-3xl font-bold text-secondary dark:text-secondary">
           My Projects
         </h1>
         <button
           onClick={handleCreateProject}
-          className="px-4 py-2 bg-accent-primary text-white rounded-md hover:bg-accent-primary-hover"
+          className="px-4 py-2 bg-white text-dark rounded-md hover:bg-black hover:text-white hover:border-white border border-dark hover:cursor-pointer"
         >
           Create New Project
         </button>
@@ -113,7 +113,7 @@ const ProjectList: React.FC = () => {
               className="block"
             >
               <div className="bg-ui-secondary dark:bg-ui-secondary rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow h-full">
-                <h2 className="text-xl font-semibold text-primary dark:text-primary mb-2 truncate">
+                <h2 className="text-xl font-semibold text-secondary dark:text-secondary mb-2 truncate">
                   {project.name}
                 </h2>
                 {project.description && (

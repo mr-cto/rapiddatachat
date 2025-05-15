@@ -31,6 +31,11 @@ export interface SharedQueryData {
     columnList: string[];
     delimiter: string;
   }[];
+  columnOrder?: string[]; // Array of column names in the desired order
+  virtualColumns?: {
+    name: string;
+    expression: string;
+  }[];
 }
 
 /**

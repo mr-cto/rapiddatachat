@@ -97,6 +97,13 @@ export class QueryService {
     const pageSize = options.pageSize || 100; // Default page size
 
     try {
+      // Check if the query has an explicit LIMIT clause
+      const limitMatch = sqlQuery.match(/\bLIMIT\s+(\d+)/i);
+      const hasExplicitLimit = limitMatch && limitMatch[1];
+      const explicitLimit = hasExplicitLimit
+        ? parseInt(limitMatch[1], 10)
+        : null;
+
       // Apply pagination, sorting, and filtering to the query
       const modifiedQuery = this.applyQueryModifications(
         sqlQuery,
@@ -138,6 +145,14 @@ export class QueryService {
             typeof firstValue === "number"
               ? firstValue
               : parseInt(String(firstValue), 10) || 0;
+
+          // If there's an explicit LIMIT in the original query, use it to cap the total rows
+          if (explicitLimit !== null && totalRows > explicitLimit) {
+            console.log(
+              `[QueryService] Capping totalRows to explicit LIMIT: ${explicitLimit}`
+            );
+            totalRows = explicitLimit;
+          }
         }
       }
       totalPages = Math.ceil(totalRows / pageSize);
@@ -397,12 +412,59 @@ export class QueryService {
 
     // Check if the query already has a LIMIT clause
     const limitPos = sqlQuery.toUpperCase().indexOf(" LIMIT ");
+    const limitMatch =
+      limitPos > 0
+        ? sqlQuery.substring(limitPos).match(/LIMIT\s+(\d+)/i)
+        : null;
+    const hasExplicitLimit = limitMatch && limitMatch[1];
+    const explicitLimit = hasExplicitLimit ? parseInt(limitMatch[1], 10) : null;
 
     // Remove any trailing semicolons before adding LIMIT
     const cleanQuery = sqlQuery.trim().replace(/;$/, "");
 
     if (limitPos > 0) {
-      // If there's already a LIMIT clause, replace it
+      // If there's an explicit LIMIT in the original query
+      if (hasExplicitLimit) {
+        // For the first page, respect the original LIMIT without adding an OFFSET
+        if (page === 1) {
+          console.log(
+            `[QueryService] Respecting original LIMIT ${
+              explicitLimit !== null ? explicitLimit : "default"
+            } for first page`
+          );
+          return cleanQuery;
+        }
+
+        // For subsequent pages, if we're beyond the explicit limit, return empty result set
+        if (explicitLimit !== null && offset >= explicitLimit) {
+          console.log(
+            `[QueryService] Offset ${offset} exceeds explicit LIMIT ${explicitLimit}, returning empty result`
+          );
+          return cleanQuery.slice(0, limitPos) + ` LIMIT 0`;
+        }
+
+        // Otherwise, adjust the LIMIT to not exceed the explicit limit
+        const adjustedLimit =
+          explicitLimit !== null
+            ? Math.min(pageSize, explicitLimit - offset)
+            : pageSize;
+        if (adjustedLimit <= 0) {
+          console.log(
+            `[QueryService] Adjusted limit is zero or negative, returning empty result`
+          );
+          return cleanQuery.slice(0, limitPos) + ` LIMIT 0`;
+        }
+
+        console.log(
+          `[QueryService] Adjusting LIMIT to ${adjustedLimit} with OFFSET ${offset}`
+        );
+        return (
+          cleanQuery.slice(0, limitPos) +
+          ` LIMIT ${adjustedLimit} OFFSET ${offset}`
+        );
+      }
+
+      // If there's a LIMIT clause but not from an explicit limit request, replace it with pagination
       return (
         cleanQuery.slice(0, limitPos) + ` LIMIT ${pageSize} OFFSET ${offset}`
       );
@@ -418,12 +480,25 @@ export class QueryService {
    * @returns Count query
    */
   private buildCountQuery(sqlQuery: string): string {
-    // Remove any existing ORDER BY and LIMIT clauses
-    let countQuery = sqlQuery.replace(/\bORDER BY\b.*?(?=\bLIMIT\b|$)/i, "");
-    countQuery = countQuery.replace(/\bLIMIT\b.*?(?=$)/i, "");
+    // Check if the query has a LIMIT clause that we should respect
+    const limitMatch = sqlQuery.match(/\bLIMIT\s+(\d+)/i);
+    const hasExplicitLimit = limitMatch && limitMatch[1];
 
-    // Wrap the query in a COUNT(*) query
-    return `SELECT COUNT(*) FROM (${countQuery}) AS count_query`;
+    if (hasExplicitLimit) {
+      // If there's an explicit LIMIT in the original query, we should respect it
+      // Remove any existing ORDER BY clause but keep the LIMIT
+      let countQuery = sqlQuery.replace(/\bORDER BY\b.*?(?=\bLIMIT\b|$)/i, "");
+
+      // Wrap the query in a COUNT(*) query
+      return `SELECT COUNT(*) FROM (${countQuery}) AS count_query`;
+    } else {
+      // Standard behavior - remove both ORDER BY and LIMIT clauses
+      let countQuery = sqlQuery.replace(/\bORDER BY\b.*?(?=\bLIMIT\b|$)/i, "");
+      countQuery = countQuery.replace(/\bLIMIT\b.*?(?=$)/i, "");
+
+      // Wrap the query in a COUNT(*) query
+      return `SELECT COUNT(*) FROM (${countQuery}) AS count_query`;
+    }
   }
 
   /**
