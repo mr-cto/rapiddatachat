@@ -217,15 +217,35 @@ export default async function handler(
       );
       logDebug(`Converted file to Parquet: ${parquetPath}`);
     } catch (error) {
+      // Extract more detailed error information
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      const errorDetails = {
+        error,
+        headers: parsedData.headers,
+        sampleData:
+          rowsWithProvenance.length > 0 ? rowsWithProvenance[0] : null,
+        missingFields:
+          error instanceof Error &&
+          error.message.includes("missing required field")
+            ? error.message.split("missing required field:")[1]?.trim()
+            : null,
+      };
+
       await handleFileError(
         fileId,
         ErrorType.CONVERSION,
         ErrorSeverity.MEDIUM,
-        `Error converting to Parquet: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-        { error }
+        `Error converting to Parquet: ${errorMessage}`,
+        errorDetails
       );
+
+      // Log more detailed information for debugging
+      console.log(`[ERROR][PARQUET] Detailed error for file ${fileId}:`, {
+        message: errorMessage,
+        headers: parsedData.headers,
+        missingField: errorDetails.missingFields,
+      });
 
       // Add to dead letter queue for later retry
       await addToDeadLetterQueue(
@@ -235,6 +255,7 @@ export default async function handler(
           fileId,
           headers: parsedData.headers,
           rowCount: rowsWithProvenance.length,
+          errorDetails: errorDetails,
         },
         error
       );

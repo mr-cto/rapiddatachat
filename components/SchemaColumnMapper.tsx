@@ -12,6 +12,7 @@ interface SchemaColumnMapperProps {
   fileId: string;
   fileColumns: string[];
   userId: string;
+  projectId?: string;
   onMappingComplete?: (mapping: ColumnMapping) => void;
 }
 
@@ -24,6 +25,7 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
   fileId,
   fileColumns,
   userId,
+  projectId,
   onMappingComplete,
 }) => {
   const [schemas, setSchemas] = useState<GlobalSchema[]>([]);
@@ -34,7 +36,7 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
     Array<{
       fileColumn: string;
       schemaColumn: string;
-      transformationRule?: string;
+      addToSchema?: boolean;
     }>
   >([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -48,7 +50,7 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
     if (isOpen && userId) {
       fetchSchemas();
     }
-  }, [isOpen, userId]);
+  }, [isOpen, userId, projectId]);
 
   // Initialize mappings when schema is selected
   useEffect(() => {
@@ -63,21 +65,46 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
       setIsLoading(true);
       setError(null);
 
-      const response = await fetch("/api/schema-management");
+      // Use project-specific endpoint if projectId is provided
+      const endpoint = projectId
+        ? `/api/schema-management?projectId=${projectId}`
+        : "/api/schema-management";
+
+      console.log(`Fetching schemas from: ${endpoint}`);
+
+      const response = await fetch(endpoint);
       if (!response.ok) {
-        throw new Error("Failed to fetch schemas");
+        throw new Error(`Failed to fetch schemas: ${response.statusText}`);
       }
 
       const data = await response.json();
+      console.log("Schemas response:", data);
+
+      if (!data.schemas || !Array.isArray(data.schemas)) {
+        console.error("Invalid schemas response:", data);
+        throw new Error("Invalid schemas response from server");
+      }
+
       const userSchemas = data.schemas;
       setSchemas(userSchemas);
+
+      console.log(`Found ${userSchemas.length} schemas`);
 
       // Set active schema as default if available
       const activeSchema = userSchemas.find(
         (schema: GlobalSchema) => schema.isActive
       );
+
       if (activeSchema) {
+        console.log("Found active schema:", activeSchema.name);
         setSelectedSchema(activeSchema);
+      } else if (userSchemas.length > 0) {
+        // If no active schema but schemas exist, use the first one
+        console.log(
+          "No active schema found, using first schema:",
+          userSchemas[0].name
+        );
+        setSelectedSchema(userSchemas[0]);
       }
 
       setIsLoading(false);
@@ -101,7 +128,7 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
       return {
         fileColumn,
         schemaColumn: matchingSchemaColumn?.name || "",
-        transformationRule: "",
+        addToSchema: false,
       };
     });
 
@@ -164,14 +191,11 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
     );
   };
 
-  // Update a transformation rule
-  const updateTransformationRule = (
-    fileColumn: string,
-    transformationRule: string
-  ) => {
+  // Toggle add to schema option
+  const toggleAddToSchema = (fileColumn: string) => {
     setMappings(
       mappings.map((m) =>
-        m.fileColumn === fileColumn ? { ...m, transformationRule } : m
+        m.fileColumn === fileColumn ? { ...m, addToSchema: !m.addToSchema } : m
       )
     );
   };
@@ -184,19 +208,79 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
       setIsLoading(true);
       setError(null);
 
-      // Filter out mappings with empty schema columns
-      const validMappings = mappings.filter((m) => m.schemaColumn);
+      // Identify columns to add to schema
+      const columnsToAdd = mappings
+        .filter((m) => !m.schemaColumn && m.addToSchema)
+        .map((m) => ({
+          name: m.fileColumn,
+          type: "text", // Default type
+          description: `Added from file column: ${m.fileColumn}`,
+          isRequired: false,
+          isNewColumn: true,
+        }));
+
+      // If there are columns to add to the schema, update the schema first
+      if (columnsToAdd.length > 0) {
+        console.log(`Adding ${columnsToAdd.length} new columns to schema`);
+
+        // Create a copy of the schema with new columns
+        const updatedSchema = {
+          ...selectedSchema,
+          columns: [...selectedSchema.columns, ...columnsToAdd],
+        };
+
+        // Update the schema
+        const schemaResponse = await fetch(`/api/schema-management`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(updatedSchema),
+        });
+
+        if (!schemaResponse.ok) {
+          throw new Error("Failed to update schema with new columns");
+        }
+
+        const schemaData = await schemaResponse.json();
+        setSelectedSchema(schemaData.schema);
+
+        // Update mappings to map new columns to themselves
+        setMappings(
+          mappings.map((m) => {
+            if (!m.schemaColumn && m.addToSchema) {
+              return {
+                ...m,
+                schemaColumn: m.fileColumn,
+              };
+            }
+            return m;
+          })
+        );
+      }
+
+      // Filter out mappings with empty schema columns (that aren't being added to schema)
+      const validMappings = mappings.filter(
+        (m) => m.schemaColumn || (m.addToSchema && columnsToAdd.length > 0)
+      );
 
       // Convert array of mappings to Record<string, string> format
       const mappingsRecord: Record<string, string> = {};
       validMappings.forEach((mapping) => {
-        mappingsRecord[mapping.fileColumn] = mapping.schemaColumn;
+        // If this is a column we just added to the schema, use the file column name
+        // as both the file column and schema column
+        if (!mapping.schemaColumn && mapping.addToSchema) {
+          mappingsRecord[mapping.fileColumn] = mapping.fileColumn;
+        } else {
+          mappingsRecord[mapping.fileColumn] = mapping.schemaColumn;
+        }
       });
 
       const columnMapping: ColumnMapping = {
         fileId,
         schemaId: selectedSchema.id,
         mappings: mappingsRecord,
+        newColumnsAdded: columnsToAdd.length,
       };
 
       const response = await fetch("/api/column-mappings", {
@@ -215,7 +299,13 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
 
       if (data.success) {
         if (onMappingComplete) {
-          onMappingComplete(columnMapping);
+          // Include information about new columns added in the response
+          const responseData = {
+            ...columnMapping,
+            newColumnsAdded:
+              data.newColumnsAdded || columnMapping.newColumnsAdded || 0,
+          };
+          onMappingComplete(responseData);
         }
         onClose();
       } else {
@@ -320,7 +410,7 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
                 Schema Column
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Transformation
+                Add to Schema
               </th>
             </tr>
           </thead>
@@ -336,7 +426,6 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
                     onChange={(e) =>
                       updateMapping(mapping.fileColumn, e.target.value)
                     }
-                    className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                   >
                     <option value="">-- Not Mapped --</option>
                     {selectedSchema?.columns.map((column) => (
@@ -347,18 +436,23 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
                   </select>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <input
-                    type="text"
-                    value={mapping.transformationRule || ""}
-                    onChange={(e) =>
-                      updateTransformationRule(
-                        mapping.fileColumn,
-                        e.target.value
-                      )
-                    }
-                    placeholder="e.g., UPPER(value)"
-                    className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                  />
+                  {!mapping.schemaColumn && (
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        id={`add-to-schema-${index}`}
+                        checked={mapping.addToSchema || false}
+                        onChange={() => toggleAddToSchema(mapping.fileColumn)}
+                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                      />
+                      <label
+                        htmlFor={`add-to-schema-${index}`}
+                        className="ml-2 text-sm text-gray-600"
+                      >
+                        Add to schema
+                      </label>
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}
@@ -447,13 +541,13 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
                   Schema Column
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Transformation
+                  Added to Schema
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {mappings
-                .filter((m) => m.schemaColumn)
+                .filter((m) => m.schemaColumn || m.addToSchema)
                 .map((mapping, index) => (
                   <tr key={index}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -463,7 +557,11 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
                       {mapping.schemaColumn}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {mapping.transformationRule || "-"}
+                      {mapping.addToSchema && !mapping.schemaColumn && (
+                        <span className="px-2 py-1 text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                          Yes
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}

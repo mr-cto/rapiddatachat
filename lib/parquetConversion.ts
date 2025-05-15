@@ -24,11 +24,13 @@ export function inferParquetSchema(
 
   // Add fields based on headers
   headers.forEach((header) => {
+    // Ensure the header exists in the schema even if the value is missing
+    schemaFields[header] = { type: "UTF8" }; // Default to string type
+
     const value = sampleRow[header];
 
     if (value === null || value === undefined) {
-      // Default to STRING for null/undefined values
-      schemaFields[header] = { type: "UTF8" };
+      // Keep the default STRING for null/undefined values
     } else if (typeof value === "number") {
       if (Number.isInteger(value)) {
         schemaFields[header] = { type: "INT64" };
@@ -39,10 +41,8 @@ export function inferParquetSchema(
       schemaFields[header] = { type: "BOOLEAN" };
     } else if (value instanceof Date) {
       schemaFields[header] = { type: "TIMESTAMP_MILLIS" };
-    } else {
-      // Default to string for other types
-      schemaFields[header] = { type: "UTF8" };
     }
+    // Otherwise keep the default string type
   });
 
   // Add provenance columns
@@ -86,9 +86,15 @@ export async function convertToParquet(
       const batch = data.rows.slice(i, i + BATCH_SIZE);
 
       for (const row of batch) {
-        // Convert any Date objects to timestamps
+        // Convert any Date objects to timestamps and ensure all schema fields exist
         const processedRow: Record<string, unknown> = {};
 
+        // First, initialize all fields from the schema with null values
+        Object.keys(schema.fields).forEach((field) => {
+          processedRow[field] = null;
+        });
+
+        // Then populate with actual values from the row
         Object.entries(row).forEach(([key, value]) => {
           if (value instanceof Date) {
             processedRow[key] = value.getTime();

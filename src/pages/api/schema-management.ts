@@ -68,16 +68,37 @@ export default async function handler(
         return res.status(400).json({ error: "name is required" });
       }
 
-      // Create schema
-      const newSchema = await globalSchemaService.createGlobalSchema(
-        schema.userId,
-        schema.projectId,
-        schema.name,
-        schema.description || "",
-        schema.columns || []
-      );
+      try {
+        // Create schema
+        const newSchema = await globalSchemaService.createGlobalSchema(
+          schema.userId,
+          schema.projectId,
+          schema.name,
+          schema.description || "",
+          schema.columns || []
+        );
 
-      return res.status(201).json(newSchema);
+        console.log(
+          `Created new schema ${newSchema.id} for project ${schema.projectId}`
+        );
+
+        // Set this schema as the active schema for the project
+        await globalSchemaService.setActiveSchema(
+          schema.projectId,
+          newSchema.id
+        );
+        console.log(
+          `Set schema ${newSchema.id} as active for project ${schema.projectId}`
+        );
+
+        return res.status(201).json(newSchema);
+      } catch (error) {
+        console.error("Error creating schema:", error);
+        return res.status(500).json({
+          error: "Failed to create schema",
+          details: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
     // Handle PUT request

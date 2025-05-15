@@ -54,6 +54,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
   const [isFirstUpload, setIsFirstUpload] = useState<boolean>(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [hasActiveSchema, setHasActiveSchema] = useState<boolean>(false);
+  const [schemaCreated, setSchemaCreated] = useState<boolean>(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState<string | null>(
     null
   );
@@ -96,8 +97,8 @@ const FilesPane: React.FC<FilesPaneProps> = ({
 
       // Use project-specific endpoint if projectId is provided
       const endpoint = projectId
-        ? `/api/projects/${projectId}/schema`
-        : "/api/schema-management";
+        ? `/api/schema-management?projectId=${projectId}`
+        : `/api/schema-management`;
 
       try {
         const response = await fetch(endpoint);
@@ -116,8 +117,14 @@ const FilesPane: React.FC<FilesPaneProps> = ({
         }
 
         const data = await response.json();
-        const hasSchema =
-          data.schemas && data.schemas.some((schema: any) => schema.isActive);
+
+        // If we have any schemas at all, consider that we have an active schema
+        const hasSchema = data.schemas && data.schemas.length > 0;
+
+        console.log("Schema check result:", {
+          hasSchema,
+          schemas: data.schemas,
+        });
 
         setHasActiveSchema(hasSchema);
         return hasSchema;
@@ -322,10 +329,12 @@ const FilesPane: React.FC<FilesPaneProps> = ({
     setSuccessMessage(null);
 
     try {
-      // Try to check if there's an active schema, but don't block on failure
+      // Check if there's an active schema
       let hasSchema = false;
       try {
+        console.log("Checking for active schema before upload...");
         hasSchema = await checkActiveSchema();
+        console.log("Active schema check result:", hasSchema);
       } catch (err) {
         console.warn(
           "Schema check failed during upload, proceeding with upload:",
@@ -555,7 +564,16 @@ const FilesPane: React.FC<FilesPaneProps> = ({
 
             // For first upload or no active schema, redirect to schema creation page
             // Also check isFirstUpload as a fallback in case schema check failed
-            if (!hasSchema || isFirstUpload) {
+            console.log(
+              "Deciding whether to show schema mapper or create schema:",
+              {
+                hasSchema,
+                isFirstUpload,
+                filesLength: files.length,
+              }
+            );
+
+            if (!hasSchema) {
               setUploadStatus("Redirecting to schema creation...");
 
               // Store columns in localStorage for the schema creation page
@@ -573,7 +591,12 @@ const FilesPane: React.FC<FilesPaneProps> = ({
               // Redirect to schema creation page
               router.push({
                 pathname: "/project/[id]/schema/create",
-                query: { id: projectId, firstUpload: "true", fileId: fileId },
+                query: {
+                  id: projectId,
+                  firstUpload: "true",
+                  fileId: fileId,
+                  schemaCreated: "false",
+                },
               });
             } else {
               // For subsequent uploads, show schema mapping modal
@@ -602,7 +625,12 @@ const FilesPane: React.FC<FilesPaneProps> = ({
               // Redirect to schema creation page
               router.push({
                 pathname: "/project/[id]/schema/create",
-                query: { id: projectId, firstUpload: "true", fileId: fileId },
+                query: {
+                  id: projectId,
+                  firstUpload: "true",
+                  fileId: fileId,
+                  schemaCreated: "false",
+                },
               });
             } else {
               // For subsequent uploads, show schema mapping modal with empty columns
@@ -637,7 +665,12 @@ const FilesPane: React.FC<FilesPaneProps> = ({
             // Redirect to schema creation page
             router.push({
               pathname: "/project/[id]/schema/create",
-              query: { id: projectId, firstUpload: "true", fileId: fileId },
+              query: {
+                id: projectId,
+                firstUpload: "true",
+                fileId: fileId,
+                schemaCreated: "false",
+              },
             });
           } else {
             // For subsequent uploads, show schema mapping modal with default columns
@@ -1073,15 +1106,19 @@ const FilesPane: React.FC<FilesPaneProps> = ({
           fileId={uploadedFileId}
           fileColumns={uploadedFileColumns}
           userId={session?.user?.email || session?.user?.id || ""}
-          onMappingComplete={() => {
+          projectId={projectId}
+          onMappingComplete={(mapping) => {
             setShowSchemaMapper(false);
             setUploadedFileId(null);
             setUploadedFileColumns([]);
 
-            // Show success message
-            setSuccessMessage(
-              "File successfully uploaded and mapped to schema!"
-            );
+            // Show success message with info about new columns
+            const message =
+              mapping.newColumnsAdded && mapping.newColumnsAdded > 0
+                ? `File successfully uploaded and mapped to schema! ${mapping.newColumnsAdded} new column(s) added to schema.`
+                : "File successfully uploaded and mapped to schema!";
+
+            setSuccessMessage(message);
 
             // Refresh the file list after mapping is complete
             fetchFiles();

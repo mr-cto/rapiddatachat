@@ -42,6 +42,7 @@ export interface ColumnMapping {
   fileId: string;
   schemaId: string;
   mappings: Record<string, string>;
+  newColumnsAdded?: number;
 }
 
 /**
@@ -176,15 +177,33 @@ export class SchemaService {
 
         if (schemaColumn) {
           console.log(`Found matching schema column: ${schemaColumn.name}`);
-          // Create the mapping
-          await prisma.columnMapping.create({
-            data: {
-              fileId: mapping.fileId,
-              globalSchemaId: mapping.schemaId,
-              schemaColumnId: schemaColumn.id,
-              fileColumn: fileColumn,
-            },
-          });
+
+          try {
+            // Create the mapping
+            await prisma.columnMapping.create({
+              data: {
+                fileId: mapping.fileId,
+                globalSchemaId: mapping.schemaId,
+                schemaColumnId: schemaColumn.id,
+                fileColumn: fileColumn,
+              },
+            });
+          } catch (error) {
+            // Check if this is a unique constraint violation
+            if (
+              error instanceof Error &&
+              error.message.includes("Unique constraint failed")
+            ) {
+              console.log(
+                `Mapping already exists for file column ${fileColumn} and schema column ${schemaColumn.name}, skipping`
+              );
+              // Continue with the next mapping instead of failing
+              continue;
+            } else {
+              // For other errors, rethrow
+              throw error;
+            }
+          }
         } else {
           console.warn(
             `Schema column ${schemaColumnName} not found in schema ${mapping.schemaId}`
@@ -724,23 +743,67 @@ export class SchemaService {
    */
   async setActiveSchema(projectId: string, schemaId: string): Promise<boolean> {
     try {
+      console.log(
+        `[setActiveSchema] Setting schema ${schemaId} as active for project ${projectId}`
+      );
+
       // Check if schema exists
       const schema = await prisma.globalSchema.findUnique({
         where: { id: schemaId },
       });
 
       if (!schema) {
+        console.error(`[setActiveSchema] Schema ${schemaId} not found`);
         return false;
       }
 
-      // Note: The Prisma schema might not have an isActive field
-      // This is a simplified implementation that assumes the field exists
-      // In a real implementation, you might need to handle this differently
+      // We'll use a custom query approach since the Prisma schema might not have the isActive field
+      try {
+        // Check if the is_active column exists
+        const columnExists = await prisma.$queryRaw`
+          SELECT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'global_schemas' AND column_name = 'is_active'
+          ) as exists
+        `;
 
-      // For now, we'll just return success since this is optional functionality
-      console.log(
-        "[SchemaService] Using Prisma API, active schema setting might not be supported"
-      );
+        const isActiveColumnExists = (columnExists as any)[0]?.exists || false;
+
+        if (isActiveColumnExists) {
+          // First, set all schemas for this project to inactive using a raw query
+          await prisma.$executeRaw`
+            UPDATE global_schemas
+            SET is_active = false
+            WHERE project_id = ${projectId}
+            AND id != ${schemaId}
+          `;
+
+          console.log(
+            `[setActiveSchema] Set all other schemas for project ${projectId} to inactive`
+          );
+
+          // Then set this schema to active
+          await prisma.$executeRaw`
+            UPDATE global_schemas
+            SET is_active = true
+            WHERE id = ${schemaId}
+          `;
+
+          console.log(
+            `[setActiveSchema] Successfully set schema ${schemaId} as active`
+          );
+        } else {
+          console.log(
+            `[setActiveSchema] is_active column doesn't exist in global_schemas table, skipping active status update`
+          );
+        }
+      } catch (updateError) {
+        console.warn(
+          `[setActiveSchema] Error updating schema active status:`,
+          updateError
+        );
+        // Continue even if this fails - the field might not exist
+      }
 
       return true;
     } catch (error) {

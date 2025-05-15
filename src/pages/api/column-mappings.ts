@@ -96,11 +96,53 @@ export default async function handler(
           mappings,
         };
 
+        // Check if there are any new columns to add to the schema
+        const newColumns = Object.entries(mappings).filter(
+          ([fileCol, schemaCol]) => {
+            // If the file column and schema column have the same name and it doesn't exist in the schema
+            return (
+              fileCol === schemaCol &&
+              !schemaToMap.columns.some((col) => col.name === schemaCol)
+            );
+          }
+        );
+
+        // If there are new columns to add, update the schema first
+        if (newColumns.length > 0) {
+          console.log(
+            `Adding ${newColumns.length} new columns to schema ${bodySchemaId}`
+          );
+
+          // Create new schema columns
+          const columnsToAdd = newColumns.map(([colName]) => ({
+            id: `col_${Date.now()}_${Math.random()
+              .toString(36)
+              .substring(2, 9)}`,
+            name: colName,
+            type: "text", // Default type
+            description: `Added from file column: ${colName}`,
+            isRequired: false,
+            isNewColumn: true,
+          }));
+
+          // Update the schema with new columns
+          const updatedSchema = {
+            ...schemaToMap,
+            columns: [...schemaToMap.columns, ...columnsToAdd],
+          };
+
+          await schemaService.updateGlobalSchema(updatedSchema);
+        }
+
         // Save the mapping
         const success = await schemaService.saveColumnMapping(newMapping);
 
         if (success) {
-          return res.status(200).json({ success: true, mapping: newMapping });
+          return res.status(200).json({
+            success: true,
+            mapping: newMapping,
+            newColumnsAdded: newColumns.length,
+          });
         } else {
           return res.status(500).json({ error: "Failed to save mapping" });
         }
