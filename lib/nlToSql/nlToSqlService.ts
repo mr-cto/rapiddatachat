@@ -62,6 +62,7 @@ interface QueryOptions {
   filters?: Record<string, unknown>;
   viewState?: string; // Serialized ViewState
   schemaId?: string; // Global schema ID
+  fileId?: string; // Selected file ID
 }
 
 // Define the interface for query history item
@@ -120,6 +121,12 @@ export class NLToSQLService {
     userId: string,
     options: QueryOptions = {}
   ): Promise<NLToSQLResponse> {
+    // Log if a specific file ID is provided
+    if (options.fileId) {
+      console.log(
+        `[NLToSQLService] Processing query for specific file ID: ${options.fileId}`
+      );
+    }
     // Parse view state if provided
     let viewState: ViewState | undefined;
     if (options.viewState) {
@@ -157,11 +164,16 @@ export class NLToSQLService {
       );
       console.log(`[NLToSQLService] Query options:`, JSON.stringify(options));
 
-      // Get schema information for all active tables
+      // Get schema information for active tables, filtered by fileId if provided
       console.log(
-        `[NLToSQLService] Fetching schema for active tables for user ${userId}`
+        `[NLToSQLService] Fetching schema for active tables for user ${userId}${
+          options.fileId ? ` and file ${options.fileId}` : ""
+        }`
       );
-      const schema = await this.schemaService.getSchemaForActiveTables(userId);
+      const schema = await this.schemaService.getSchemaForActiveTables(
+        userId,
+        options.fileId
+      );
       console.log(
         `[NLToSQLService] Retrieved schema with ${
           schema.tables?.length || 0
@@ -195,7 +207,10 @@ export class NLToSQLService {
             `[NLToSQLService] Successfully activated ${activationResult.activatedCount} files, fetching schema again`
           );
           const updatedSchema =
-            await this.schemaService.getSchemaForActiveTables(userId);
+            await this.schemaService.getSchemaForActiveTables(
+              userId,
+              options.fileId
+            );
 
           if (updatedSchema.tables && updatedSchema.tables.length > 0) {
             console.log(
@@ -231,9 +246,11 @@ export class NLToSQLService {
         );
 
         try {
-          // Check if there's any file data
+          // Check if there's any file data for this specific user by joining with files table
           const fileDataResult = (await executeQuery(`
-            SELECT COUNT(*) as count FROM file_data
+            SELECT COUNT(*) as count FROM file_data fd
+            JOIN files f ON fd.file_id = f.id
+            WHERE f.user_id = '${userId}'
           `)) as Array<{ count: number }>;
 
           if (
@@ -245,15 +262,21 @@ export class NLToSQLService {
               `[NLToSQLService] Found ${fileDataResult[0].count} file data records, creating a generic schema`
             );
 
-            // Get a sample of the data
+            // Get a sample of the data for this user by joining with files table
             const sampleData = (await executeQuery(`
-              SELECT data FROM file_data LIMIT 1
+              SELECT fd.data FROM file_data fd
+              JOIN files f ON fd.file_id = f.id
+              WHERE f.user_id = '${userId}'
+              LIMIT 1
             `)) as Array<Record<string, unknown>>;
 
             if (sampleData && sampleData.length > 0) {
-              // Create a generic table schema
+              // Create a generic table schema with user filtering information
               const genericTable = {
-                name: "file_data",
+                name:
+                  "file_data fd JOIN files f ON fd.file_id = f.id WHERE f.user_id = '" +
+                  userId +
+                  "'",
                 columns: [
                   {
                     name: "data",
@@ -308,6 +331,12 @@ export class NLToSQLService {
         `[NLToSQLService] Formatting schema for prompt with ${schema.tables.length} tables`
       );
       const schemaInfo = await this.schemaService.formatSchemaForPrompt(schema);
+
+      if (options.fileId) {
+        console.log(
+          `[NLToSQLService] Query scoped to file ID: ${options.fileId}`
+        );
+      }
       console.log(
         `[NLToSQLService] Schema info for prompt (length: ${schemaInfo.length} chars)`
       );
@@ -533,30 +562,9 @@ export class NLToSQLService {
         return [];
       }
 
-      // Check if the nl_query column exists
-      let columnExists = false;
-      try {
-        const columnCheck = (await executeQuery(`
-          SELECT column_name
-          FROM information_schema.columns
-          WHERE table_name = 'queries' AND column_name = 'nl_query'
-        `)) as Array<{ column_name: string }>;
-        columnExists = Array.isArray(columnCheck) && columnCheck.length > 0;
-      } catch (error) {
-        console.error(
-          "[NLToSQLService] Error checking column existence:",
-          error
-        );
-      }
-
-      // Get the query history from the database using the appropriate column name
-      const columnName = columnExists ? "nl_query" : "query";
-      console.log(
-        `[NLToSQLService] Using column name: ${columnName} for query history`
-      );
-
+      // Get the query history from the database
       const result = (await executeQuery(`
-        SELECT id, user_id, ${columnName}, sql_query, status, execution_time, error, created_at
+        SELECT id, user_id, query_text, status, error, created_at
         FROM queries
         WHERE user_id = '${userId}'
         ORDER BY created_at DESC
@@ -564,11 +572,8 @@ export class NLToSQLService {
       `)) as Array<{
         id: string;
         user_id: string;
-        query?: string;
-        nl_query?: string;
-        sql_query: string;
+        query_text: string;
         status: string;
-        execution_time: number;
         error: string | null;
         created_at: string;
       }>;
@@ -576,11 +581,11 @@ export class NLToSQLService {
       // Convert the result to QueryHistoryItem objects
       const history: QueryHistoryItem[] = (result || []).map((item) => ({
         id: item.id,
-        query: item.nl_query || item.query || "",
-        sqlQuery: item.sql_query,
+        query: item.query_text || "",
+        sqlQuery: "", // This field is no longer stored in the database
         timestamp: new Date(item.created_at),
         status: item.status,
-        executionTime: item.execution_time,
+        executionTime: 0, // This field is no longer stored in the database
         error: item.error || undefined,
       }));
 
@@ -639,13 +644,11 @@ export class NLToSQLService {
           `[NLToSQLService] Queries table does not exist, creating it`
         );
         await executeQuery(`
-          CREATE TABLE queries (
+          CREATE TABLE IF NOT EXISTS queries (
             id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL,
-            nl_query TEXT NOT NULL,
-            sql_query TEXT NOT NULL,
+            query_text TEXT NOT NULL,
             status TEXT NOT NULL,
-            execution_time INTEGER,
             error TEXT,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
           )
@@ -659,14 +662,12 @@ export class NLToSQLService {
 
       // Save the query to the database
       await executeQuery(`
-        INSERT INTO queries (id, user_id, nl_query, sql_query, status, execution_time, error, created_at)
+        INSERT INTO queries (id, user_id, query_text, status, error, created_at)
         VALUES (
           '${queryId}',
           '${userId}',
           '${query.replace(/'/g, "''")}',
-          '${sqlQuery.replace(/'/g, "''")}',
           '${error ? "error" : "success"}',
-          ${executionTime},
           ${error ? `'${error.replace(/'/g, "''")}'` : "NULL"},
           CURRENT_TIMESTAMP
         )

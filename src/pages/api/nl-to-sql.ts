@@ -73,6 +73,7 @@ export default async function handler(
       userId,
       viewState,
       schemaId,
+      fileId,
     } = req.body;
 
     // Use userId from request body if provided (for testing), otherwise use session email
@@ -149,6 +150,7 @@ export default async function handler(
       filters: filters ? JSON.parse(JSON.stringify(filters)) : undefined,
       viewState,
       schemaId,
+      fileId,
     };
 
     // Process the query with options

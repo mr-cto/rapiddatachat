@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "../../../lib/authOptions";
 import { v4 as uuidv4 } from "uuid";
 import { executeQuery } from "../../../lib/database";
+import { PrismaClient } from "@prisma/client";
 import formidable, { File as FormidableFile } from "formidable";
 import {
   UPLOADS_DIR,
@@ -108,11 +109,23 @@ export default async function handler(
       return res.status(400).json({ error: "No files uploaded" });
     }
 
-    // Get the project ID from the form data
-    const projectId = Array.isArray(fields.projectId)
+    // Get the project ID from the form data or query parameters
+    let projectId = Array.isArray(fields.projectId)
       ? fields.projectId[0]
       : fields.projectId;
-    console.log(`Project ID from form: ${projectId || "none"}`);
+
+    // If projectId is not in form data, check query parameters
+    if (!projectId && req.query.projectId) {
+      projectId = Array.isArray(req.query.projectId)
+        ? req.query.projectId[0]
+        : req.query.projectId;
+    }
+
+    console.log(
+      `Project ID: ${projectId || "none"} (source: ${
+        projectId ? (fields.projectId ? "form data" : "query params") : "none"
+      })`
+    );
 
     // If projectId is provided, check if the project exists and belongs to the user
     if (projectId) {
@@ -191,9 +204,21 @@ export default async function handler(
           // If projectId is provided, associate the file with the project
           if (projectId) {
             console.log(`Associating file ${fileId} with project ${projectId}`);
+
+            // Update the file's projectId field directly
+            const prismaClient = new PrismaClient();
+            await prismaClient.file.update({
+              where: { id: fileId },
+              data: { projectId },
+            });
+            console.log(`Updated file's projectId field to ${projectId}`);
+
+            // Also add to the project_files join table
             const projectService = new ProjectService();
             await projectService.addFileToProject(projectId, fileId);
-            console.log(`File successfully associated with project`);
+            console.log(
+              `File successfully associated with project in join table`
+            );
           }
         } catch (dbError) {
           // Check if this is a DuckDB server environment error

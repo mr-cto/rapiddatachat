@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
+import { useRouter } from "next/router";
 import { FaDatabase } from "react-icons/fa";
 import { SchemaManager } from "../SchemaManager";
 import { GlobalSchema } from "../../lib/schemaManagement";
@@ -13,11 +14,21 @@ const SchemaManagementPane: React.FC<SchemaManagementPaneProps> = ({
 }) => {
   const { data: session } = useSession();
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+  const { id: projectId } = router.query;
 
   if (!session?.user) {
     return (
       <div className="p-4 text-center text-gray-500">
         Please sign in to manage schemas.
+      </div>
+    );
+  }
+
+  if (!projectId || typeof projectId !== "string") {
+    return (
+      <div className="p-4 text-center text-gray-500">
+        Project ID is required to manage schemas.
       </div>
     );
   }
@@ -41,6 +52,7 @@ const SchemaManagementPane: React.FC<SchemaManagementPaneProps> = ({
       <div className="overflow-y-auto flex-1 p-3">
         <SchemaManager
           userId={session.user.email || session.user.id || ""}
+          projectId={projectId}
           onSchemaChange={onSchemaChange}
         />
       </div>

@@ -191,7 +191,7 @@ const SchemaChangesPage: React.FC = () => {
       <div className="max-w-6xl mx-auto px-4 py-8">
         <div className="mb-8">
           <button
-            onClick={() => router.push(`/project/${projectId}`)}
+            onClick={() => router.push(`/project/${projectId}/dashboard`)}
             className="flex items-center text-accent-primary hover:text-accent-primary-hover"
           >
             <svg
@@ -222,7 +222,7 @@ const SchemaChangesPage: React.FC = () => {
       <div className="max-w-6xl mx-auto px-4 py-8">
         <div className="mb-8">
           <button
-            onClick={() => router.push(`/project/${projectId}`)}
+            onClick={() => router.push(`/project/${projectId}/dashboard`)}
             className="flex items-center text-accent-primary hover:text-accent-primary-hover"
           >
             <svg
@@ -252,7 +252,7 @@ const SchemaChangesPage: React.FC = () => {
     <div className="max-w-6xl mx-auto px-4 py-8">
       <div className="mb-8">
         <button
-          onClick={() => router.push(`/project/${projectId}`)}
+          onClick={() => router.push(`/project/${projectId}/dashboard`)}
           className="flex items-center text-accent-primary hover:text-accent-primary-hover"
         >
           <svg

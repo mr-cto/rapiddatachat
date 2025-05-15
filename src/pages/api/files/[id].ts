@@ -145,6 +145,13 @@ async function handleDeleteRequest(
       },
     });
 
+    // Delete column mappings (this was missing and causing the foreign key constraint error)
+    await prisma.columnMapping.deleteMany({
+      where: {
+        fileId,
+      },
+    });
+
     // Get and delete column merges
     // Use any as a workaround for TypeScript errors with Prisma
     const prismaAny = prisma as any;

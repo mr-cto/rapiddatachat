@@ -8,6 +8,7 @@ interface NLToSQLQueryProps {
   onSubmit: (query: string, options?: QueryOptions) => void;
   isLoading: boolean;
   savedQueries?: string[];
+  selectedFileId?: string;
 }
 
 interface QueryOptions {
@@ -16,6 +17,7 @@ interface QueryOptions {
   sortColumn?: string;
   sortDirection?: "asc" | "desc";
   filters?: Record<string, unknown>;
+  fileId?: string;
 }
 
 /**
@@ -26,6 +28,7 @@ interface QueryOptions {
 export const NLToSQLQuery: React.FC<NLToSQLQueryProps> = ({
   onSubmit,
   isLoading,
+  selectedFileId,
 }) => {
   const [query, setQuery] = useState("");
   const [pageSize, setPageSize] = useState(100);
@@ -41,7 +44,7 @@ export const NLToSQLQuery: React.FC<NLToSQLQueryProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (query.trim()) {
-      onSubmit(query, { pageSize });
+      onSubmit(query, { pageSize, fileId: selectedFileId });
     }
   };
 

@@ -188,7 +188,7 @@ const GlobalSchemaCreation: React.FC<GlobalSchemaCreationProps> = ({
       const data = await response.json();
 
       // Redirect to the project dashboard
-      router.push(`/project/${projectId}`);
+      router.push(`/project/${projectId}/dashboard`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
       setIsSubmitting(false);
@@ -340,7 +340,7 @@ const GlobalSchemaCreation: React.FC<GlobalSchemaCreationProps> = ({
         <div className="flex justify-end space-x-4">
           <button
             type="button"
-            onClick={() => router.push(`/project/${projectId}`)}
+            onClick={() => router.push(`/project/${projectId}/dashboard`)}
             className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
           >
             Cancel

@@ -42,21 +42,12 @@ export default async function handler(
         console.log(`Found ${schemas.length} schemas for project ${projectId}`);
         return res.status(200).json({ schemas });
       }
-      // If no projectId is provided, try to get all schemas
+      // If no projectId is provided, return an error
       else {
-        console.log("No projectId provided, trying to get all schemas");
-        try {
-          // Get all schemas by using an empty string as the projectId
-          // This will return all schemas in the database
-          const schemas = await globalSchemaService.getGlobalSchemasForProject(
-            ""
-          );
-          console.log(`Found ${schemas.length} schemas with empty projectId`);
-          return res.status(200).json({ schemas });
-        } catch (error) {
-          console.error("Error getting all schemas:", error);
-          return res.status(200).json({ schemas: [] }); // Return empty array on error
-        }
+        console.log("No projectId provided, returning error");
+        return res
+          .status(400)
+          .json({ error: "Project ID is required to fetch schemas" });
       }
     }
 

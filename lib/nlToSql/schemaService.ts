@@ -41,18 +41,24 @@ interface MergedColumn {
  */
 export class SchemaService {
   /**
-   * Get schema information for all active tables
+   * Get schema information for active tables
    * @param userId User ID
+   * @param fileId Optional file ID to filter by
    * @returns Promise<DatabaseSchema> Database schema information
    */
-  async getSchemaForActiveTables(userId: string): Promise<DatabaseSchema> {
+  async getSchemaForActiveTables(
+    userId: string,
+    fileId?: string
+  ): Promise<DatabaseSchema> {
     try {
       console.log(
-        `[SchemaService] Getting schema for active tables for user: ${userId}`
+        `[SchemaService] Getting schema for active tables for user: ${userId}${
+          fileId ? ` and file: ${fileId}` : ""
+        }`
       );
 
-      // Get all active files for the user
-      const activeFiles = await this.getActiveFilesForUser(userId);
+      // Get active files for the user, filtered by fileId if provided
+      const activeFiles = await this.getActiveFilesForUser(userId, fileId);
       console.log(
         `[SchemaService] Found ${activeFiles.length} active files for user ${userId}`
       );
@@ -210,17 +216,26 @@ export class SchemaService {
   /**
    * Get active files for a user
    * @param userId User ID
+   * @param fileId Optional file ID to filter by
    * @returns Promise<Array<{ id: string; filename: string }>> Active files
    */
   private async getActiveFilesForUser(
-    userId: string
+    userId: string,
+    fileId?: string
   ): Promise<Array<{ id: string; filename: string }>> {
     try {
-      console.log(`[SchemaService] Getting active files for user: ${userId}`);
+      console.log(
+        `[SchemaService] Getting active files for user: ${userId}${
+          fileId ? ` and file: ${fileId}` : ""
+        }`
+      );
+
+      // Add fileId filter if provided
+      const fileFilter = fileId ? ` AND id = '${fileId}'` : "";
 
       const result = (await executeQuery(`
         SELECT id, filename FROM files
-        WHERE user_id = '${userId}' AND status = 'active'
+        WHERE user_id = '${userId}' AND status = 'active'${fileFilter}
       `)) as Array<{ id: string; filename: string }>;
 
       console.log(

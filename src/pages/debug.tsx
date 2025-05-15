@@ -240,7 +240,9 @@ export default function DebugPage({ user }: DebugPageProps) {
    * @param level Log level
    * @returns CSS color class
    */
-  const getLogLevelColor = (level: string) => {
+  const getLogLevelColor = (level?: string) => {
+    if (!level) return "text-gray-600"; // Default color for undefined level
+
     switch (level.toLowerCase()) {
       case "error":
         return "text-red-600";

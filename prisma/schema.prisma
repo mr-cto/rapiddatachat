@@ -7,6 +7,21 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id                String    @id @default(uuid())
+  name              String?
+  email             String    @unique
+  emailVerified     DateTime?
+  password          String?
+  image             String?
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  resetToken        String?   @map("reset_token")
+  resetTokenExpires DateTime? @map("reset_token_expires")
+
+  @@map("users")
+}
+
 model Project {
   id            String         @id @default(uuid())
   name          String

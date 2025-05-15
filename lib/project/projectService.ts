@@ -1,5 +1,6 @@
 import { executeQuery } from "../database";
 import { v4 as uuidv4 } from "uuid";
+import { PrismaClient } from "@prisma/client";
 
 /**
  * Interface for a project
@@ -258,11 +259,17 @@ export class ProjectService {
    */
   async getProjectFiles(projectId: string): Promise<any[]> {
     try {
+      console.log(`[ProjectService] Getting files for project ${projectId}`);
+
       // Check if the project_files table exists
       const tableExists = await this.checkIfTableExists("project_files");
+      console.log(
+        `[ProjectService] project_files table exists: ${tableExists}`
+      );
 
       if (!tableExists) {
         // Create the table if it doesn't exist
+        console.log(`[ProjectService] Creating project_files table`);
         await executeQuery(`
           CREATE TABLE project_files (
             project_id TEXT NOT NULL,
@@ -272,31 +279,81 @@ export class ProjectService {
         `);
       }
 
-      // Get all files for the project
-      const result = await executeQuery(`
-        SELECT 
-          f.id, 
-          f.filename, 
-          f.uploaded_at as "uploadedAt", 
-          f.ingested_at as "ingestedAt", 
-          f.size_bytes as "sizeBytes", 
-          f.format, 
-          f.status, 
-          f.metadata,
-          (SELECT COUNT(*) FROM file_errors fe WHERE fe.file_id = f.id) as "fileErrors"
-        FROM 
-          files f
-        WHERE 
-          f.user_id = (SELECT user_id FROM projects WHERE id = '${projectId}') AND
-          f.id IN (
-            SELECT file_id FROM project_files WHERE project_id = '${projectId}'
-          )
-        ORDER BY 
-          f.uploaded_at DESC
+      // First check if the project exists
+      const project = await this.getProjectById(projectId);
+      if (!project) {
+        console.log(`[ProjectService] Project ${projectId} not found`);
+        return [];
+      }
+      console.log(`[ProjectService] Project found: ${project.name}`);
+
+      // Check if there are any files with this projectId directly
+      const filesWithProjectId = await executeQuery(`
+        SELECT COUNT(*) as count FROM files WHERE project_id = '${projectId}'
       `);
+      console.log(
+        `[ProjectService] Files with projectId directly:`,
+        filesWithProjectId
+      );
+
+      // Check if there are any files in the join table
+      const filesInJoinTable = await executeQuery(`
+        SELECT COUNT(*) as count FROM project_files WHERE project_id = '${projectId}'
+      `);
+      console.log(`[ProjectService] Files in join table:`, filesInJoinTable);
+
+      // Get all files for the project
+      const query = `
+        SELECT
+          f.id,
+          f.filename,
+          f.uploaded_at as "uploadedAt",
+          f.ingested_at as "ingestedAt",
+          f.size_bytes as "sizeBytes",
+          f.format,
+          f.status,
+          f.metadata,
+          f.project_id as "projectId",
+          (SELECT COUNT(*) FROM file_errors fe WHERE fe.file_id = f.id) as "fileErrors"
+        FROM
+          files f
+        WHERE
+          f.user_id = (SELECT user_id FROM projects WHERE id = '${projectId}') AND
+          (
+            f.id IN (
+              SELECT file_id FROM project_files WHERE project_id = '${projectId}'
+            )
+            OR
+            f.project_id = '${projectId}'
+          )
+        ORDER BY
+          f.uploaded_at DESC
+      `;
+
+      console.log(`[ProjectService] Executing query: ${query}`);
+      const result = await executeQuery(query);
+      console.log(`[ProjectService] Query result:`, result);
 
       // Ensure result is an array
-      const files = Array.isArray(result) ? result : [];
+      // If result is a number, it's likely the count of rows affected, not the actual rows
+      let files = [];
+      if (Array.isArray(result)) {
+        files = result;
+      } else if (typeof result === "number") {
+        // If result is a number, we need to execute the query again to get the actual rows
+        console.log(
+          `[ProjectService] Result is a number (${result}), fetching actual rows...`
+        );
+        // Execute the query again with $queryRawUnsafe to ensure we get the rows
+        const prisma = new PrismaClient();
+        const rawResult = await prisma.$queryRawUnsafe(query);
+        files = Array.isArray(rawResult) ? rawResult : [];
+        console.log(`[ProjectService] Re-fetched files:`, files);
+      }
+
+      console.log(
+        `[ProjectService] Found ${files.length} files for project ${projectId}`
+      );
 
       // Format the response
       return files.map((file: any) => ({

@@ -19,7 +19,7 @@ const CreateProject: React.FC = () => {
 
   // Handle project creation completion
   const handleProjectCreated = (projectId: string) => {
-    router.push(`/project/${projectId}`);
+    router.push(`/project/${projectId}/dashboard`);
   };
 
   if (status === "loading") {

@@ -26,47 +26,22 @@ export async function getQueryHistoryByProject(
       return [];
     }
 
-    // Check if the nl_query column exists
-    let columnExists = false;
-    try {
-      const columnCheck = (await executeQuery(`
-        SELECT column_name
-        FROM information_schema.columns
-        WHERE table_name = 'queries' AND column_name = 'nl_query'
-      `)) as Array<{ column_name: string }>;
-      columnExists = Array.isArray(columnCheck) && columnCheck.length > 0;
-    } catch (error) {
-      console.error(
-        "[ProjectQueryHistory] Error checking column existence:",
-        error
-      );
-    }
-
-    // Get the query history from the database using the appropriate column name
-    const columnName = columnExists ? "nl_query" : "query";
-    console.log(
-      `[ProjectQueryHistory] Using column name: ${columnName} for query history`
-    );
-
-    // First, try to get queries that explicitly mention the project ID
+    // Get the query history from the database for the specific project
     const result = (await executeQuery(`
-      SELECT id, user_id, ${columnName}, sql_query, status, execution_time, error, created_at
+      SELECT id, user_id, query_text, status, error, created_at
       FROM queries
       WHERE user_id = '${userId}'
       AND (
-        ${columnName} LIKE '%project%${projectId}%' 
-        OR ${columnName} LIKE '%${projectId}%'
+        query_text LIKE '%project%${projectId}%'
+        OR query_text LIKE '%${projectId}%'
       )
       ORDER BY created_at DESC
       LIMIT ${limit}
     `)) as Array<{
       id: string;
       user_id: string;
-      query?: string;
-      nl_query?: string;
-      sql_query: string;
+      query_text: string;
       status: string;
-      execution_time: number;
       error: string | null;
       created_at: string;
     }>;
@@ -74,11 +49,11 @@ export async function getQueryHistoryByProject(
     // Convert the result to QueryHistoryItem objects
     const history = (result || []).map((item) => ({
       id: item.id,
-      query: item.nl_query || item.query || "",
-      sqlQuery: item.sql_query,
+      query: item.query_text || "",
+      sqlQuery: "", // This field is no longer stored in the database
       timestamp: new Date(item.created_at),
       status: item.status,
-      executionTime: item.execution_time,
+      executionTime: 0, // This field is no longer stored in the database
       error: item.error || undefined,
     }));
 

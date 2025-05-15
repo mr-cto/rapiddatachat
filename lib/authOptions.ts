@@ -1,6 +1,7 @@
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import type { NextAuthOptions } from "next-auth";
+import { userService } from "./user/userService";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -15,17 +16,22 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password", required: true },
       },
       async authorize(credentials) {
-        // This is a simplified implementation for testing purposes
-        // In a real application, you would validate against a database
-        if (credentials?.email && credentials?.password) {
-          // Return a mock user for testing
-          return {
-            id: "1",
-            name: "Test User",
-            email: credentials.email,
-          };
+        if (!credentials?.email || !credentials?.password) {
+          return null;
         }
-        return null;
+
+        try {
+          // Validate credentials against database
+          const user = await userService.validateCredentials(
+            credentials.email,
+            credentials.password
+          );
+
+          return user;
+        } catch (error) {
+          console.error("Authentication error:", error);
+          return null;
+        }
       },
     }),
   ],

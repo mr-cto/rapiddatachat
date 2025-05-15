@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 
 interface SchemaManagerProps {
   userId: string;
+  projectId: string;
   viewStateManager?: ViewStateManager;
   onSchemaChange?: (schema: GlobalSchema | null) => void;
 }
@@ -15,6 +16,7 @@ interface SchemaManagerProps {
  */
 export const SchemaManager: React.FC<SchemaManagerProps> = ({
   userId,
+  projectId,
   viewStateManager,
   onSchemaChange,
 }) => {
@@ -34,10 +36,10 @@ export const SchemaManager: React.FC<SchemaManagerProps> = ({
 
   // Fetch schemas on component mount
   useEffect(() => {
-    if (userId) {
+    if (userId && projectId) {
       fetchSchemas();
     }
-  }, [userId]);
+  }, [userId, projectId]);
 
   // Fetch all schemas for the user
   const fetchSchemas = async () => {
@@ -45,7 +47,9 @@ export const SchemaManager: React.FC<SchemaManagerProps> = ({
       setIsLoading(true);
       setError(null);
 
-      const response = await fetch("/api/schema-management");
+      const response = await fetch(
+        `/api/schema-management?projectId=${projectId}`
+      );
       if (!response.ok) {
         throw new Error("Failed to fetch schemas");
       }
@@ -127,6 +131,8 @@ export const SchemaManager: React.FC<SchemaManagerProps> = ({
             name: newSchemaName,
             description: newSchemaDescription,
             columns: validColumns,
+            userId: userId,
+            projectId: projectId,
           }),
         });
 
@@ -161,6 +167,8 @@ export const SchemaManager: React.FC<SchemaManagerProps> = ({
             action: "create_from_files",
             name: newSchemaName,
             description: newSchemaDescription,
+            userId: userId,
+            projectId: projectId,
           }),
         });
 
@@ -353,20 +361,15 @@ export const SchemaManager: React.FC<SchemaManagerProps> = ({
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h2 className="text-lg font-semibold">Global Schemas</h2>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="px-3 py-1 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-          disabled={isLoading}
-        >
-          Create New Schema
-        </button>
-      </div>
-
-      <div className="text-sm text-gray-500 bg-gray-50 p-2 rounded border border-gray-200">
-        <p>
-          Manage your schemas here. You can create, edit, and delete schemas to
-          organize your data.
-        </p>
+        {schemas.length === 0 && (
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="px-3 py-1 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+            disabled={isLoading}
+          >
+            Create New Schema
+          </button>
+        )}
       </div>
 
       {error && (

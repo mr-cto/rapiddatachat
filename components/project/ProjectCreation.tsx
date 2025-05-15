@@ -59,7 +59,7 @@ const ProjectCreation: React.FC<ProjectCreationProps> = ({
       }
 
       // Redirect to the project dashboard
-      router.push(`/project/${data.project.id}`);
+      router.push(`/project/${data.project.id}/dashboard`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
       setIsSubmitting(false);

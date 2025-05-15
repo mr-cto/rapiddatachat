@@ -63,7 +63,7 @@ const SchemaMapPage: React.FC = () => {
       if (fileId) {
         router.push(`/file/${fileId}`);
       } else {
-        router.push(`/project/${projectId}`);
+        router.push(`/project/${projectId}/dashboard`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
@@ -75,7 +75,7 @@ const SchemaMapPage: React.FC = () => {
    */
   const handleMappingCancel = () => {
     // Redirect to the project page
-    router.push(`/project/${projectId}`);
+    router.push(`/project/${projectId}/dashboard`);
   };
 
   if (status === "loading" || isLoading) {

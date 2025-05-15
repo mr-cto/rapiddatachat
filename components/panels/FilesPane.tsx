@@ -143,6 +143,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
 
   // Fetch files
   const fetchFiles = async () => {
+    console.log("Fetching files", session?.user);
     if (!session?.user) return;
 
     try {
@@ -154,28 +155,56 @@ const FilesPane: React.FC<FilesPaneProps> = ({
         sortDirection: sorting.direction,
       });
 
-      // Use project-specific endpoint if projectId is provided
+      // Always use project-specific endpoint if projectId is provided
+      // Otherwise use the general files endpoint
       const endpoint = projectId
         ? `/api/projects/${projectId}/files?${queryParams}`
         : `/api/files?${queryParams}`;
 
+      console.log(`Fetching files from endpoint: ${endpoint}`);
+
       const response = await fetch(endpoint);
+      console.log("Response status:", response.status);
+      console.log("Response status text:", response.statusText);
 
       if (!response.ok) {
-        throw new Error("Failed to fetch files");
+        throw new Error(`Failed to fetch files: ${response.statusText}`);
       }
 
       const data = await response.json();
-      setFiles(data.files || []);
+      console.log("Files API response:", data);
+      console.log("Files count:", data.files ? data.files.length : 0);
+      console.log(
+        "Full API response structure:",
+        JSON.stringify(data, null, 2)
+      );
 
-      // Check if this is the first upload for the project
-      const noFiles = data.files.length === 0;
-      setIsFirstUpload(noFiles);
-
-      // If there are files, assume there's a schema
-      if (!noFiles) {
-        setHasActiveSchema(true);
+      if (data.files && data.files.length > 0) {
+        console.log("First file:", data.files[0]);
       } else {
+        console.log("No files returned from API");
+        // Check if there's any data in a different format
+        if (data && typeof data === "object") {
+          console.log("Available keys in response:", Object.keys(data));
+        }
+      }
+
+      // Ensure we have a valid files array
+      if (data.files && Array.isArray(data.files)) {
+        setFiles(data.files);
+
+        // Check if this is the first upload for the project
+        const filesEmpty = data.files.length === 0;
+        setIsFirstUpload(filesEmpty);
+
+        // If there are files, assume there's a schema
+        setHasActiveSchema(!filesEmpty);
+
+        console.log(`Set ${data.files.length} files in state`);
+      } else {
+        console.warn("No valid files array in API response:", data);
+        setFiles([]);
+        setIsFirstUpload(true);
         setHasActiveSchema(false);
       }
 
@@ -187,7 +216,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
           err
         );
         // If schema check fails, fall back to file count
-        setHasActiveSchema(!noFiles);
+        setHasActiveSchema(files.length > 0);
       });
 
       setPagination({
@@ -321,10 +350,12 @@ const FilesPane: React.FC<FilesPaneProps> = ({
       }, 500);
 
       // Send the files to the API
-      // Include projectId in the upload if available
+      // Always include projectId in the upload if available
       const uploadUrl = projectId
         ? `/api/upload?projectId=${projectId}`
         : "/api/upload";
+
+      console.log(`Uploading to: ${uploadUrl}`);
 
       const response = await fetch(uploadUrl, {
         method: "POST",
@@ -951,21 +982,48 @@ const FilesPane: React.FC<FilesPaneProps> = ({
     );
   };
 
+  // Debug information
+  console.log("FilesPane render state:", {
+    filesCount: files.length,
+    loading,
+    error,
+    projectId,
+    selectedFileId,
+    hasActiveSchema,
+  });
+
   return (
     <div className="h-[50vh] flex flex-col">
       <div className="p-2 border-b">
         <div className="flex items-center justify-between">
-          <h2 className="text-md font-semibold flex items-center text-black dark:text-black">
-            <FaFile className="mr-1" /> Files
-          </h2>
-          {files.length > 0 && (
+          <div className="flex items-center">
+            <h2 className="text-md font-semibold flex items-center text-black dark:text-black">
+              <FaFile className="mr-1" /> Files{" "}
+              {files.length > 0 ? `(${files.length})` : ""}
+            </h2>
             <button
-              onClick={() => setSuccessMessage(null)}
-              className="text-xs px-3 py-1 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+              onClick={() => fetchFiles()}
+              className="ml-2 text-xs px-2 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
+              title="Force refresh files list"
             >
-              Upload New File
+              ↻
             </button>
-          )}
+          </div>
+          <div className="flex items-center">
+            {projectId && (
+              <span className="text-xs text-gray-500 mr-2">
+                Project ID: {projectId.substring(0, 8)}...
+              </span>
+            )}
+            {files.length > 0 && (
+              <button
+                onClick={() => setSuccessMessage(null)}
+                className="text-xs px-3 py-1 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+              >
+                Upload New File
+              </button>
+            )}
+          </div>
         </div>
 
         {successMessage && (
