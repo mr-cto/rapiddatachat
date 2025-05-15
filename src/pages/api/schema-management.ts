@@ -1,9 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { getSession } from "next-auth/react";
-import {
-  GlobalSchemaService,
-  GlobalSchema,
-} from "../../../lib/globalSchemaService";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "../../../lib/authOptions";
+import SchemaService, { GlobalSchema } from "../../../lib/schemaManagement";
 
 /**
  * API handler for schema management
@@ -15,29 +13,51 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  const session = await getSession({ req });
+  const session = await getServerSession(req, res, authOptions);
+  const isDevelopment = process.env.NODE_ENV === "development";
 
-  if (!session) {
+  if ((!session || !session.user) && !isDevelopment) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
+  // Use a default user email for development
+  // Check for test user email header (for testing purposes only)
+  const testUserEmail = isDevelopment ? req.headers["x-test-user-email"] : null;
+  const userEmail =
+    session?.user?.email || (isDevelopment ? "dev@example.com" : "");
+  const userId = testUserEmail ? String(testUserEmail) : userEmail || "unknown";
+
   try {
-    const globalSchemaService = new GlobalSchemaService();
+    const globalSchemaService = SchemaService;
 
     // Handle GET request
     if (req.method === "GET") {
       const { projectId } = req.query;
 
-      // Validate required parameters
-      if (!projectId) {
-        return res.status(400).json({ error: "projectId is required" });
+      // If projectId is provided, get schemas for that project
+      if (projectId) {
+        const schemas = await globalSchemaService.getGlobalSchemasForProject(
+          projectId as string
+        );
+        console.log(`Found ${schemas.length} schemas for project ${projectId}`);
+        return res.status(200).json({ schemas });
       }
-
-      // Get schemas for project
-      const schemas = await globalSchemaService.getGlobalSchemasForProject(
-        projectId as string
-      );
-      return res.status(200).json(schemas);
+      // If no projectId is provided, try to get all schemas
+      else {
+        console.log("No projectId provided, trying to get all schemas");
+        try {
+          // Get all schemas by using an empty string as the projectId
+          // This will return all schemas in the database
+          const schemas = await globalSchemaService.getGlobalSchemasForProject(
+            ""
+          );
+          console.log(`Found ${schemas.length} schemas with empty projectId`);
+          return res.status(200).json({ schemas });
+        } catch (error) {
+          console.error("Error getting all schemas:", error);
+          return res.status(200).json({ schemas: [] }); // Return empty array on error
+        }
+      }
     }
 
     // Handle POST request
@@ -67,6 +87,61 @@ export default async function handler(
       );
 
       return res.status(201).json(newSchema);
+    }
+
+    // Handle PUT request
+    if (req.method === "PUT") {
+      const schema = req.body;
+
+      if (!schema.id) {
+        return res.status(400).json({ error: "Schema ID is required" });
+      }
+
+      try {
+        // If only updating isActive status
+        if (schema.isActive !== undefined && Object.keys(schema).length === 2) {
+          // Set the schema as active
+          const success = await globalSchemaService.setActiveSchema(
+            schema.projectId || "",
+            schema.id
+          );
+          return res.status(200).json({ success });
+        } else {
+          // Update the full schema
+          const updatedSchema = await globalSchemaService.updateGlobalSchema(
+            schema
+          );
+          return res.status(200).json({ schema: updatedSchema });
+        }
+      } catch (error) {
+        console.error("Error updating schema:", error);
+        return res.status(500).json({
+          error: "Failed to update schema",
+          details: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    // Handle DELETE request
+    if (req.method === "DELETE") {
+      const { id } = req.query;
+
+      if (!id) {
+        return res.status(400).json({ error: "Schema ID is required" });
+      }
+
+      try {
+        const success = await globalSchemaService.deleteGlobalSchema(
+          id as string
+        );
+        return res.status(200).json({ success });
+      } catch (error) {
+        console.error("Error deleting schema:", error);
+        return res.status(500).json({
+          error: "Failed to delete schema",
+          details: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
     // Handle unsupported methods

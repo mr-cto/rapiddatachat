@@ -1,9 +1,9 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "../auth/[...nextauth]";
 import mappingEngine, {
   MappingDefinition,
 } from "../../../../lib/dataTransformation/mappingEngine";
+import { authOptions } from "../../../../lib/authOptions";
 
 /**
  * API handler for mapping definitions

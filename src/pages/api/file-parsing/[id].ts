@@ -1,12 +1,12 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "../auth/[...nextauth]";
 import { executeQuery } from "../../../../lib/database";
 import {
   getFileParsingResult,
   getColumnInfo,
   getSampleData,
 } from "../../../../lib/fileParsingService";
+import { authOptions } from "../../../../lib/authOptions";
 
 interface FileRecord {
   id: string;

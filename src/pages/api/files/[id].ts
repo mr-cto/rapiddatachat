@@ -1,10 +1,10 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "../auth/[...nextauth]";
 import { PrismaClient } from "@prisma/client";
 import fs from "fs";
 import path from "path";
 import { dropMergedColumnView } from "../../../../lib/columnMergeService";
+import { authOptions } from "../../../../lib/authOptions";
 
 // Initialize Prisma client (singleton)
 let prismaInstance: PrismaClient | null = null;

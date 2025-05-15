@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { getSession } from "next-auth/react";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "../../../lib/authOptions";
 import { executeQuery } from "../../../lib/database";
 
 /**
@@ -21,9 +22,10 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  const session = await getSession({ req });
+  const session = await getServerSession(req, res, authOptions);
+  const isDevelopment = process.env.NODE_ENV === "development";
 
-  if (!session) {
+  if ((!session || !session.user) && !isDevelopment) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
@@ -67,61 +69,64 @@ async function getFileContributions(
 
     // Get file contributions
     const query = `
-      SELECT 
+      SELECT
         f.id as file_id,
-        f.original_filename as file_name,
+        f.filename as file_name,
         f.uploaded_at as upload_date,
-        cm.file_columns as file_columns,
-        cm.schema_columns as schema_columns
+        cm.file_column as file_column,
+        sc.name as schema_column_name
       FROM files f
       JOIN column_mappings cm ON f.id = cm.file_id
-      WHERE cm.schema_id = $1
+      JOIN schema_columns sc ON cm.schema_column_id = sc.id
+      WHERE cm.global_schema_id = $1
       ORDER BY f.uploaded_at DESC
     `;
 
-    const result = await executeQuery(query, [schemaId]);
+    const result = (await executeQuery(query, [schemaId])) as any[];
 
-    if (!result || !result.rows || result.rows.length === 0) {
+    if (!result || result.length === 0) {
       return [];
     }
 
     // Process results
     const contributions: FileContribution[] = [];
-    for (const row of result.rows) {
-      let fileColumns: any[] = [];
-      let schemaColumns: any[] = [];
 
-      // Parse file columns
-      try {
-        if (typeof row.file_columns === "string") {
-          fileColumns = JSON.parse(row.file_columns);
-        } else if (Array.isArray(row.file_columns)) {
-          fileColumns = row.file_columns;
-        }
-      } catch (error) {
-        console.error("Error parsing file columns:", error);
+    // Group by file
+    const fileMap = new Map<
+      string,
+      {
+        fileId: string;
+        fileName: string;
+        uploadDate: Date;
+        columnNames: Set<string>;
+      }
+    >();
+
+    for (const row of result) {
+      const fileId = row.file_id;
+
+      if (!fileMap.has(fileId)) {
+        fileMap.set(fileId, {
+          fileId,
+          fileName: row.file_name,
+          uploadDate: new Date(row.upload_date),
+          columnNames: new Set<string>(),
+        });
       }
 
-      // Parse schema columns
-      try {
-        if (typeof row.schema_columns === "string") {
-          schemaColumns = JSON.parse(row.schema_columns);
-        } else if (Array.isArray(row.schema_columns)) {
-          schemaColumns = row.schema_columns;
-        }
-      } catch (error) {
-        console.error("Error parsing schema columns:", error);
+      // Add schema column name to the set
+      if (row.schema_column_name) {
+        fileMap.get(fileId)!.columnNames.add(row.schema_column_name);
       }
+    }
 
-      // Extract column names
-      const columnNames = schemaColumns.map((col: any) => col.name);
-
-      // Add contribution
+    // Convert map to array of contributions
+    for (const fileData of fileMap.values()) {
       contributions.push({
-        fileId: row.file_id,
-        fileName: row.file_name,
-        uploadDate: new Date(row.upload_date),
-        columnNames,
+        fileId: fileData.fileId,
+        fileName: fileData.fileName,
+        uploadDate: fileData.uploadDate,
+        columnNames: Array.from(fileData.columnNames),
       });
     }
 
@@ -144,7 +149,7 @@ async function checkIfTableExists(tableName: string): Promise<boolean> {
         SELECT 1 FROM information_schema.tables
         WHERE table_name = '${tableName}'
       ) as exists
-    `)) as Array<{ exists: boolean }>;
+    `)) as any[];
 
     return result && result.length > 0 && result[0].exists;
   } catch (error) {

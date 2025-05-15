@@ -109,7 +109,7 @@ const ProjectList: React.FC = () => {
           {projects.map((project) => (
             <Link
               key={project.id}
-              href={`/project/${project.id}`}
+              href={`/project/${project.id}/dashboard`}
               className="block"
             >
               <div className="bg-ui-secondary dark:bg-ui-secondary rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow h-full">

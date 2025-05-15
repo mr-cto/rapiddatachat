@@ -12,7 +12,7 @@ export default function Landing() {
   // Redirect authenticated users to dashboard
   useEffect(() => {
     if (status === "authenticated") {
-      router.push("/");
+      router.push("/project");
     }
   }, [status, router]);
 

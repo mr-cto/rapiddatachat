@@ -1,7 +1,7 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "../auth/[...nextauth]";
 import { executeQuery } from "../../../../lib/database";
+import { authOptions } from "../../../../lib/authOptions";
 
 /**
  * API handler for retrieving parsed data for a file
@@ -38,14 +38,14 @@ export default async function handler(
 
     // Get file metadata
     const fileResult = (await executeQuery(`
-      SELECT id, name, file_path, column_info, user_id, project_id
+      SELECT id, filename, filepath, metadata, user_id, project_id
       FROM files
       WHERE id = '${fileId}'
     `)) as Array<{
       id: string;
-      name: string;
-      file_path: string;
-      column_info: string;
+      filename: string;
+      filepath: string;
+      metadata: string;
       user_id: string;
       project_id: string;
     }>;
@@ -60,28 +60,29 @@ export default async function handler(
     const userId = session.user.email || session.user.id || "";
     if (file.user_id !== userId) {
       // Check if the user has access to the project
-      const projectAccess = (await executeQuery(`
+      // Since there's no project_access table in the schema, we'll check if the user owns the project
+      const projectOwner = (await executeQuery(`
         SELECT user_id
-        FROM project_access
-        WHERE project_id = '${file.project_id}' AND user_id = '${userId}'
+        FROM projects
+        WHERE id = '${file.project_id}' AND user_id = '${userId}'
       `)) as Array<{
         user_id: string;
       }>;
 
-      if (!projectAccess || projectAccess.length === 0) {
+      if (!projectOwner || projectOwner.length === 0) {
         return res.status(403).json({ error: "Forbidden" });
       }
     }
 
-    // Get parsed data
+    // Get parsed data from file_data table
     const parsedDataResult = (await executeQuery(`
-      SELECT sample_data, full_data_path
-      FROM file_parsed_data
+      SELECT data as sample_data, NULL as full_data_path
+      FROM file_data
       WHERE file_id = '${fileId}'
       LIMIT 1
     `)) as Array<{
       sample_data: string;
-      full_data_path: string;
+      full_data_path: string | null;
     }>;
 
     if (!parsedDataResult || parsedDataResult.length === 0) {
@@ -93,9 +94,14 @@ export default async function handler(
     try {
       if (parsedDataResult[0].sample_data) {
         if (typeof parsedDataResult[0].sample_data === "string") {
-          sampleData = JSON.parse(parsedDataResult[0].sample_data);
+          const parsed = JSON.parse(parsedDataResult[0].sample_data);
+          // Ensure sampleData is an array
+          sampleData = Array.isArray(parsed) ? parsed : [parsed];
         } else if (typeof parsedDataResult[0].sample_data === "object") {
-          sampleData = parsedDataResult[0].sample_data;
+          // Ensure sampleData is an array
+          sampleData = Array.isArray(parsedDataResult[0].sample_data)
+            ? parsedDataResult[0].sample_data
+            : [parsedDataResult[0].sample_data];
         }
       }
     } catch (parseError) {
@@ -113,19 +119,19 @@ export default async function handler(
     // Apply limit and offset
     const limitedData = sampleData.slice(offset, offset + limit);
 
-    // Parse column info
+    // Parse metadata (which contains column info)
     let columnInfo: any[] = [];
     try {
-      if (file.column_info) {
-        if (typeof file.column_info === "string") {
-          columnInfo = JSON.parse(file.column_info);
-        } else if (typeof file.column_info === "object") {
-          columnInfo = file.column_info;
+      if (file.metadata) {
+        if (typeof file.metadata === "string") {
+          columnInfo = JSON.parse(file.metadata);
+        } else if (typeof file.metadata === "object") {
+          columnInfo = file.metadata;
         }
       }
     } catch (parseError) {
       console.error(
-        `[file-parsed-data] Error parsing column info for file ${fileId}:`,
+        `[file-parsed-data] Error parsing metadata for file ${fileId}:`,
         parseError
       );
       // Don't return an error, just log it
@@ -135,12 +141,12 @@ export default async function handler(
     // Return data
     return res.status(200).json({
       fileId,
-      fileName: file.name,
-      filePath: file.file_path,
+      fileName: file.filename,
+      filePath: file.filepath,
       columns: columnInfo,
       data: limitedData,
       totalRows: sampleData.length,
-      fullDataPath: parsedDataResult[0].full_data_path,
+      fullDataPath: parsedDataResult[0].full_data_path || null,
     });
   } catch (error) {
     console.error("[file-parsed-data] Error:", error);

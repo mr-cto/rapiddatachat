@@ -1,7 +1,7 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "./auth/[...nextauth]";
 import sharedQueryCache from "../../../lib/sharedQueryCache";
+import { authOptions } from "../../../lib/authOptions";
 
 /**
  * API endpoint for cache management

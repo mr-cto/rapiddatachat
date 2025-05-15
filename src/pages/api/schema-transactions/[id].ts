@@ -1,8 +1,8 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "../auth/[...nextauth]";
 import { SchemaTransactionService } from "../../../../lib/schemaTransactionService";
 import { GlobalSchemaService } from "../../../../lib/globalSchemaService";
+import { authOptions } from "../../../../lib/authOptions";
 
 /**
  * API handler for operations on a specific schema transaction

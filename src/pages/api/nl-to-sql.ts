@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "./auth/[...nextauth]";
+import { authOptions } from "../../../lib/authOptions";
 import { createNLToSQLService } from "../../../lib/nlToSql";
 import {
   handleNLToSQLError,

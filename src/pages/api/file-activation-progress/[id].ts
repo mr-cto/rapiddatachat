@@ -1,10 +1,10 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "../auth/[...nextauth]";
 import {
   getActivationProgress,
   fileExistsForUser,
 } from "../../../../lib/fileActivationCompat";
+import { authOptions } from "../../../../lib/authOptions";
 
 /**
  * API handler for file activation progress (compatibility endpoint)

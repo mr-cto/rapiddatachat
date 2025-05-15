@@ -3,7 +3,7 @@ import { useRouter } from "next/router";
 import Link from "next/link";
 import { GetServerSideProps } from "next";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "../../../../api/auth/[...nextauth]";
+import { authOptions } from "../../../../../../lib/authOptions";
 
 /**
  * Interface for mapping definition

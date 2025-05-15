@@ -3,7 +3,7 @@
 :root {
   /* Base colors */
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #000000;
 
   /* Text colors with better contrast */
   --text-black: #171717;
@@ -35,7 +35,7 @@
   :root {
     /* Base colors */
     --background: #0a0a0a;
-    --foreground: #ededed;
+    --foreground: #000000;
 
     /* Text colors with better contrast */
     --text-black: #000000;

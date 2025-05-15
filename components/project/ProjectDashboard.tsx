@@ -104,14 +104,16 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ projectId }) => {
           // Check if this is the first file upload for the project
           if (files.length === 0) {
             // Redirect to schema creation page
-            router.push(
-              `/project/${projectId}/schema/create?fileId=${response.files[0].id}`
-            );
+            router.push({
+              pathname: "/project/[id]/schema/create",
+              query: { id: projectId, fileId: response.files[0].id },
+            });
           } else {
             // Redirect to schema mapping page
-            router.push(
-              `/project/${projectId}/schema/map?fileId=${response.files[0].id}`
-            );
+            router.push({
+              pathname: "/project/[id]/schema/map",
+              query: { id: projectId, fileId: response.files[0].id },
+            });
           }
         } else {
           setError("Failed to upload file");
@@ -280,7 +282,12 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ projectId }) => {
             Manage your project&apos;s global schema
           </p>
           <button
-            onClick={() => router.push(`/project/${projectId}/schema`)}
+            onClick={() =>
+              router.push({
+                pathname: "/project/[id]/schema",
+                query: { id: projectId },
+              })
+            }
             className="px-4 py-2 bg-accent-primary text-white rounded-md hover:bg-accent-primary-hover"
           >
             Manage Schema

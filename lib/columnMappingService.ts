@@ -60,14 +60,14 @@ export class ColumnMappingService {
     try {
       // Get file metadata
       const fileResult = (await executeQuery(`
-        SELECT id, name, file_path, column_info
+        SELECT id, filename, filepath, metadata
         FROM files
         WHERE id = '${fileId}'
       `)) as Array<{
         id: string;
-        name: string;
-        file_path: string;
-        column_info: string;
+        filename: string;
+        filepath: string;
+        metadata: string;
       }>;
 
       if (!fileResult || fileResult.length === 0) {
@@ -79,16 +79,16 @@ export class ColumnMappingService {
 
       // Parse column info
       try {
-        if (file.column_info) {
-          if (typeof file.column_info === "string") {
-            columnInfo = JSON.parse(file.column_info);
-          } else if (typeof file.column_info === "object") {
-            columnInfo = file.column_info;
+        if (file.metadata) {
+          if (typeof file.metadata === "string") {
+            columnInfo = JSON.parse(file.metadata);
+          } else if (typeof file.metadata === "object") {
+            columnInfo = file.metadata;
           }
         }
       } catch (parseError) {
         console.error(
-          `[ColumnMappingService] Error parsing column info for file ${fileId}:`,
+          `[ColumnMappingService] Error parsing metadata for file ${fileId}:`,
           parseError
         );
         columnInfo = [];
@@ -96,8 +96,8 @@ export class ColumnMappingService {
 
       // Get sample data
       const sampleDataResult = (await executeQuery(`
-        SELECT sample_data
-        FROM file_parsed_data
+        SELECT data as sample_data
+        FROM file_data
         WHERE file_id = '${fileId}'
         LIMIT 1
       `)) as Array<{
@@ -160,39 +160,41 @@ export class ColumnMappingService {
    */
   async getSchemaColumns(schemaId: string): Promise<SchemaColumnMetadata[]> {
     try {
-      // Get schema
-      const schemaResult = (await executeQuery(`
-        SELECT id, columns
+      // First check if the schema exists
+      const schemaExists = (await executeQuery(`
+        SELECT id
         FROM global_schemas
         WHERE id = '${schemaId}'
       `)) as Array<{
         id: string;
-        columns: string;
       }>;
 
-      if (!schemaResult || schemaResult.length === 0) {
+      if (!schemaExists || schemaExists.length === 0) {
         throw new Error(`Schema ${schemaId} not found`);
       }
 
-      const schema = schemaResult[0];
-      let columns: any[] = [];
+      // Get schema columns from schema_columns table
+      const columnsResult = (await executeQuery(`
+        SELECT id, name, description, data_type, is_required
+        FROM schema_columns
+        WHERE global_schema_id = '${schemaId}'
+      `)) as Array<{
+        id: string;
+        name: string;
+        description: string;
+        data_type: string;
+        is_required: boolean;
+      }>;
 
-      // Parse columns
-      try {
-        if (schema.columns) {
-          if (typeof schema.columns === "string") {
-            columns = JSON.parse(schema.columns);
-          } else if (typeof schema.columns === "object") {
-            columns = schema.columns;
-          }
-        }
-      } catch (parseError) {
-        console.error(
-          `[ColumnMappingService] Error parsing columns for schema ${schemaId}:`,
-          parseError
-        );
-        columns = [];
-      }
+      // Map columns to the expected format
+      const columns = columnsResult.map((col) => ({
+        id: col.id,
+        name: col.name,
+        type: col.data_type,
+        description: col.description || "",
+        isRequired: col.is_required || false,
+        isPrimaryKey: false, // Default value since this field is required by the interface but not in the database
+      }));
 
       // Map columns to SchemaColumnMetadata
       return columns.map((column) => ({
@@ -341,63 +343,72 @@ export class ColumnMappingService {
       const tableExists = await this.checkIfTableExists("column_mappings");
 
       if (!tableExists) {
-        // Create the table if it doesn't exist
-        await executeQuery(`
-          CREATE TABLE column_mappings (
-            id TEXT PRIMARY KEY,
-            file_id TEXT NOT NULL,
-            schema_id TEXT NOT NULL,
-            mappings JSONB NOT NULL,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-          )
-        `);
+        // We shouldn't create the table manually as it's managed by Prisma
+        // Instead, we'll just return false if the table doesn't exist
+        console.error(
+          "[ColumnMappingService] column_mappings table doesn't exist"
+        );
+        return false;
       }
 
-      // Check if mappings already exist for this file and schema
-      const existingResult = (await executeQuery(`
-        SELECT id
-        FROM column_mappings
-        WHERE file_id = '${fileId}' AND schema_id = '${schemaId}'
-      `)) as Array<{
-        id: string;
-      }>;
+      // Process each mapping individually according to the Prisma schema
+      for (const mapping of mappings) {
+        // Check if mapping already exists
+        const existingResult = (await executeQuery(`
+          SELECT id
+          FROM column_mappings
+          WHERE file_id = '${fileId}'
+          AND global_schema_id = '${schemaId}'
+          AND schema_column_id = '${mapping.schemaColumnId}'
+          AND file_column = '${mapping.fileColumnName}'
+        `)) as Array<{
+          id: string;
+        }>;
 
-      const mappingId =
-        existingResult && existingResult.length > 0
-          ? existingResult[0].id
-          : `mapping_${Date.now()}`;
+        const mappingId =
+          existingResult && existingResult.length > 0
+            ? existingResult[0].id
+            : `mapping_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 
-      // Save mappings
-      if (existingResult && existingResult.length > 0) {
-        // Update existing mappings
-        await executeQuery(`
-          UPDATE column_mappings
-          SET 
-            mappings = '${JSON.stringify(mappings)}',
-            updated_at = CURRENT_TIMESTAMP
-          WHERE id = '${mappingId}'
-        `);
-      } else {
-        // Insert new mappings
-        await executeQuery(`
-          INSERT INTO column_mappings (
-            id,
-            file_id,
-            schema_id,
-            mappings,
-            created_at,
-            updated_at
-          )
-          VALUES (
-            '${mappingId}',
-            '${fileId}',
-            '${schemaId}',
-            '${JSON.stringify(mappings)}',
-            CURRENT_TIMESTAMP,
-            CURRENT_TIMESTAMP
-          )
-        `);
+        // Save mapping
+        if (existingResult && existingResult.length > 0) {
+          // Update existing mapping
+          await executeQuery(`
+            UPDATE column_mappings
+            SET
+              transformation_rule = ${
+                mapping.transformation ? `'${mapping.transformation}'` : "NULL"
+              },
+              updated_at = CURRENT_TIMESTAMP
+            WHERE id = '${mappingId}'
+          `);
+        } else {
+          // Insert new mapping
+          await executeQuery(`
+            INSERT INTO column_mappings (
+              id,
+              file_id,
+              global_schema_id,
+              schema_column_id,
+              file_column,
+              transformation_rule,
+              created_at,
+              updated_at
+            )
+            VALUES (
+              '${mappingId}',
+              '${fileId}',
+              '${schemaId}',
+              '${mapping.schemaColumnId}',
+              '${mapping.fileColumnName}',
+              ${
+                mapping.transformation ? `'${mapping.transformation}'` : "NULL"
+              },
+              CURRENT_TIMESTAMP,
+              CURRENT_TIMESTAMP
+            )
+          `);
+        }
       }
 
       return true;
@@ -428,36 +439,30 @@ export class ColumnMappingService {
         return [];
       }
 
-      // Get mappings
+      // Get mappings from the correct schema
       const result = (await executeQuery(`
-        SELECT mappings
+        SELECT id, file_id, global_schema_id, schema_column_id, file_column, transformation_rule
         FROM column_mappings
-        WHERE file_id = '${fileId}' AND schema_id = '${schemaId}'
+        WHERE file_id = '${fileId}' AND global_schema_id = '${schemaId}'
       `)) as Array<{
-        mappings: string;
+        id: string;
+        file_id: string;
+        global_schema_id: string;
+        schema_column_id: string;
+        file_column: string;
+        transformation_rule: string | null;
       }>;
 
       if (!result || result.length === 0) {
         return [];
       }
 
-      // Parse mappings
-      let mappings: ColumnMapping[] = [];
-      try {
-        if (result[0].mappings) {
-          if (typeof result[0].mappings === "string") {
-            mappings = JSON.parse(result[0].mappings);
-          } else if (typeof result[0].mappings === "object") {
-            mappings = result[0].mappings;
-          }
-        }
-      } catch (parseError) {
-        console.error(
-          `[ColumnMappingService] Error parsing mappings for file ${fileId} and schema ${schemaId}:`,
-          parseError
-        );
-        mappings = [];
-      }
+      // Convert to ColumnMapping objects
+      const mappings: ColumnMapping[] = result.map((row) => ({
+        fileColumnName: row.file_column,
+        schemaColumnId: row.schema_column_id,
+        transformation: row.transformation_rule || undefined,
+      }));
 
       return mappings;
     } catch (error) {

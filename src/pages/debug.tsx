@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { GetServerSideProps } from "next";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "./api/auth/[...nextauth]";
 import Head from "next/head";
+import { authOptions } from "../../lib/authOptions";
 
 interface DebugPageProps {
   user: {

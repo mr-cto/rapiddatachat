@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "./auth/[...nextauth]";
+import { authOptions } from "../../../lib/authOptions";
 import { createNLToSQLService } from "../../../lib/nlToSql";
 
 export default async function handler(
@@ -26,19 +26,33 @@ export default async function handler(
     session?.user?.email || (isDevelopment ? "dev@example.com" : "");
 
   try {
-    // Get the limit from the query parameters
+    // Get the query parameters
     const limit = req.query.limit
       ? parseInt(req.query.limit as string, 10)
       : 10;
+
+    // Get the project ID from the query parameters
+    const projectId = req.query.projectId as string | undefined;
 
     // Create the NL-to-SQL service
     const nlToSqlService = createNLToSQLService();
 
     // Get the query history
     console.log(
-      `[QueryHistory] Fetching history for user: ${userEmail}, limit: ${limit}`
+      `[QueryHistory] Fetching history for user: ${userEmail}, limit: ${limit}${
+        projectId ? `, projectId: ${projectId}` : ""
+      }`
     );
-    const history = await nlToSqlService.getQueryHistory(userEmail, limit);
+
+    // Pass projectId to the service if available
+    const history = projectId
+      ? await nlToSqlService.getQueryHistoryByProject(
+          userEmail,
+          projectId,
+          limit
+        )
+      : await nlToSqlService.getQueryHistory(userEmail, limit);
+
     console.log(`[QueryHistory] Found ${history.length} history items`);
 
     // Log the first item for debugging

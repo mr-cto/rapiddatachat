@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { getSession } from "next-auth/react";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "../../../../lib/authOptions";
 import {
   GlobalSchemaService,
   GlobalSchema,
@@ -17,9 +18,10 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  const session = await getSession({ req });
+  const session = await getServerSession(req, res, authOptions);
+  const isDevelopment = process.env.NODE_ENV === "development";
 
-  if (!session) {
+  if ((!session || !session.user) && !isDevelopment) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
@@ -66,9 +68,20 @@ export default async function handler(
       }
 
       // Create a new schema version
+      // Use a default user email for development
+      // Check for test user email header (for testing purposes only)
+      const testUserEmail = isDevelopment
+        ? req.headers["x-test-user-email"]
+        : null;
+      const userEmail =
+        session?.user?.email || (isDevelopment ? "dev@example.com" : "");
+      const userId = testUserEmail
+        ? String(testUserEmail)
+        : userEmail || "unknown";
+
       await schemaVersionService.createSchemaVersion(
         existingSchema,
-        session.user?.id || "unknown",
+        userId,
         "Schema updated via management interface"
       );
 

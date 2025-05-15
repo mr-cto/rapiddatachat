@@ -16,7 +16,7 @@ export default function SignIn() {
       redirect: true,
       email,
       password,
-      callbackUrl: "/",
+      callbackUrl: "/project",
     });
     setLoading(false);
     if (res?.error) setError("Invalid email or password");
@@ -25,7 +25,7 @@ export default function SignIn() {
 
   async function handleGoogleSignIn() {
     setLoading(true);
-    await signIn("google", { callbackUrl: "/" });
+    await signIn("google", { callbackUrl: "/project" });
     // NextAuth redirect callback will handle redirection
   }
 

@@ -9,8 +9,8 @@ const Dashboard = () => {
   useEffect(() => {
     // Wait until authentication check is complete
     if (status !== "loading") {
-      // Redirect to the new dashboard layout
-      router.replace("/");
+      // Redirect to the projects page
+      router.replace("/project");
     }
   }, [router, status]);
 
@@ -19,7 +19,7 @@ const Dashboard = () => {
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="text-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-        <p className="mt-4 text-gray-600">Redirecting to new dashboard...</p>
+        <p className="mt-4 text-gray-600">Redirecting to projects...</p>
       </div>
     </div>
   );

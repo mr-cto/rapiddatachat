@@ -1,6 +1,7 @@
 import { createLLMService, LLMService } from "./llmService";
 import { createSchemaService, SchemaService } from "./schemaService";
 import { createQueryService, QueryService } from "./queryService";
+import { getQueryHistoryByProject } from "./projectQueryHistory";
 import { activateAvailableFiles } from "../fileActivation";
 import { executeQuery } from "../database";
 import {
@@ -594,6 +595,21 @@ export class NLToSQLService {
       console.error(`[NLToSQLService] Error details: ${errorMessage}`);
       return [];
     }
+  }
+
+  /**
+   * Get query history for a user filtered by project ID
+   * @param userId User ID
+   * @param projectId Project ID
+   * @param limit Maximum number of history items to return
+   * @returns Promise<QueryHistoryItem[]> Query history items
+   */
+  async getQueryHistoryByProject(
+    userId: string,
+    projectId: string,
+    limit: number = 10
+  ): Promise<QueryHistoryItem[]> {
+    return getQueryHistoryByProject(userId, projectId, limit);
   }
 
   /**

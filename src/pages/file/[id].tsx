@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { GetServerSideProps } from "next";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "../api/auth/[...nextauth]";
+import { authOptions } from "../../../lib/authOptions";
 import { useRouter } from "next/router";
 import Head from "next/head";
 import Link from "next/link";
@@ -137,10 +137,10 @@ const FilePage: React.FC<FilePageProps> = ({ user, fileId }) => {
                 <span className="text-gray-700">Welcome, {user.name}</span>
               )}
               <Link
-                href="/dashboard"
+                href="/project"
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
               >
-                Dashboard
+                Projects
               </Link>
             </div>
           </div>

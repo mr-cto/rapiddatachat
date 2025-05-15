@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "./auth/[...nextauth]";
+import { authOptions } from "../../../lib/authOptions";
 import { v4 as uuidv4 } from "uuid";
 import { executeQuery } from "../../../lib/database";
 import formidable, { File as FormidableFile } from "formidable";
@@ -33,26 +33,51 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
+  console.log("=== API UPLOAD HANDLER START ===");
+  console.log(`Request method: ${req.method}`);
+  console.log(
+    `Request headers:`,
+    JSON.stringify({
+      "content-type": req.headers["content-type"],
+      "user-agent": req.headers["user-agent"],
+      host: req.headers["host"],
+      // Don't log authorization headers for security
+    })
+  );
+
   // Only allow POST requests
   if (req.method !== "POST") {
+    console.log(`Method not allowed: ${req.method}`);
     return res.status(405).json({ error: "Method not allowed" });
   }
 
   // Check authentication
+  console.log("Checking authentication...");
   const session = await getServerSession(req, res, authOptions);
+  console.log(`Session exists: ${!!session}`);
+  console.log(`Session user exists: ${!!session?.user}`);
 
   // In development, allow requests without authentication for testing
   const isDevelopment = process.env.NODE_ENV === "development";
+  console.log(
+    `Environment: ${process.env.NODE_ENV}, isDevelopment: ${isDevelopment}`
+  );
+
   if ((!session || !session.user) && !isDevelopment) {
+    console.log("Authentication failed: Unauthorized");
     return res.status(401).json({ error: "Unauthorized" });
   }
 
   // Use a default user email for development
   const userEmail =
     session?.user?.email || (isDevelopment ? "dev@example.com" : "");
+  console.log(`User email: ${userEmail}`);
 
   try {
     const userId = userEmail || "unknown";
+    console.log(`User ID: ${userId}`);
+    console.log("Initializing formidable...");
+    console.log(`Upload directory: ${UPLOADS_DIR}`);
     const form = formidable({
       maxFiles: 5,
       maxFileSize: 50 * 1024 * 1024, // 50MB
@@ -72,10 +97,14 @@ export default async function handler(
     });
 
     // Parse the form data
+    console.log("Parsing form data...");
     const [fields, files] = await form.parse(req);
+    console.log(`Form fields: ${JSON.stringify(fields)}`);
+    console.log(`Files received: ${files.file ? files.file.length : 0}`);
 
     // Check if files were uploaded
     if (!files.file || files.file.length === 0) {
+      console.log("Error: No files uploaded");
       return res.status(400).json({ error: "No files uploaded" });
     }
 
@@ -83,28 +112,44 @@ export default async function handler(
     const projectId = Array.isArray(fields.projectId)
       ? fields.projectId[0]
       : fields.projectId;
+    console.log(`Project ID from form: ${projectId || "none"}`);
 
     // If projectId is provided, check if the project exists and belongs to the user
     if (projectId) {
+      console.log(`Validating project ID: ${projectId}`);
       const projectService = new ProjectService();
       const project = await projectService.getProjectById(projectId);
+      console.log(`Project found: ${!!project}`);
 
       if (!project) {
+        console.log(`Error: Project not found with ID ${projectId}`);
         return res.status(404).json({ error: "Project not found" });
       }
 
+      console.log(`Project user ID: ${project.userId}`);
+      console.log(`Current user ID: ${userId}`);
+      console.log(`Project belongs to user: ${project.userId === userId}`);
+
       if (project.userId !== userId) {
+        console.log(
+          `Error: Forbidden - Project ${projectId} belongs to user ${project.userId}, not ${userId}`
+        );
         return res.status(403).json({ error: "Forbidden" });
       }
+      console.log("Project validation successful");
     }
 
     // Process each file
+    console.log("Processing uploaded files...");
     const fileResults = await Promise.all(
       files.file.map(async (file: FormidableFile) => {
         const fileId = uuidv4();
         const sourceId = uuidv4();
         const originalFilename = file.originalFilename || "unknown";
         const format = originalFilename.split(".").pop() || "";
+        console.log(`Processing file: ${originalFilename}, ID: ${fileId}`);
+        console.log(`File path: ${file.filepath}`);
+        console.log(`File size: ${file.size} bytes, format: ${format}`);
         // Get mime type but don't use it yet - will be used in future features
         // const mimeType = getMimeTypeFromExtension(originalFilename) || "";
 
@@ -112,6 +157,9 @@ export default async function handler(
 
         try {
           // Store file metadata in the database
+          console.log(
+            `Storing file metadata in database for file ID: ${fileId}`
+          );
           await executeQuery(`
             INSERT INTO files (
               id, user_id, filename, status, uploaded_at, size_bytes, format, filepath
@@ -142,8 +190,10 @@ export default async function handler(
 
           // If projectId is provided, associate the file with the project
           if (projectId) {
+            console.log(`Associating file ${fileId} with project ${projectId}`);
             const projectService = new ProjectService();
             await projectService.addFileToProject(projectId, fileId);
+            console.log(`File successfully associated with project`);
           }
         } catch (dbError) {
           // Check if this is a DuckDB server environment error
@@ -169,6 +219,7 @@ export default async function handler(
         }
 
         // Return file information
+        console.log(`File processing complete for ${fileId}`);
         return {
           id: fileId,
           name: originalFilename,
@@ -186,6 +237,7 @@ export default async function handler(
     const anyDbOperationFailed = fileResults.some(
       (file) => !file.dbOperationSuccess
     );
+    console.log(`Any database operations failed: ${anyDbOperationFailed}`);
 
     // Return success response with file information
     const response = {
@@ -204,15 +256,31 @@ export default async function handler(
       dbOperationsSkipped: anyDbOperationFailed,
     };
 
+    console.log(`Sending success response: ${JSON.stringify(response)}`);
     // Send the response
     res.status(200).json(response);
 
     // Process files asynchronously
+    console.log("Starting asynchronous file processing...");
     processFilesAsync(fileResults, req.headers.cookie || "", userId);
 
+    console.log("=== API UPLOAD HANDLER COMPLETE ===");
     return;
   } catch (error) {
     console.error("File upload error:", error);
+    console.log(
+      `Error type: ${
+        error instanceof Error ? error.constructor.name : "Unknown"
+      }`
+    );
+    console.log(
+      `Error message: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
+    console.log(
+      `Error stack: ${error instanceof Error ? error.stack : "No stack trace"}`
+    );
     return res.status(500).json({
       error: "Failed to upload files",
       details: error instanceof Error ? error.message : "Unknown error",
@@ -240,15 +308,36 @@ async function processFilesAsync(
   cookie: string,
   userIdFromUpload: string
 ): Promise<void> {
+  console.log("=== ASYNC FILE PROCESSING START ===");
+  console.log(`Processing ${files.length} files asynchronously`);
+  console.log(`User ID: ${userIdFromUpload}`);
+  console.log(`Cookie present: ${!!cookie}`);
+
   // Process each file
   for (const file of files) {
     try {
+      console.log(`Processing file ${file.id} (${file.name})`);
+      console.log(`File path: ${file.path}`);
+      console.log(`Project ID: ${file.projectId || "none"}`);
+
       // Wait a short delay to ensure the file is saved to disk
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
       console.log(`Starting ingestion for file ${file.id}`);
+      console.log(
+        `Ingestion URL: ${
+          process.env.NEXTAUTH_URL || "http://localhost:3000"
+        }/api/ingest-file`
+      );
 
       // Call the ingest-file API endpoint
+      console.log(
+        `Ingestion request payload: ${JSON.stringify({
+          fileId: file.id,
+          projectId: file.projectId,
+        })}`
+      );
+
       const ingestResponse = await fetch(
         `${
           process.env.NEXTAUTH_URL || "http://localhost:3000"
@@ -267,13 +356,22 @@ async function processFilesAsync(
         }
       );
 
+      console.log(`Ingestion response status: ${ingestResponse.status}`);
+      console.log(
+        `Ingestion response status text: ${ingestResponse.statusText}`
+      );
+
       if (!ingestResponse.ok) {
+        console.log(`Ingestion failed for file ${file.id}`);
         try {
           // Try to parse as JSON first
           const contentType = ingestResponse.headers.get("content-type");
+          console.log(`Response content type: ${contentType}`);
+
           if (contentType && contentType.includes("application/json")) {
             const errorData = await ingestResponse.json();
             console.error(`Error ingesting file ${file.id}:`, errorData);
+            console.log(`JSON error details: ${JSON.stringify(errorData)}`);
           } else {
             // If not JSON, get the text response
             const errorText = await ingestResponse.text();
@@ -282,11 +380,17 @@ async function processFilesAsync(
               errorText.substring(0, 200) +
                 (errorText.length > 200 ? "..." : "")
             );
+            console.log(`Full error text: ${errorText}`);
           }
         } catch (parseError) {
           console.error(
             `Error parsing error response for file ${file.id}:`,
             parseError
+          );
+          console.log(
+            `Parse error details: ${
+              parseError instanceof Error ? parseError.message : "Unknown"
+            }`
           );
         }
         continue;
@@ -296,23 +400,48 @@ async function processFilesAsync(
 
       // After successful ingestion, automatically activate the file
       await new Promise((resolve) => setTimeout(resolve, 500));
+      console.log(`Attempting to auto-activate file ${file.id}`);
 
       try {
         // Auto-activate the file directly
-        await executeQuery(`
-          UPDATE files
-          SET status = 'active'
-          WHERE id = '${file.id}'
-        `);
+        const activationQuery = `UPDATE files SET status = 'active' WHERE id = '${file.id}'`;
+        console.log(`Executing activation query: ${activationQuery}`);
+
+        await executeQuery(activationQuery);
         console.log(`Successfully auto-activated file ${file.id}`);
       } catch (activationError) {
         console.error(
           `Error auto-activating file ${file.id}:`,
           activationError
         );
+        console.log(
+          `Activation error details: ${
+            activationError instanceof Error
+              ? activationError.message
+              : "Unknown"
+          }`
+        );
+        console.log(
+          `Activation error stack: ${
+            activationError instanceof Error
+              ? activationError.stack
+              : "No stack trace"
+          }`
+        );
       }
     } catch (error) {
       console.error(`Error processing file ${file.id}:`, error);
+      console.log(
+        `Processing error details: ${
+          error instanceof Error ? error.message : "Unknown"
+        }`
+      );
+      console.log(
+        `Processing error stack: ${
+          error instanceof Error ? error.stack : "No stack trace"
+        }`
+      );
     }
   }
+  console.log("=== ASYNC FILE PROCESSING COMPLETE ===");
 }

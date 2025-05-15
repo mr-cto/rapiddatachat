@@ -2,7 +2,7 @@ import React from "react";
 import { useRouter } from "next/router";
 import { GetServerSideProps } from "next";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "../../../../api/auth/[...nextauth]";
+import { authOptions } from "../../../../../../lib/authOptions";
 import MappingDefinitionForm from "../../../../../../components/dataTransformation/MappingDefinitionForm";
 
 /**

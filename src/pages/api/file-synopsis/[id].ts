@@ -1,6 +1,5 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "../auth/[...nextauth]";
 import { PrismaClient } from "@prisma/client";
 import { executeQuery } from "../../../../lib/database";
 import {
@@ -8,6 +7,7 @@ import {
   ErrorType,
   ErrorSeverity,
 } from "../../../../lib/errorHandling";
+import { authOptions } from "../../../../lib/authOptions";
 
 // Initialize Prisma client (singleton)
 let prismaInstance: PrismaClient | null = null;

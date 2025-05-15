@@ -21,11 +21,13 @@ interface HistoryItem {
 interface HistoryPaneProps {
   onSelect: (query: Query) => void;
   selectedQueryId?: string;
+  projectId?: string; // Add projectId prop
 }
 
 const HistoryPane: React.FC<HistoryPaneProps> = ({
   onSelect,
   selectedQueryId,
+  projectId,
 }) => {
   const { data: session } = useSession();
   const [queries, setQueries] = useState<Query[]>([]);
@@ -40,7 +42,12 @@ const HistoryPane: React.FC<HistoryPaneProps> = ({
 
       try {
         setLoading(true);
-        const response = await fetch("/api/query-history");
+        // Add projectId to the query if available
+        const url = projectId
+          ? `/api/query-history?projectId=${projectId}`
+          : "/api/query-history";
+
+        const response = await fetch(url);
 
         if (!response.ok) {
           throw new Error("Failed to fetch query history");
@@ -70,7 +77,7 @@ const HistoryPane: React.FC<HistoryPaneProps> = ({
     };
 
     fetchQueries();
-  }, [session]);
+  }, [session, projectId]);
 
   // Format date for display
   const formatDate = (dateString: string) => {

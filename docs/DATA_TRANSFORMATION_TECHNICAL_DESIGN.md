@@ -689,7 +689,7 @@ CREATE TABLE transformation_issues (
 
 import { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "../auth/[...nextauth]";
+import { authOptions } from "../../../../lib/authOptions";
 import { DataTransformationService } from "../../../lib/dataTransformation/dataTransformationService";
 
 export default async function handler(
@@ -754,7 +754,7 @@ export default async function handler(
 
 import { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "../../auth/[...nextauth]";
+import { authOptions } from "../../../../lib/authOptions";
 import { executeQuery } from "../../../../lib/database";
 
 export default async function handler(
