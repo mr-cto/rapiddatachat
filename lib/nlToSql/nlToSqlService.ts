@@ -63,6 +63,7 @@ interface QueryOptions {
   viewState?: string; // Serialized ViewState
   schemaId?: string; // Global schema ID
   fileId?: string; // Selected file ID
+  projectId?: string; // Project ID
 }
 
 // Define the interface for query history item
@@ -247,10 +248,26 @@ export class NLToSQLService {
 
         try {
           // Check if there's any file data for this specific user by joining with files table
+          // If we have a project context, filter by project ID
+          let projectFilter = "";
+
+          if (options.projectId) {
+            projectFilter = ` AND f.project_id = '${options.projectId}'`;
+          } else if (options.fileId) {
+            projectFilter = ` AND f.project_id = (SELECT project_id FROM files WHERE id = '${options.fileId}')`;
+          }
+
+          // Log the project filter being used
+          if (projectFilter) {
+            console.log(
+              `[NLToSQLService] Using project filter in direct file data query: ${projectFilter}`
+            );
+          }
+
           const fileDataResult = (await executeQuery(`
             SELECT COUNT(*) as count FROM file_data fd
             JOIN files f ON fd.file_id = f.id
-            WHERE f.user_id = '${userId}'
+            WHERE f.user_id = '${userId}'${projectFilter}
           `)) as Array<{ count: number }>;
 
           if (
@@ -263,20 +280,38 @@ export class NLToSQLService {
             );
 
             // Get a sample of the data for this user by joining with files table
+            // If we have a project context, filter by project ID
+            let projectFilter = "";
+
+            if (options.projectId) {
+              projectFilter = ` AND f.project_id = '${options.projectId}'`;
+            } else if (options.fileId) {
+              projectFilter = ` AND f.project_id = (SELECT project_id FROM files WHERE id = '${options.fileId}')`;
+            }
+
             const sampleData = (await executeQuery(`
               SELECT fd.data FROM file_data fd
               JOIN files f ON fd.file_id = f.id
-              WHERE f.user_id = '${userId}'
+              WHERE f.user_id = '${userId}'${projectFilter}
               LIMIT 1
             `)) as Array<Record<string, unknown>>;
 
             if (sampleData && sampleData.length > 0) {
-              // Create a generic table schema with user filtering information
+              // Create a generic table schema with user filtering information and project filtering if available
+              let projectFilter = "";
+
+              if (options.projectId) {
+                projectFilter = ` AND f.project_id = '${options.projectId}'`;
+              } else if (options.fileId) {
+                projectFilter = ` AND f.project_id = (SELECT project_id FROM files WHERE id = '${options.fileId}')`;
+              }
+
               const genericTable = {
                 name:
                   "file_data fd JOIN files f ON fd.file_id = f.id WHERE f.user_id = '" +
                   userId +
-                  "'",
+                  "'" +
+                  projectFilter,
                 columns: [
                   {
                     name: "data",
@@ -460,7 +495,73 @@ export class NLToSQLService {
           sampleData
         );
 
+      // Ensure the query includes proper filtering
+      let finalSqlQuery = sqlQuery;
+
+      // Determine the project filter to apply
+      let projectFilter = "";
+
+      if (options.projectId) {
+        // If we have a direct project ID, use it with proper quoting
+        projectFilter = `f.project_id = '${options.projectId}'`;
+      } else if (options.fileId) {
+        // If we have a file ID, get the project ID from the file
+        projectFilter = `f.project_id = (SELECT project_id FROM files WHERE id = '${options.fileId}')`;
+      }
+
+      // Log the project ID if available
+      if (options.projectId) {
+        console.log(
+          `[NLToSQLService] Using project ID filter: ${options.projectId}`
+        );
+      } else if (options.fileId) {
+        console.log(
+          `[NLToSQLService] Using file ID for project filter: ${options.fileId}`
+        );
+      }
+
+      // Only modify the query if we have a project filter and it's not already included
+      if (
+        projectFilter &&
+        !finalSqlQuery.toLowerCase().includes("project_id")
+      ) {
+        // Check if the query already has a JOIN to the files table
+        const hasFilesJoin =
+          finalSqlQuery.toLowerCase().includes("join files") ||
+          finalSqlQuery.toLowerCase().includes('join "files"');
+
+        // Check if the query already has a WHERE clause
+        if (finalSqlQuery.toLowerCase().includes("where")) {
+          if (hasFilesJoin) {
+            // If we already have a files join, just add the filter to WHERE
+            finalSqlQuery = finalSqlQuery.replace(
+              /where\s/i,
+              `WHERE ${projectFilter} AND `
+            );
+          } else {
+            // If no files join, we need to add it before the WHERE
+            finalSqlQuery = finalSqlQuery
+              .replace(
+                /from\s+file_data\b/i,
+                `FROM file_data fd JOIN files f ON fd.file_id = f.id`
+              )
+              .replace(/where\s/i, `WHERE ${projectFilter} AND `);
+          }
+        } else if (finalSqlQuery.toLowerCase().includes("from file_data")) {
+          // Add a JOIN and WHERE clause if there isn't one
+          finalSqlQuery = finalSqlQuery.replace(
+            /from file_data/i,
+            `FROM file_data fd JOIN files f ON fd.file_id = f.id WHERE ${projectFilter}`
+          );
+        }
+      }
+
       console.log(`[NLToSQLService] Generated SQL query: ${sqlQuery}`);
+      if (finalSqlQuery !== sqlQuery) {
+        console.log(
+          `[NLToSQLService] Modified SQL query with project filter: ${finalSqlQuery}`
+        );
+      }
       console.log(
         `[NLToSQLService] Generated explanation: ${explanation.substring(
           0,
@@ -475,7 +576,7 @@ export class NLToSQLService {
       );
       const startTime = Date.now();
       const queryResult = await this.queryService.executeQuery(
-        sqlQuery,
+        finalSqlQuery,
         userId,
         query,
         {
@@ -512,7 +613,7 @@ export class NLToSQLService {
 
       // Return the SQL query, explanation, and results
       return {
-        sqlQuery,
+        sqlQuery: finalSqlQuery,
         explanation,
         results: queryResult.rows || [],
         executionTime,

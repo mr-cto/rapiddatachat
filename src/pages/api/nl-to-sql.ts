@@ -2,6 +2,7 @@ import { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../../../lib/authOptions";
 import { createNLToSQLService } from "../../../lib/nlToSql";
+import { executeQuery } from "../../../lib/database";
 import {
   handleNLToSQLError,
   formatErrorForResponse,
@@ -74,6 +75,7 @@ export default async function handler(
       viewState,
       schemaId,
       fileId,
+      projectId,
     } = req.body;
 
     // Use userId from request body if provided (for testing), otherwise use session email
@@ -151,7 +153,33 @@ export default async function handler(
       viewState,
       schemaId,
       fileId,
+      projectId,
     };
+
+    // If we have a fileId but no projectId, try to get the project ID from the file
+    if (fileId && !projectId) {
+      try {
+        const fileResult = (await executeQuery(`
+          SELECT project_id FROM files WHERE id = '${fileId}'
+        `)) as Array<{ project_id: string }>;
+
+        if (
+          Array.isArray(fileResult) &&
+          fileResult.length > 0 &&
+          fileResult[0]?.project_id
+        ) {
+          queryOptions.projectId = fileResult[0].project_id;
+          console.log(
+            `[API] Found project ID ${queryOptions.projectId} for file ${fileId}`
+          );
+        }
+      } catch (error) {
+        console.error(
+          `[API] Error getting project ID for file ${fileId}:`,
+          error
+        );
+      }
+    }
 
     // Process the query with options
     const result = await nlToSqlService.processQuery(

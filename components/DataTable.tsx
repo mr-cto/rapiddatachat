@@ -458,7 +458,7 @@ export const DataTable: React.FC<DataTableProps> = ({
       {totalPages && totalPages > 1 && (
         <div className="mt-4 flex flex-col sm:flex-row items-center justify-between bg-white p-4 border-t">
           <div className="flex items-center space-x-2 mb-2 sm:mb-0">
-            <span className="text-sm text-secondary dark:text-secondary">
+            <span className="text-sm text-primary dark:text-primary">
               Showing page {currentPage} of {totalPages}
               {totalRows !== undefined && ` (${totalRows} total results)`}
             </span>
