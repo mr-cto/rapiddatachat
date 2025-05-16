@@ -28,7 +28,7 @@
     }
   ],
   "functions": {
-    "api/debug.js": {
+    "api/**/*.js": {
       "includeFiles": "!.next/cache/webpack/**"
     }
   }
