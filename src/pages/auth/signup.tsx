@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { signIn } from "next-auth/react";
+import { signIn, useSession } from "next-auth/react";
 import { FcGoogle } from "react-icons/fc";
 import { useRouter } from "next/router";
 import Link from "next/link";
@@ -13,6 +13,14 @@ export default function SignUp() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const router = useRouter();
+  const { data: session, status } = useSession();
+
+  // Redirect if user is already signed in
+  useEffect(() => {
+    if (status === "authenticated") {
+      router.push("/project");
+    }
+  }, [status, router]);
 
   // Validate email format
   const isValidEmail = (email: string) => {
@@ -146,8 +154,8 @@ export default function SignUp() {
           setTimeout(() => {
             router.push("/auth/signin");
           }, 3000);
-        } else if (signInRes?.url) {
-          // Redirect to projects page
+        } else {
+          // Successful sign-in, redirect to projects page
           router.push("/project");
         }
       } catch (signInError) {

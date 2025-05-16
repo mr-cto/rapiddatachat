@@ -6,6 +6,7 @@ import { FaArchive, FaEye, FaTrash } from "react-icons/fa";
 import ConfirmDialog from "../../../components/ui/ConfirmDialog";
 import CardLoading from "../../../components/ui/CardLoading";
 import CreateProjectModal from "../../../components/project/CreateProjectModal";
+import Header from "../../../components/layouts/Header";
 
 interface Project {
   id: string;
@@ -265,144 +266,154 @@ const ProjectList: React.FC = () => {
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
-      <div className="flex justify-between items-center mb-8">
-        <div className="flex items-center">
-          <h1 className="text-3xl font-bold text-gray-300 mr-4">My Projects</h1>
-          <div className="flex items-center space-x-2">
-            <button
-              className={`px-3 py-1.5 text-sm rounded-md transition-all flex items-center ${
-                showArchived
-                  ? "bg-accent-primary text-white"
-                  : "bg-ui-tertiary text-gray-300 hover:bg-ui-tertiary/80"
-              }`}
-              onClick={() => setShowArchived(true)}
-            >
-              <FaArchive className="mr-2" /> Archived
-            </button>
-            <button
-              className={`px-3 py-1.5 text-sm rounded-md transition-all flex items-center ${
-                !showArchived
-                  ? "bg-accent-primary text-white"
-                  : "bg-ui-tertiary text-gray-300 hover:bg-ui-tertiary/80"
-              }`}
-              onClick={() => setShowArchived(false)}
-            >
-              <FaEye className="mr-2" /> Active
-            </button>
-          </div>
-        </div>
-        <button
-          onClick={handleCreateProject}
-          className="px-4 py-2 bg-accent-primary hover:bg-accent-primary-hover text-white rounded-md transition-all"
-        >
-          Create New Project
-        </button>
-      </div>
+    <div className="min-h-screen flex flex-col bg-background">
+      <Header title="RapidDataChat" />
 
-      {filteredProjects.length === 0 ? (
-        <div className="bg-ui-secondary rounded-lg p-8 text-center">
-          <h2 className="text-xl font-semibold text-gray-300 mb-4">
-            {showArchived ? "No Archived Projects" : "No Projects Yet"}
-          </h2>
-          <p className="text-gray-400 mb-6">
-            {showArchived
-              ? "You don't have any archived projects."
-              : "Create your first project to get started with data management."}
-          </p>
-          {!showArchived && (
-            <button
-              onClick={() => setIsCreateModalOpen(true)}
-              className="px-6 py-3 bg-accent-primary hover:bg-accent-primary-hover text-white font-semibold rounded-lg transition"
-            >
-              Create Your First Project
-            </button>
-          )}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredProjects.map((project) => (
-            <CardLoading
-              key={project.id}
-              isLoading={loadingProjectIds.includes(project.id)}
-              className="bg-ui-secondary rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow h-full relative group"
-            >
-              <Link
-                href={`/project/${project.id}/dashboard`}
-                className="block h-full"
+      <div className="max-w-6xl mx-auto px-4 py-8 w-full">
+        <div className="flex justify-between items-center mb-8">
+          <div className="flex items-center">
+            <h1 className="text-3xl font-bold text-gray-300 mr-4">
+              My Projects
+            </h1>
+            <div className="flex items-center space-x-2">
+              <button
+                className={`px-3 py-1.5 text-sm rounded-md transition-all flex items-center ${
+                  showArchived
+                    ? "bg-accent-primary text-white"
+                    : "bg-ui-tertiary text-gray-300 hover:bg-ui-tertiary/80"
+                }`}
+                onClick={() => setShowArchived(true)}
               >
-                <div className="flex justify-between items-start">
-                  <h2 className="text-xl font-semibold text-gray-300 mb-2 truncate">
-                    {project.name}
-                  </h2>
-                  <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {project.archived ? (
-                      <button
-                        className="h-8 w-8 p-1 text-green-400 hover:bg-ui-tertiary rounded-full"
-                        title="Unarchive Project"
-                        onClick={(e: React.MouseEvent) =>
-                          showUnarchiveConfirmation(project.id, e)
-                        }
-                      >
-                        <FaEye />
-                      </button>
-                    ) : (
-                      <button
-                        className="h-8 w-8 p-1 text-yellow-400 hover:bg-ui-tertiary rounded-full"
-                        title="Archive Project"
-                        onClick={(e: React.MouseEvent) =>
-                          showArchiveConfirmation(project.id, e)
-                        }
-                      >
-                        <FaArchive />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {project.archived && (
-                  <span className="inline-flex items-center rounded-full bg-yellow-900/30 px-2 py-0.5 text-xs font-medium text-yellow-400 mb-2">
-                    Archived
-                  </span>
-                )}
-
-                {project.description && (
-                  <p className="text-gray-400 mb-4 line-clamp-2">
-                    {project.description}
-                  </p>
-                )}
-
-                <div className="mt-auto pt-4 text-sm text-gray-500">
-                  <p>
-                    Created: {new Date(project.createdAt).toLocaleDateString()}
-                  </p>
-                  <p>
-                    Updated: {new Date(project.updatedAt).toLocaleDateString()}
-                  </p>
-                </div>
-              </Link>
-            </CardLoading>
-          ))}
+                <FaArchive className="mr-2" /> Archived
+              </button>
+              <button
+                className={`px-3 py-1.5 text-sm rounded-md transition-all flex items-center ${
+                  !showArchived
+                    ? "bg-accent-primary text-white"
+                    : "bg-ui-tertiary text-gray-300 hover:bg-ui-tertiary/80"
+                }`}
+                onClick={() => setShowArchived(false)}
+              >
+                <FaEye className="mr-2" /> Active
+              </button>
+            </div>
+          </div>
+          <button
+            onClick={handleCreateProject}
+            className="px-4 py-2 bg-accent-primary hover:bg-accent-primary-hover text-white rounded-md transition-all"
+          >
+            Create New Project
+          </button>
         </div>
-      )}
-      {/* Confirmation Dialog */}
-      <ConfirmDialog
-        isOpen={confirmDialog.isOpen}
-        onClose={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
-        onConfirm={handleConfirmAction}
-        title={confirmDialog.title}
-        message={confirmDialog.message}
-        confirmText={
-          confirmDialog.action === "archive" ? "Archive" : "Unarchive"
-        }
-        variant={confirmDialog.action === "archive" ? "warning" : "info"}
-      />
 
-      {/* Create Project Modal */}
-      <CreateProjectModal
-        isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-      />
+        {filteredProjects.length === 0 ? (
+          <div className="bg-ui-secondary rounded-lg p-8 text-center">
+            <h2 className="text-xl font-semibold text-gray-300 mb-4">
+              {showArchived ? "No Archived Projects" : "No Projects Yet"}
+            </h2>
+            <p className="text-gray-400 mb-6">
+              {showArchived
+                ? "You don't have any archived projects."
+                : "Create your first project to get started with data management."}
+            </p>
+            {!showArchived && (
+              <button
+                onClick={() => setIsCreateModalOpen(true)}
+                className="px-6 py-3 bg-accent-primary hover:bg-accent-primary-hover text-white font-semibold rounded-lg transition"
+              >
+                Create Your First Project
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredProjects.map((project) => (
+              <CardLoading
+                key={project.id}
+                isLoading={loadingProjectIds.includes(project.id)}
+                className="bg-ui-secondary rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow h-full relative group"
+              >
+                <Link
+                  href={`/project/${project.id}/dashboard`}
+                  className="block h-full"
+                >
+                  <div className="flex justify-between items-start">
+                    <h2 className="text-xl font-semibold text-gray-300 mb-2 truncate">
+                      {project.name}
+                    </h2>
+                    <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {project.archived ? (
+                        <button
+                          className="h-8 w-8 p-1 text-green-400 hover:bg-ui-tertiary rounded-full"
+                          title="Unarchive Project"
+                          onClick={(e: React.MouseEvent) =>
+                            showUnarchiveConfirmation(project.id, e)
+                          }
+                        >
+                          <FaEye />
+                        </button>
+                      ) : (
+                        <button
+                          className="h-8 w-8 p-1 text-yellow-400 hover:bg-ui-tertiary rounded-full"
+                          title="Archive Project"
+                          onClick={(e: React.MouseEvent) =>
+                            showArchiveConfirmation(project.id, e)
+                          }
+                        >
+                          <FaArchive />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {project.archived && (
+                    <span className="inline-flex items-center rounded-full bg-yellow-900/30 px-2 py-0.5 text-xs font-medium text-yellow-400 mb-2">
+                      Archived
+                    </span>
+                  )}
+
+                  {project.description && (
+                    <p className="text-gray-400 mb-4 line-clamp-2">
+                      {project.description}
+                    </p>
+                  )}
+
+                  <div className="mt-auto pt-4 text-sm text-gray-500">
+                    <p>
+                      Created:{" "}
+                      {new Date(project.createdAt).toLocaleDateString()}
+                    </p>
+                    <p>
+                      Updated:{" "}
+                      {new Date(project.updatedAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                </Link>
+              </CardLoading>
+            ))}
+          </div>
+        )}
+        {/* Confirmation Dialog */}
+        <ConfirmDialog
+          isOpen={confirmDialog.isOpen}
+          onClose={() =>
+            setConfirmDialog((prev) => ({ ...prev, isOpen: false }))
+          }
+          onConfirm={handleConfirmAction}
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          confirmText={
+            confirmDialog.action === "archive" ? "Archive" : "Unarchive"
+          }
+          variant={confirmDialog.action === "archive" ? "warning" : "info"}
+        />
+
+        {/* Create Project Modal */}
+        <CreateProjectModal
+          isOpen={isCreateModalOpen}
+          onClose={() => setIsCreateModalOpen(false)}
+        />
+      </div>
     </div>
   );
 };

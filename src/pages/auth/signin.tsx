@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { signIn } from "next-auth/react";
+import { signIn, useSession } from "next-auth/react";
 import { FcGoogle } from "react-icons/fc";
 import { useRouter } from "next/router";
 import Link from "next/link";
@@ -10,6 +10,14 @@ export default function SignIn() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const { data: session, status } = useSession();
+
+  // Redirect if user is already signed in
+  useEffect(() => {
+    if (status === "authenticated") {
+      router.push("/project");
+    }
+  }, [status, router]);
 
   // Handle URL error parameters
   useEffect(() => {
