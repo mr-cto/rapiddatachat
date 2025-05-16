@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
 import { FcGoogle } from "react-icons/fc";
-import Link from "next/link";
 import { useRouter } from "next/router";
+import Link from "next/link";
 
 export default function SignIn() {
   const [email, setEmail] = useState("");
@@ -152,7 +152,7 @@ export default function SignIn() {
 
           <button
             type="submit"
-            className="w-full bg-white hover:bg-accent-secondary-hover text-white hover:cursor-pointer font-semibold py-2 rounded-lg transition"
+            className="w-full bg-accent-primary hover:bg-accent-primary-hover text-white hover:cursor-pointer font-semibold py-2 rounded-lg transition"
             disabled={loading}
           >
             {loading ? "Signing in..." : "Sign in with Email"}

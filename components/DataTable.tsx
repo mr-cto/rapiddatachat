@@ -443,7 +443,7 @@ export const DataTable: React.FC<DataTableProps> = ({
                 {visibleColumns.map((column, colIndex) => (
                   <td
                     key={colIndex}
-                    className="px-6 py-4 text-sm text-gray-800 dark:text-gray-200 whitespace-nowrap min-w-[150px]"
+                    className="px-6 py-4 text-sm text-gray-300 whitespace-nowrap min-w-[150px]"
                   >
                     {formatCellValue(row[column])}
                   </td>
@@ -456,9 +456,9 @@ export const DataTable: React.FC<DataTableProps> = ({
 
       {/* Pagination controls */}
       {totalPages && totalPages > 1 && (
-        <div className="mt-4 flex flex-col sm:flex-row items-center justify-between bg-white p-4 border-t">
+        <div className="mt-4 flex flex-col sm:flex-row items-center justify-between bg-ui-primary p-4 border-t border-ui-border">
           <div className="flex items-center space-x-2 mb-2 sm:mb-0">
-            <span className="text-sm text-primary dark:text-primary">
+            <span className="text-sm text-gray-300">
               Showing page {currentPage} of {totalPages}
               {totalRows !== undefined && ` (${totalRows} total results)`}
             </span>

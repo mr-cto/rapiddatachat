@@ -13,7 +13,7 @@ const ChatInputPane: React.FC<ChatInputPaneProps> = ({
   selectedFileId,
 }) => {
   return (
-    <div className="bg-white p-2 border-t">
+    <div className="bg-ui-primary p-2 border-t border-ui-border">
       {/* Query Input */}
       <NLToSQLQuery
         onSubmit={onSubmit}

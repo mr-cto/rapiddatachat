@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { useSession } from "next-auth/react";
-import DashboardLayout from "../../../../components/layouts/DashboardLayout";
+import ImprovedDashboardLayout from "../../../../components/layouts/ImprovedDashboardLayout";
 import HistoryPane from "../../../../components/panels/HistoryPane";
 import FilesPane from "../../../../components/panels/FilesPane";
 import SchemaManagementPane from "../../../../components/panels/SchemaManagementPane";
-import QueryResultsPane from "../../../../components/panels/QueryResultsPane";
-import ChatInputPane from "../../../../components/panels/ChatInputPane";
+import ImprovedQueryResultsPane from "../../../../components/panels/ImprovedQueryResultsPane";
+import ImprovedChatInputPane from "../../../../components/panels/ImprovedChatInputPane";
 
 interface Query {
   id: string;
@@ -438,7 +438,8 @@ const ProjectDashboard: React.FC = () => {
         </div>
       )}
 
-      <DashboardLayout
+      <ImprovedDashboardLayout
+        projectName={project?.name}
         historyPane={
           <HistoryPane
             onSelect={handleQuerySelect}
@@ -469,7 +470,7 @@ const ProjectDashboard: React.FC = () => {
           />
         }
         queryResultsPane={
-          <QueryResultsPane
+          <ImprovedQueryResultsPane
             isLoading={isLoading}
             error={error}
             result={result}
@@ -478,15 +479,14 @@ const ProjectDashboard: React.FC = () => {
             onSortChange={handleSortChange}
             onApplyFilters={handleApplyFilters}
             onColumnMergesChange={handleColumnMergesChange}
-            // Note: We'll need to update QueryResultsPane component to include project context
+            userId={session?.user?.id}
           />
         }
         chatInputPane={
-          <ChatInputPane
+          <ImprovedChatInputPane
             onSubmit={handleSubmit}
             isLoading={isLoading}
             selectedFileId={selectedFileId}
-            // Note: We'll need to update ChatInputPane component to include project context
           />
         }
       />

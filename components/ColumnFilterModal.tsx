@@ -195,23 +195,23 @@ const ColumnFilterModal: React.FC<ColumnFilterModalProps> = ({
     >
       <div className="space-y-4">
         <div className="flex justify-between items-center">
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-gray-400">
             Select which columns to display in the results table.
             <br />
-            <span className="text-xs text-indigo-600">
+            <span className="text-xs text-accent-primary">
               Drag and drop to reorder columns.
             </span>
           </p>
           <div className="flex space-x-2">
             <button
               onClick={selectAllColumns}
-              className="text-xs text-indigo-600 hover:text-indigo-800"
+              className="text-xs text-accent-primary hover:text-accent-primary-hover"
             >
               Select All
             </button>
             <button
               onClick={deselectAllColumns}
-              className="text-xs text-indigo-600 hover:text-indigo-800"
+              className="text-xs text-accent-primary hover:text-accent-primary-hover"
             >
               Deselect All
             </button>
@@ -221,9 +221,9 @@ const ColumnFilterModal: React.FC<ColumnFilterModalProps> = ({
         <div className="space-y-4">
           {/* Visible columns section */}
           <div>
-            <h4 className="text-sm font-medium text-slate-700 mb-2">
+            <h4 className="text-sm font-medium text-gray-300 mb-2">
               Visible Columns
-              <span className="ml-2 text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
+              <span className="ml-2 text-xs bg-accent-primary/20 text-accent-primary px-2 py-0.5 rounded-full">
                 {
                   orderedColumns.filter((col) => visibleColumns.includes(col))
                     .length
@@ -231,7 +231,7 @@ const ColumnFilterModal: React.FC<ColumnFilterModalProps> = ({
                 columns
               </span>
             </h4>
-            <div className="max-h-60 overflow-y-auto p-2 border border-slate-200 rounded-md">
+            <div className="max-h-60 overflow-y-auto p-2 border border-ui-border rounded-md">
               <div className="flex flex-wrap gap-2">
                 {orderedColumns
                   .filter((column) => visibleColumns.includes(column))
@@ -246,26 +246,26 @@ const ColumnFilterModal: React.FC<ColumnFilterModalProps> = ({
                       className={`flex items-center space-x-2 text-sm cursor-move
                         ${
                           draggedColumn === column
-                            ? "opacity-50 bg-indigo-100"
-                            : "bg-slate-50"
+                            ? "opacity-50 bg-accent-primary/20"
+                            : "bg-ui-secondary"
                         }
                         ${
                           dragOverColumn === column
-                            ? "border-2 border-indigo-500"
-                            : "border border-slate-200"
+                            ? "border-2 border-accent-primary"
+                            : "border border-ui-border"
                         }
-                        px-2 py-1 rounded hover:border-indigo-200 transition-colors`}
+                        px-2 py-1 rounded hover:border-accent-primary/50 transition-colors`}
                     >
                       <input
                         type="checkbox"
                         checked={true}
                         onChange={() => toggleColumnVisibility(column)}
-                        className="rounded text-indigo-500 focus:ring-indigo-500"
+                        className="rounded text-accent-primary focus:ring-accent-primary"
                       />
-                      <span className="text-slate-700">{column}</span>
+                      <span className="text-gray-300">{column}</span>
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
-                        className="h-4 w-4 text-slate-400 ml-1"
+                        className="h-4 w-4 text-gray-500 ml-1"
                         fill="none"
                         viewBox="0 0 24 24"
                         stroke="currentColor"
@@ -285,29 +285,29 @@ const ColumnFilterModal: React.FC<ColumnFilterModalProps> = ({
 
           {/* Hidden columns section */}
           <div>
-            <h4 className="text-sm font-medium text-slate-700 mb-2">
+            <h4 className="text-sm font-medium text-gray-300 mb-2">
               Hidden Columns
-              <span className="ml-2 text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
+              <span className="ml-2 text-xs bg-ui-tertiary text-gray-400 px-2 py-0.5 rounded-full">
                 {columns.filter((col) => !visibleColumns.includes(col)).length}{" "}
                 columns
               </span>
             </h4>
-            <div className="max-h-40 overflow-y-auto p-2 border border-slate-200 rounded-md">
+            <div className="max-h-40 overflow-y-auto p-2 border border-ui-border rounded-md">
               <div className="flex flex-wrap gap-2">
                 {columns
                   .filter((column) => !visibleColumns.includes(column))
                   .map((column) => (
                     <label
                       key={column}
-                      className="flex items-center space-x-2 text-sm bg-slate-50 px-2 py-1 rounded border border-slate-200 hover:border-indigo-200 transition-colors"
+                      className="flex items-center space-x-2 text-sm bg-ui-secondary px-2 py-1 rounded border border-ui-border hover:border-accent-primary/50 transition-colors"
                     >
                       <input
                         type="checkbox"
                         checked={false}
                         onChange={() => toggleColumnVisibility(column)}
-                        className="rounded text-indigo-500 focus:ring-indigo-500"
+                        className="rounded text-accent-primary focus:ring-accent-primary"
                       />
-                      <span className="text-slate-500">{column}</span>
+                      <span className="text-gray-400">{column}</span>
                     </label>
                   ))}
               </div>
@@ -318,13 +318,13 @@ const ColumnFilterModal: React.FC<ColumnFilterModalProps> = ({
         <div className="flex justify-end space-x-2 pt-2">
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-slate-300 text-slate-700 rounded-md hover:bg-slate-50"
+            className="px-4 py-2 border border-ui-border text-gray-300 rounded-md hover:bg-ui-secondary"
           >
             Cancel
           </button>
           <button
             onClick={handleApply}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+            className="px-4 py-2 bg-accent-primary text-white rounded-md hover:bg-accent-primary-hover"
           >
             Apply
           </button>

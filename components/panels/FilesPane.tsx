@@ -3,6 +3,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/router";
 import { FaFile, FaTrash, FaEye } from "react-icons/fa";
 import SchemaColumnMapper from "../SchemaColumnMapper";
+import { Button, Card } from "../ui";
 
 interface FileData {
   id: string;
@@ -798,8 +799,8 @@ const FilesPane: React.FC<FilesPaneProps> = ({
         <div
           className={`border-2 border-dashed rounded-lg p-6 flex flex-col items-center justify-center transition-colors duration-200 ${
             dragActive
-              ? "border-indigo-500 bg-indigo-50"
-              : "border-gray-300 bg-white"
+              ? "border-accent-primary bg-ui-tertiary"
+              : "border-gray-600 bg-ui-primary"
           } ${uploading ? "opacity-50 pointer-events-none" : ""}`}
           onDragEnter={handleDrag}
           onDragOver={handleDrag}
@@ -821,16 +822,16 @@ const FilesPane: React.FC<FilesPaneProps> = ({
           {uploading ? (
             <div className="w-full">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-indigo-600">
+                <span className="text-sm font-medium text-accent-primary">
                   {uploadStatus || "Uploading..."}
                 </span>
-                <span className="text-sm font-medium text-indigo-600">
+                <span className="text-sm font-medium text-accent-primary">
                   {Math.round(uploadProgress)}%
                 </span>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-2.5">
+              <div className="w-full bg-ui-tertiary rounded-full h-2.5">
                 <div
-                  className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"
+                  className="bg-accent-primary h-2.5 rounded-full transition-all duration-300"
                   style={{ width: `${uploadProgress}%` }}
                 ></div>
               </div>
@@ -838,7 +839,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
           ) : (
             <>
               <svg
-                className="w-12 h-12 text-indigo-500 mb-2"
+                className="w-12 h-12 text-accent-primary mb-2"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
@@ -850,16 +851,16 @@ const FilesPane: React.FC<FilesPaneProps> = ({
                   d="M7 16v-4a4 4 0 018 0v4m-4 4v-4m0 0V4m0 12a4 4 0 01-4-4V4a4 4 0 018 0v8a4 4 0 01-4 4z"
                 />
               </svg>
-              <p className="text-gray-700 mb-2">
+              <p className="text-gray-300 mb-2">
                 Drag and drop CSV or XLSX files here, or{" "}
-                <span className="text-indigo-600 underline">browse</span>
+                <span className="text-accent-primary underline">browse</span>
               </p>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-400">
                 {isFirstUpload || !hasActiveSchema
                   ? "Upload your first CSV or XLSX file to create a schema for your project."
                   : "Upload CSV or XLSX files to add data to your project. Files will be automatically processed and mapped to your schema."}
               </p>
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="text-xs text-gray-400 mt-2">
                 Maximum file size: {Math.round(MAX_FILE_SIZE / (1024 * 1024))}MB
               </p>
             </>
@@ -874,33 +875,36 @@ const FilesPane: React.FC<FilesPaneProps> = ({
     // Show loading state
     if (loading) {
       return (
-        <div className="bg-white shadow rounded-lg overflow-hidden">
+        <Card variant="default" padding="none">
           <div className="p-4 grid grid-cols-1 gap-4 animate-pulse">
             {[1, 2, 3].map((item) => (
-              <div key={item} className="border rounded-lg p-4">
+              <div
+                key={item}
+                className="border border-ui-border rounded-lg p-4"
+              >
                 <div className="flex justify-between items-start mb-3">
-                  <div className="h-6 bg-gray-200 rounded w-3/4"></div>
+                  <div className="h-6 bg-ui-tertiary rounded w-3/4"></div>
                   <div className="flex space-x-2">
-                    <div className="h-5 w-5 bg-gray-200 rounded-full"></div>
-                    <div className="h-5 w-5 bg-gray-200 rounded-full"></div>
+                    <div className="h-5 w-5 bg-ui-tertiary rounded-full"></div>
+                    <div className="h-5 w-5 bg-ui-tertiary rounded-full"></div>
                   </div>
                 </div>
-                <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
-                <div className="h-5 bg-gray-200 rounded w-1/4 mb-3"></div>
+                <div className="h-4 bg-ui-tertiary rounded w-1/2 mb-2"></div>
+                <div className="h-5 bg-ui-tertiary rounded w-1/4 mb-3"></div>
               </div>
             ))}
           </div>
-        </div>
+        </Card>
       );
     }
 
     // Show empty state with integrated upload
     if (files.length === 0) {
       return (
-        <div className="bg-white shadow rounded-lg overflow-hidden">
+        <Card variant="default" padding="none">
           <div className="p-8 text-center">
             <svg
-              className="mx-auto h-16 w-16 text-gray-400"
+              className="mx-auto h-16 w-16 text-gray-500"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -913,82 +917,88 @@ const FilesPane: React.FC<FilesPaneProps> = ({
                 d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"
               />
             </svg>
-            <h3 className="mt-4 text-lg font-medium text-gray-900">
+            <h3 className="mt-4 text-lg font-medium text-gray-300">
               No files available
             </h3>
-            <p className="mt-2 text-sm text-gray-500 max-w-md mx-auto">
+            <p className="mt-2 text-sm text-gray-400 max-w-md mx-auto">
               Upload a file to see its columns and data structure.
             </p>
             <div className="mt-6 max-w-md mx-auto">{renderFileUpload()}</div>
           </div>
-        </div>
+        </Card>
       );
     }
 
     // Show file list
     return (
-      <div className="bg-white overflow-hidden">
+      <Card variant="default" padding="none" className="overflow-hidden">
         <div className="p-1 grid grid-cols-1 gap-2">
           {files.map((file) => (
             <div
               key={file.id}
-              className="border rounded-lg p-2 hover:shadow-md transition-shadow"
+              className="border border-ui-border rounded-lg p-2 hover:shadow-md transition-shadow"
               onClick={() => onSelectFile(file.id)}
             >
               <div className="flex justify-between items-start mb-1">
-                <h3 className="text-sm font-medium text-gray-900 break-words pr-2">
+                <h3 className="text-sm font-medium text-gray-300 break-words pr-2">
                   {file.filename}
                 </h3>
                 <div className="flex space-x-2">
-                  <button
+                  <Button
                     onClick={(e) => {
                       e.stopPropagation();
                       viewSynopsis(file.id);
                     }}
-                    className="text-blue-600 hover:text-blue-900"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 p-1 text-accent-primary"
                     title="View Synopsis"
                   >
                     <FaEye />
-                  </button>
+                  </Button>
                   {deleteConfirmation === file.id ? (
                     <div className="flex items-center space-x-2">
-                      <button
+                      <Button
                         onClick={(e) => {
                           e.stopPropagation();
                           handleDeleteFile(file.id);
                         }}
-                        className="text-red-600 hover:text-red-900"
+                        variant="danger"
+                        size="sm"
                         title="Confirm Delete"
                       >
                         Yes
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         onClick={(e) => {
                           e.stopPropagation();
                           cancelDelete();
                         }}
-                        className="text-gray-600 hover:text-gray-900"
+                        variant="secondary"
+                        size="sm"
                         title="Cancel Delete"
                       >
                         No
-                      </button>
+                      </Button>
                     </div>
                   ) : (
-                    <button
+                    <Button
                       onClick={(e) => {
                         e.stopPropagation();
                         handleDeleteClick(file.id);
                       }}
-                      className="text-red-600 hover:text-red-900"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 p-1 text-red-400"
                       title="Delete File"
                     >
                       <FaTrash />
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>
 
-              <div className="text-xs text-gray-500 mb-1">
+              <div className="text-xs text-gray-400 mb-1">
                 {file.format?.toUpperCase() || "Unknown format"} •{" "}
                 {formatFileSize(file.sizeBytes)}
               </div>
@@ -1011,7 +1021,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
             </div>
           ))}
         </div>
-      </div>
+      </Card>
     );
   };
 
@@ -1027,41 +1037,44 @@ const FilesPane: React.FC<FilesPaneProps> = ({
 
   return (
     <div className="h-[50vh] flex flex-col">
-      <div className="p-2 border-b">
+      <div className="p-2 border-b border-ui-border">
         <div className="flex items-center justify-between">
           <div className="flex items-center">
-            <h2 className="text-md font-semibold flex items-center text-black dark:text-black">
+            <h2 className="text-md font-semibold flex items-center text-gray-300">
               <FaFile className="mr-1" /> Files{" "}
               {files.length > 0 ? `(${files.length})` : ""}
             </h2>
-            <button
+            <Button
               onClick={() => fetchFiles()}
-              className="ml-2 text-xs px-2 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
+              variant="secondary"
+              size="sm"
+              className="ml-2 h-6 px-2 py-0"
               title="Force refresh files list"
             >
               ↻
-            </button>
+            </Button>
           </div>
           <div className="flex items-center">
             {projectId && (
-              <span className="text-xs text-gray-500 mr-2">
+              <span className="text-xs text-gray-400 mr-2">
                 Project ID: {projectId.substring(0, 8)}...
               </span>
             )}
             {files.length > 0 && (
-              <button
+              <Button
                 onClick={() => setSuccessMessage(null)}
-                className="text-xs px-3 py-1 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+                variant="primary"
+                size="sm"
               >
                 Upload New File
-              </button>
+              </Button>
             )}
           </div>
         </div>
 
         {successMessage && (
-          <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-md">
-            <p className="text-green-700 text-sm flex items-center">
+          <div className="mt-2 p-3 bg-green-900/30 border border-green-800 rounded-md">
+            <p className="text-green-400 text-sm flex items-center">
               <svg
                 className="w-5 h-5 mr-2"
                 fill="none"
@@ -1081,7 +1094,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
         )}
 
         {!successMessage && files.length > 0 && (
-          <div className="mt-2 mb-2 p-3 border rounded-md bg-gray-50">
+          <div className="mt-2 mb-2 p-3 border border-ui-border rounded-md bg-ui-secondary">
             {renderFileUpload()}
           </div>
         )}

@@ -63,13 +63,13 @@ const Modal: React.FC<ModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50 animate-fadeIn">
       <div
         ref={modalRef}
-        className={`bg-white rounded-lg shadow-xl ${maxWidth} w-full relative animate-scaleIn`}
+        className={`bg-ui-primary rounded-lg shadow-xl ${maxWidth} w-full relative animate-scaleIn`}
       >
-        <div className="flex justify-between items-center p-4 border-b">
-          <h3 className="text-lg font-semibold text-slate-800">{title}</h3>
+        <div className="flex justify-between items-center p-4 border-b border-ui-border">
+          <h3 className="text-lg font-semibold text-gray-300">{title}</h3>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 transition-colors"
+            className="text-gray-400 hover:text-gray-300 transition-colors"
             aria-label="Close"
           >
             <svg

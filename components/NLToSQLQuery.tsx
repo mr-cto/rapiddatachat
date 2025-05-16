@@ -53,14 +53,14 @@ export const NLToSQLQuery: React.FC<NLToSQLQueryProps> = ({
   };
 
   return (
-    <div className="w-full bg-primary text-black">
+    <div className="w-full bg-ui-primary text-gray-300">
       <form onSubmit={handleSubmit} className="flex items-center">
         <input
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Ask a question about your data..."
-          className="flex-1 p-2 border border-gray-300 rounded-l-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="flex-1 p-2 border border-ui-border bg-ui-secondary text-gray-300 rounded-l-md focus:outline-none focus:ring-1 focus:ring-accent-primary"
           disabled={isLoading}
         />
         <button
@@ -68,8 +68,8 @@ export const NLToSQLQuery: React.FC<NLToSQLQueryProps> = ({
           disabled={isLoading || !query.trim()}
           className={`p-2 rounded-r-md text-white ${
             isLoading || !query.trim()
-              ? "bg-gray-400"
-              : "bg-blue-600 hover:bg-blue-700"
+              ? "bg-gray-600"
+              : "bg-accent-primary hover:bg-accent-primary-hover"
           }`}
         >
           {isLoading ? (
@@ -213,7 +213,7 @@ export const NLToSQLResult: React.FC<NLToSQLResultProps> = ({
         <>
           {sqlQuery && (
             <div className="mb-4">
-              <h3 className="text-lg font-medium mb-2 text-black dark:text-black">
+              <h3 className="text-lg font-medium mb-2 text-gray-300">
                 SQL Query
               </h3>
               <pre className="p-3 bg-ui-tertiary dark:bg-ui-tertiary rounded-md overflow-x-auto">
@@ -227,7 +227,7 @@ export const NLToSQLResult: React.FC<NLToSQLResultProps> = ({
           )}
 
           <div className="mb-4">
-            <h3 className="text-lg font-medium mb-2 text-black dark:text-black">
+            <h3 className="text-lg font-medium mb-2 text-gray-300">
               Explanation
             </h3>
             <p className="text-secondary dark:text-secondary">{explanation}</p>
@@ -242,9 +242,7 @@ export const NLToSQLResult: React.FC<NLToSQLResultProps> = ({
 
           <div>
             <div className="flex justify-between items-center mb-2">
-              <h3 className="text-lg font-medium text-black dark:text-black">
-                Results
-              </h3>
+              <h3 className="text-lg font-medium text-gray-300">Results</h3>
               <div className="flex items-center space-x-4">
                 {totalRows !== undefined && (
                   <span className="text-sm text-tertiary dark:text-tertiary">
@@ -334,9 +332,7 @@ export const NLToSQLHistory: React.FC<NLToSQLHistoryProps> = ({
       className="w-full max-w-4xl mx-auto p-4 bg-ui-primary dark:bg-ui-primary rounded-lg shadow-md mt-4"
       style={{ maxHeight: "400px", overflowY: "auto" }}
     >
-      <h3 className="text-lg font-medium mb-2 text-black dark:text-black">
-        Recent Queries
-      </h3>
+      <h3 className="text-lg font-medium mb-2 text-gray-300">Recent Queries</h3>
       <ul className="divide-y divide-gray-200 dark:divide-gray-700">
         {history.map((item) => (
           <li key={item.id} className="py-3">

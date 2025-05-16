@@ -1,27 +1,33 @@
 @import "tailwindcss";
 
 :root {
-  /* Base colors */
-  --background: #ffffff;
-  --foreground: #000000;
+  /* Base colors - darker theme */
+  --background: #0a0a0a;
+  --foreground: #ffffff;
 
   /* Text colors with better contrast */
-  --text-black: #171717;
-  --text-secondary: #404040;
-  --text-tertiary: #525252;
-  --text-muted: #6b7280;
+  --text-black: #ffffff;
+  --text-secondary: #e5e7eb;
+  --text-tertiary: #d1d5db;
+  --text-muted: #9ca3af;
 
-  /* UI element colors */
-  --ui-bg-primary: #ffffff;
-  --ui-bg-secondary: #f9fafb;
-  --ui-bg-tertiary: #f3f4f6;
-  --ui-border: #e5e7eb;
+  /* UI element colors - darker theme */
+  --ui-bg-primary: #141414;
+  --ui-bg-secondary: #1e1e1e;
+  --ui-bg-tertiary: #2d2d2d;
+  --ui-border: #3d3d3d;
 
-  /* Accent colors */
-  --accent-primary: #2563eb;
-  --accent-primary-hover: #1d4ed8;
-  --accent-secondary: #4b5563;
-  --accent-secondary-hover: #374151;
+  /* Accent colors - vibrant on dark theme */
+  --accent-primary: #6366f1; /* Indigo-500 */
+  --accent-primary-hover: #818cf8; /* Indigo-400 */
+  --accent-secondary: #9ca3af;
+  --accent-secondary-hover: #d1d5db;
+
+  /* Status colors */
+  --success: #10b981; /* Emerald-500 */
+  --warning: #f59e0b; /* Amber-500 */
+  --danger: #ef4444; /* Red-500 */
+  --info: #3b82f6; /* Blue-500 */
 }
 
 @theme inline {
@@ -29,32 +35,6 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    /* Base colors */
-    --background: #0a0a0a;
-    --foreground: #000000;
-
-    /* Text colors with better contrast */
-    --text-black: #000000;
-    --text-secondary: #e5e7eb;
-    --text-tertiary: #d1d5db;
-    --text-muted: #9ca3af;
-
-    /* UI element colors */
-    --ui-bg-primary: #111827;
-    --ui-bg-secondary: #1f2937;
-    --ui-bg-tertiary: #374151;
-    --ui-border: #4b5563;
-
-    /* Accent colors - slightly adjusted for dark mode */
-    --accent-primary: #3b82f6;
-    --accent-primary-hover: #60a5fa;
-    --accent-secondary: #9ca3af;
-    --accent-secondary-hover: #d1d5db;
-  }
 }
 
 body {
@@ -93,11 +73,43 @@ body {
   background-color: var(--ui-bg-tertiary);
 }
 
-/* Dark mode responsive classes */
-.dark\:bg-ui-primary {
-  @media (prefers-color-scheme: dark) {
-    background-color: var(--ui-bg-primary);
-  }
+/* Border utility classes */
+.border-ui-border {
+  border-color: var(--ui-border);
+}
+
+/* Accent color utility classes */
+.bg-accent-primary {
+  background-color: var(--accent-primary);
+}
+
+.bg-accent-primary-hover {
+  background-color: var(--accent-primary-hover);
+}
+
+.text-accent-primary {
+  color: var(--accent-primary);
+}
+
+.text-accent-primary-hover {
+  color: var(--accent-primary-hover);
+}
+
+/* Status color utility classes */
+.text-success {
+  color: var(--success);
+}
+
+.text-warning {
+  color: var(--warning);
+}
+
+.text-danger {
+  color: var(--danger);
+}
+
+.text-info {
+  color: var(--info);
 }
 
 /* Global form element styles */
@@ -113,34 +125,69 @@ select {
   padding-right: 2.5rem;
 }
 
-/* Dark mode select styles */
-@media (prefers-color-scheme: dark) {
-  select {
-    @apply bg-gray-800 text-gray-100 border-gray-700;
-    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+/* Select styles for dark theme */
+select {
+  @apply bg-gray-800 text-gray-100 border-gray-700;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+}
+
+/* Animation classes */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }
 
-.dark\:bg-ui-secondary {
-  @media (prefers-color-scheme: dark) {
-    background-color: var(--ui-bg-secondary);
+@keyframes scaleIn {
+  from {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
   }
 }
 
-.dark\:text-black {
-  @media (prefers-color-scheme: dark) {
-    color: var(--text-black);
-  }
+.animate-fadeIn {
+  animation: fadeIn 0.2s ease-in-out;
 }
 
-.dark\:text-secondary {
-  @media (prefers-color-scheme: dark) {
-    color: var(--text-secondary);
-  }
+.animate-scaleIn {
+  animation: scaleIn 0.2s ease-in-out;
 }
 
-.dark\:border-dark {
-  @media (prefers-color-scheme: dark) {
-    border-color: var(--ui-border);
-  }
+/* Focus styles */
+.focus-visible\:ring-accent-primary:focus-visible {
+  --tw-ring-color: var(--accent-primary);
+}
+
+.focus-visible\:ring-2:focus-visible {
+  --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0
+    var(--tw-ring-offset-width) var(--tw-ring-offset-color);
+  --tw-ring-shadow: var(--tw-ring-inset) 0 0 0
+    calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color);
+  box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow),
+    var(--tw-shadow, 0 0 #0000);
+}
+
+.focus-visible\:ring-offset-2:focus-visible {
+  --tw-ring-offset-width: 2px;
+}
+
+/* Transition classes */
+.transition-colors {
+  transition-property: color, background-color, border-color,
+    text-decoration-color, fill, stroke;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+.transition-all {
+  transition-property: all;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
 }

@@ -305,11 +305,11 @@ const ColumnMergeModal: React.FC<ColumnMergeModalProps> = ({
       <div className="space-y-6">
         {/* Active column merges */}
         {columnMerges.length > 0 && (
-          <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+          <div className="bg-ui-secondary p-3 rounded-lg border border-ui-border">
             <div className="flex justify-between items-center mb-2">
-              <h4 className="text-sm font-medium text-slate-700">
+              <h4 className="text-sm font-medium text-gray-300">
                 Active Column Merges
-                <span className="ml-2 text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
+                <span className="ml-2 text-xs bg-accent-primary/20 text-accent-primary px-2 py-0.5 rounded-full">
                   {columnMerges.length}{" "}
                   {columnMerges.length === 1 ? "merge" : "merges"}
                 </span>
@@ -320,17 +320,19 @@ const ColumnMergeModal: React.FC<ColumnMergeModalProps> = ({
               {columnMerges.map((merge) => (
                 <div
                   key={merge.id}
-                  className="flex items-center space-x-2 text-sm bg-white px-3 py-2 rounded-md border border-slate-200"
+                  className="flex items-center space-x-2 text-sm bg-ui-primary px-3 py-2 rounded-md border border-ui-border"
                 >
                   <div>
-                    <span className="font-medium">{merge.mergeName}</span>
-                    <span className="text-slate-500 ml-1">
+                    <span className="font-medium text-gray-300">
+                      {merge.mergeName}
+                    </span>
+                    <span className="text-gray-400 ml-1">
                       ({merge.columnList.join(merge.delimiter)})
                     </span>
                   </div>
                   <button
                     onClick={() => deleteColumnMerge(merge.id)}
-                    className="text-red-500 hover:text-red-700"
+                    className="text-red-400 hover:text-red-300"
                     title="Delete merge"
                   >
                     <svg
@@ -356,19 +358,19 @@ const ColumnMergeModal: React.FC<ColumnMergeModalProps> = ({
 
         {/* Create new merge form */}
         <div className="space-y-4">
-          <h4 className="text-sm font-medium text-slate-700">
+          <h4 className="text-sm font-medium text-gray-300">
             Create New Merge
           </h4>
 
           {error && (
-            <div className="p-2 bg-red-50 text-red-700 rounded-md text-sm">
+            <div className="p-2 bg-red-900/30 text-red-400 rounded-md text-sm">
               {error}
             </div>
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
+              <label className="block text-sm font-medium text-gray-300 mb-1">
                 Merge Name
               </label>
               <input
@@ -376,18 +378,18 @@ const ColumnMergeModal: React.FC<ColumnMergeModalProps> = ({
                 value={newMergeName}
                 onChange={(e) => setNewMergeName(e.target.value)}
                 placeholder="e.g., full_name"
-                className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 border border-ui-border bg-ui-primary text-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-accent-primary"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
+              <label className="block text-sm font-medium text-gray-300 mb-1">
                 Delimiter
               </label>
               <select
                 value={delimiter}
                 onChange={(e) => setDelimiter(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 border border-ui-border bg-ui-primary text-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-accent-primary"
               >
                 {delimiterOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -399,22 +401,22 @@ const ColumnMergeModal: React.FC<ColumnMergeModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
+            <label className="block text-sm font-medium text-gray-300 mb-1">
               Select Columns to Merge
             </label>
-            <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-2 border border-slate-300 rounded-md">
+            <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-2 border border-ui-border rounded-md">
               {columns.map((column) => (
                 <label
                   key={column}
-                  className="flex items-center space-x-2 text-sm bg-slate-50 px-2 py-1 rounded border border-slate-200 hover:border-indigo-200 transition-colors"
+                  className="flex items-center space-x-2 text-sm bg-ui-secondary px-2 py-1 rounded border border-ui-border hover:border-accent-primary/50 transition-colors"
                 >
                   <input
                     type="checkbox"
                     checked={selectedColumns.includes(column)}
                     onChange={() => toggleColumnSelection(column)}
-                    className="rounded text-indigo-500 focus:ring-indigo-500"
+                    className="rounded text-accent-primary focus:ring-accent-primary"
                   />
-                  <span className="text-slate-700">{column}</span>
+                  <span className="text-gray-300">{column}</span>
                 </label>
               ))}
             </div>
@@ -424,7 +426,7 @@ const ColumnMergeModal: React.FC<ColumnMergeModalProps> = ({
           {selectedColumns.length > 0 && (
             <div className="space-y-4">
               <div className="flex justify-between items-center">
-                <h4 className="text-sm font-medium text-slate-700">
+                <h4 className="text-sm font-medium text-gray-300">
                   Interactive Preview
                 </h4>
                 {/* Preview is now generated automatically when multiple columns are selected */}
@@ -433,15 +435,15 @@ const ColumnMergeModal: React.FC<ColumnMergeModalProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Left column: Draggable column list */}
                 <div className="md:col-span-1">
-                  <div className="p-3 bg-slate-50 border border-slate-300 rounded-md">
-                    <h5 className="text-sm font-medium text-slate-700 mb-2">
+                  <div className="p-3 bg-ui-secondary border border-ui-border rounded-md">
+                    <h5 className="text-sm font-medium text-gray-300 mb-2">
                       Drag to Reorder
                     </h5>
                     <div className="space-y-2">
                       {selectedColumns.map((column, index) => (
                         <div
                           key={column}
-                          className="flex items-center justify-between bg-white p-2 rounded-md border border-slate-200 cursor-move hover:border-indigo-300 hover:shadow-sm"
+                          className="flex items-center justify-between bg-ui-primary p-2 rounded-md border border-ui-border cursor-move hover:border-accent-primary/50 hover:shadow-sm"
                           draggable="true"
                           onDragStart={(e) => {
                             e.dataTransfer.setData(
@@ -474,7 +476,7 @@ const ColumnMergeModal: React.FC<ColumnMergeModalProps> = ({
                           }}
                         >
                           <div className="flex items-center">
-                            <span className="text-slate-400 mr-2">
+                            <span className="text-gray-500 mr-2">
                               <svg
                                 xmlns="http://www.w3.org/2000/svg"
                                 className="h-4 w-4"
@@ -490,7 +492,9 @@ const ColumnMergeModal: React.FC<ColumnMergeModalProps> = ({
                                 />
                               </svg>
                             </span>
-                            <span className="text-sm">{column}</span>
+                            <span className="text-sm text-gray-300">
+                              {column}
+                            </span>
                           </div>
                           <div className="flex space-x-2">
                             <button
@@ -498,8 +502,8 @@ const ColumnMergeModal: React.FC<ColumnMergeModalProps> = ({
                               disabled={index === 0}
                               className={`p-1 rounded ${
                                 index === 0
-                                  ? "text-slate-400 cursor-not-allowed"
-                                  : "text-indigo-600 hover:bg-indigo-50"
+                                  ? "text-gray-500 cursor-not-allowed"
+                                  : "text-accent-primary hover:bg-ui-tertiary"
                               }`}
                               title="Move up"
                             >
@@ -510,8 +514,8 @@ const ColumnMergeModal: React.FC<ColumnMergeModalProps> = ({
                               disabled={index === selectedColumns.length - 1}
                               className={`p-1 rounded ${
                                 index === selectedColumns.length - 1
-                                  ? "text-slate-400 cursor-not-allowed"
-                                  : "text-indigo-600 hover:bg-indigo-50"
+                                  ? "text-gray-500 cursor-not-allowed"
+                                  : "text-accent-primary hover:bg-ui-tertiary"
                               }`}
                               title="Move down"
                             >
@@ -527,24 +531,24 @@ const ColumnMergeModal: React.FC<ColumnMergeModalProps> = ({
                 {/* Right column: Live preview */}
                 <div className="md:col-span-2">
                   {showPreview && previewData.length > 0 ? (
-                    <div className="p-3 bg-slate-50 border border-slate-300 rounded-md">
-                      <h5 className="text-sm font-medium text-slate-700 mb-2">
+                    <div className="p-3 bg-ui-secondary border border-ui-border rounded-md">
+                      <h5 className="text-sm font-medium text-gray-300 mb-2">
                         Live Preview
-                        <span className="ml-2 text-xs text-slate-500">
+                        <span className="ml-2 text-xs text-gray-400">
                           (First {previewData.length}{" "}
                           {previewData.length === 1 ? "Row" : "Rows"})
                         </span>
                       </h5>
                       <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-slate-200">
-                          <thead className="bg-slate-100">
+                        <table className="min-w-full divide-y divide-ui-border">
+                          <thead className="bg-ui-tertiary">
                             <tr>
                               {/* Column headers for selected columns */}
                               {selectedColumns.map((column) => (
                                 <th
                                   key={column}
                                   scope="col"
-                                  className="px-3 py-2 text-left text-xs font-medium text-slate-700 uppercase tracking-wider"
+                                  className="px-3 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider"
                                 >
                                   {column}
                                 </th>
@@ -552,27 +556,27 @@ const ColumnMergeModal: React.FC<ColumnMergeModalProps> = ({
                               {/* Header for merged column */}
                               <th
                                 scope="col"
-                                className="px-3 py-2 text-left text-xs font-medium text-indigo-700 uppercase tracking-wider"
+                                className="px-3 py-2 text-left text-xs font-medium text-accent-primary uppercase tracking-wider"
                               >
                                 {newMergeName}
                               </th>
                             </tr>
                           </thead>
-                          <tbody className="bg-white divide-y divide-slate-200">
+                          <tbody className="bg-ui-primary divide-y divide-ui-border">
                             {previewData.map((row, rowIndex) => (
                               <tr
                                 key={rowIndex}
                                 className={
                                   rowIndex % 2 === 0
-                                    ? "bg-white"
-                                    : "bg-slate-50"
+                                    ? "bg-ui-primary"
+                                    : "bg-ui-secondary"
                                 }
                               >
                                 {/* Cells for selected columns */}
                                 {selectedColumns.map((column) => (
                                   <td
                                     key={column}
-                                    className="px-3 py-2 text-xs text-slate-700"
+                                    className="px-3 py-2 text-xs text-gray-300"
                                   >
                                     {row[column] !== undefined &&
                                     row[column] !== null
@@ -581,7 +585,7 @@ const ColumnMergeModal: React.FC<ColumnMergeModalProps> = ({
                                   </td>
                                 ))}
                                 {/* Cell for merged column */}
-                                <td className="px-3 py-2 text-xs font-medium text-indigo-700">
+                                <td className="px-3 py-2 text-xs font-medium text-accent-primary">
                                   {row[newMergeName] !== undefined &&
                                   row[newMergeName] !== null
                                     ? String(row[newMergeName])
@@ -594,10 +598,10 @@ const ColumnMergeModal: React.FC<ColumnMergeModalProps> = ({
                       </div>
                     </div>
                   ) : (
-                    <div className="p-8 bg-slate-50 border border-slate-300 rounded-md flex flex-col items-center justify-center h-full">
+                    <div className="p-8 bg-ui-secondary border border-ui-border rounded-md flex flex-col items-center justify-center h-full">
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
-                        className="h-12 w-12 text-slate-400 mb-4"
+                        className="h-12 w-12 text-gray-500 mb-4"
                         fill="none"
                         viewBox="0 0 24 24"
                         stroke="currentColor"
@@ -609,7 +613,7 @@ const ColumnMergeModal: React.FC<ColumnMergeModalProps> = ({
                           d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"
                         />
                       </svg>
-                      <p className="text-slate-500 text-center">
+                      <p className="text-gray-400 text-center">
                         {selectedColumns.length === 0
                           ? "Select columns to merge"
                           : selectedColumns.length === 1
@@ -630,8 +634,8 @@ const ColumnMergeModal: React.FC<ColumnMergeModalProps> = ({
                     disabled={isLoading}
                     className={`px-4 py-2 rounded-md text-white ${
                       isLoading
-                        ? "bg-slate-400 cursor-not-allowed"
-                        : "bg-indigo-600 hover:bg-indigo-700"
+                        ? "bg-gray-600 cursor-not-allowed"
+                        : "bg-accent-primary hover:bg-accent-primary-hover"
                     }`}
                   >
                     {isLoading ? "Creating..." : "Confirm Merge"}

@@ -180,13 +180,13 @@ export const FilterControls: React.FC<FilterControlsProps> = ({
         <div className="flex items-center space-x-2">
           <button
             onClick={() => setIsOpen(!isOpen)}
-            className="px-3 py-1 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="px-3 py-1 bg-accent-primary text-white rounded-md text-sm hover:bg-accent-primary-hover focus:outline-none focus:ring-2 focus:ring-accent-primary"
           >
             {isOpen ? "Hide Filters" : "Show Filters"}
           </button>
 
           {Object.keys(activeFilters).length > 0 && (
-            <span className="text-sm text-gray-600">
+            <span className="text-sm text-gray-400">
               {Object.keys(activeFilters).length} active filter(s)
             </span>
           )}
@@ -195,7 +195,7 @@ export const FilterControls: React.FC<FilterControlsProps> = ({
         {Object.keys(activeFilters).length > 0 && (
           <button
             onClick={clearFilters}
-            className="px-3 py-1 bg-gray-200 text-gray-700 rounded-md text-sm hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500"
+            className="px-3 py-1 bg-ui-tertiary text-gray-300 rounded-md text-sm hover:bg-ui-tertiary focus:outline-none focus:ring-2 focus:ring-gray-500"
           >
             Clear Filters
           </button>
@@ -203,8 +203,10 @@ export const FilterControls: React.FC<FilterControlsProps> = ({
       </div>
 
       {isOpen && (
-        <div className="p-4 bg-gray-50 border border-gray-200 rounded-md mb-4">
-          <h3 className="text-lg font-medium mb-2">Filter Results</h3>
+        <div className="p-4 bg-ui-secondary border border-ui-border rounded-md mb-4">
+          <h3 className="text-lg font-medium mb-2 text-gray-300">
+            Filter Results
+          </h3>
 
           {conditions.map((condition, index) => (
             <div
@@ -216,7 +218,7 @@ export const FilterControls: React.FC<FilterControlsProps> = ({
                 onChange={(e) =>
                   updateCondition(index, "column", e.target.value)
                 }
-                className="px-2 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="px-2 py-1 border border-ui-border bg-ui-primary text-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-accent-primary"
               >
                 {columns.map((column) => (
                   <option key={column} value={column}>
@@ -230,7 +232,7 @@ export const FilterControls: React.FC<FilterControlsProps> = ({
                 onChange={(e) =>
                   updateCondition(index, "operator", e.target.value)
                 }
-                className="px-2 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="px-2 py-1 border border-ui-border bg-ui-primary text-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-accent-primary"
               >
                 {getOperatorOptions().map((op) => (
                   <option key={op.value} value={op.value}>
@@ -246,14 +248,14 @@ export const FilterControls: React.FC<FilterControlsProps> = ({
                   updateCondition(index, "value", e.target.value)
                 }
                 placeholder="Value"
-                className="px-2 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="px-2 py-1 border border-ui-border bg-ui-primary text-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-accent-primary"
               />
 
               <div className="flex items-center space-x-1">
                 {index > 0 && (
                   <button
                     onClick={() => removeCondition(index)}
-                    className="p-1 bg-red-100 text-red-600 rounded-md hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500"
+                    className="p-1 bg-red-900/30 text-red-400 rounded-md hover:bg-red-900/50 focus:outline-none focus:ring-2 focus:ring-red-500"
                     title="Remove condition"
                   >
                     <svg
@@ -276,7 +278,7 @@ export const FilterControls: React.FC<FilterControlsProps> = ({
                 {index === conditions.length - 1 && (
                   <button
                     onClick={addCondition}
-                    className="p-1 bg-green-100 text-green-600 rounded-md hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    className="p-1 bg-green-900/30 text-green-400 rounded-md hover:bg-green-900/50 focus:outline-none focus:ring-2 focus:ring-green-500"
                     title="Add condition"
                   >
                     <svg
@@ -302,7 +304,7 @@ export const FilterControls: React.FC<FilterControlsProps> = ({
           <div className="flex justify-end mt-4">
             <button
               onClick={applyFilters}
-              className="px-3 py-1 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="px-3 py-1 bg-accent-primary text-white rounded-md text-sm hover:bg-accent-primary-hover focus:outline-none focus:ring-2 focus:ring-accent-primary"
             >
               Apply Filters
             </button>
@@ -316,7 +318,7 @@ export const FilterControls: React.FC<FilterControlsProps> = ({
           {Object.entries(activeFilters).map(([column, value], index) => (
             <div
               key={index}
-              className="px-2 py-1 bg-blue-100 text-blue-800 rounded-md text-sm flex items-center"
+              className="px-2 py-1 bg-accent-primary/20 text-accent-primary rounded-md text-sm flex items-center"
             >
               <span>
                 {column}:{" "}
@@ -331,7 +333,7 @@ export const FilterControls: React.FC<FilterControlsProps> = ({
                   setActiveFilters(newFilters);
                   onApplyFilters(newFilters);
                 }}
-                className="ml-2 text-blue-600 hover:text-blue-800 focus:outline-none"
+                className="ml-2 text-accent-primary hover:text-accent-primary-hover focus:outline-none"
                 title="Remove filter"
               >
                 <svg

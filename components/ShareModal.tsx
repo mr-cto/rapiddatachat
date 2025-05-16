@@ -186,8 +186,8 @@ const ShareModal: React.FC<ShareModalProps> = ({
     <Modal isOpen={isOpen} onClose={onClose} title="Export Query Results">
       <div className="space-y-6">
         <div className="space-y-2">
-          <h4 className="text-sm font-medium text-slate-700">Export Options</h4>
-          <p className="text-xs text-slate-500">
+          <h4 className="text-sm font-medium text-gray-300">Export Options</h4>
+          <p className="text-xs text-gray-400">
             Download the results as a CSV file.
           </p>
         </div>
@@ -199,8 +199,8 @@ const ShareModal: React.FC<ShareModalProps> = ({
             disabled={results.length === 0}
             className={`flex items-center px-4 py-2 rounded-md text-white font-medium ${
               results.length === 0
-                ? "bg-slate-400 cursor-not-allowed"
-                : "bg-green-600 hover:bg-green-700 transition-all"
+                ? "bg-gray-600 cursor-not-allowed"
+                : "bg-accent-primary hover:bg-accent-primary-hover transition-all"
             }`}
           >
             <svg
@@ -219,14 +219,14 @@ const ShareModal: React.FC<ShareModalProps> = ({
             </svg>
             Download as CSV
           </button>
-          <p className="text-xs text-slate-500 mt-2">
+          <p className="text-xs text-gray-400 mt-2">
             Download the current view as a CSV file for use in spreadsheet
             applications.
           </p>
         </div>
 
         {error && (
-          <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-600">
+          <div className="mt-2 p-3 bg-red-900/30 border border-red-800 rounded-md text-sm text-red-400">
             {error}
           </div>
         )}

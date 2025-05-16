@@ -237,7 +237,7 @@ export default function SignUp() {
           />
           <button
             type="submit"
-            className="w-full bg-accent-secondary hover:bg-accent-secondary-hover text-white font-semibold py-2 rounded-lg transition"
+            className="w-full bg-accent-primary hover:bg-accent-primary-hover text-white font-semibold py-2 rounded-lg transition"
             disabled={loading}
           >
             {loading ? "Creating Account..." : "Sign Up"}

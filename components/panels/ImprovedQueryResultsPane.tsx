@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import "../../styles/animations.css";
 import { ColumnMergeManager } from "../ColumnMergeManager";
 import ShareModal from "../ShareModal";
 import ColumnFilterModal from "../ColumnFilterModal";
@@ -10,6 +9,13 @@ import {
   syncColumnMergesToViewState,
   loadColumnMergesFromViewState,
 } from "../ColumnMergeManagerViewState";
+import {
+  FaTable,
+  FaFilter,
+  FaColumns,
+  FaFileExport,
+  FaInfoCircle,
+} from "react-icons/fa";
 
 interface QueryResult {
   sqlQuery: string;
@@ -31,7 +37,7 @@ interface QueryResult {
   }[];
 }
 
-interface QueryResultsPaneProps {
+interface ImprovedQueryResultsPaneProps {
   isLoading: boolean;
   error: string | null;
   result: QueryResult | null;
@@ -51,7 +57,7 @@ interface QueryResultsPaneProps {
   userId?: string;
 }
 
-const QueryResultsPane: React.FC<QueryResultsPaneProps> = ({
+const ImprovedQueryResultsPane: React.FC<ImprovedQueryResultsPaneProps> = ({
   isLoading,
   error,
   result,
@@ -67,6 +73,7 @@ const QueryResultsPane: React.FC<QueryResultsPaneProps> = ({
   const [showColumnFilterModal, setShowColumnFilterModal] = useState(false);
   const [showColumnMergeModal, setShowColumnMergeModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showSqlQuery, setShowSqlQuery] = useState(false);
 
   // State for visible columns
   const [visibleColumns, setVisibleColumns] = useState<string[]>([]);
@@ -112,7 +119,6 @@ const QueryResultsPane: React.FC<QueryResultsPaneProps> = ({
 
       // Include any merged columns from the result
       if (result.columnMerges && result.columnMerges.length > 0) {
-        console.log("Adding merged columns to available columns");
         result.columnMerges.forEach((merge) => {
           allKeys.add(merge.mergeName);
         });
@@ -126,7 +132,6 @@ const QueryResultsPane: React.FC<QueryResultsPaneProps> = ({
       let loadedVisibleColumns: string[] | null = null;
 
       if (viewStateManager) {
-        console.log("Checking viewStateManager for saved column visibility");
         const state = viewStateManager.getViewState();
         if (state.hiddenColumns && state.hiddenColumns.length > 0) {
           // Convert hidden columns to visible columns
@@ -136,7 +141,6 @@ const QueryResultsPane: React.FC<QueryResultsPaneProps> = ({
 
           // Ensure we have at least one visible column
           if (calculatedVisibleColumns.length > 0) {
-            console.log("Using saved column visibility from viewStateManager");
             loadedVisibleColumns = calculatedVisibleColumns;
             setVisibleColumns(calculatedVisibleColumns);
           }
@@ -147,19 +151,14 @@ const QueryResultsPane: React.FC<QueryResultsPaneProps> = ({
       const isNewQuery = result.sqlQuery !== currentSqlQuery;
 
       if (isNewQuery) {
-        console.log("New query detected");
-
         // If we didn't load from viewStateManager, use all columns
         if (!loadedVisibleColumns) {
-          console.log("No saved column filters, using all columns");
           setVisibleColumns(allColumnsArray);
         }
 
         // Update the current SQL query
         setCurrentSqlQuery(result.sqlQuery);
       } else {
-        console.log("Pagination detected");
-
         // If we didn't load from viewStateManager, preserve current visible columns
         if (!loadedVisibleColumns) {
           // Ensure any new columns are added to visible columns
@@ -169,7 +168,6 @@ const QueryResultsPane: React.FC<QueryResultsPaneProps> = ({
               !visibleColumns.includes(col)
           );
           if (newColumns.length > 0) {
-            console.log("Adding new columns to visible columns:", newColumns);
             setVisibleColumns((prev) => [...prev, ...newColumns]);
           }
         }
@@ -196,7 +194,6 @@ const QueryResultsPane: React.FC<QueryResultsPaneProps> = ({
 
       mergedColumnNames.forEach((columnName) => {
         if (!newVisibleColumns.includes(columnName)) {
-          console.log(`Adding merged column to visible columns: ${columnName}`);
           newVisibleColumns.push(columnName);
           columnsAdded = true;
         }
@@ -210,8 +207,6 @@ const QueryResultsPane: React.FC<QueryResultsPaneProps> = ({
 
   // Handle column filter changes
   const handleApplyColumnFilters = (columns: string[]) => {
-    console.log("Applying column filters with order:", columns);
-
     // Ensure merged columns are included in the visible columns
     if (result?.columnMerges && result.columnMerges.length > 0) {
       const mergedColumnNames = result.columnMerges.map(
@@ -224,10 +219,6 @@ const QueryResultsPane: React.FC<QueryResultsPaneProps> = ({
       );
 
       if (missingMergedColumns.length > 0) {
-        console.log(
-          "Adding missing merged columns to visible columns:",
-          missingMergedColumns
-        );
         setVisibleColumns([...columns, ...missingMergedColumns]);
 
         // Save to viewStateManager
@@ -259,28 +250,93 @@ const QueryResultsPane: React.FC<QueryResultsPaneProps> = ({
         viewStateManager.setHiddenColumns(hiddenColumns);
       }
     }
-
-    // Note: We don't update allAvailableColumns here, so we preserve all columns
-    // even when they're hidden from the current view
   };
-  return (
-    <div className="h-full w-screen max-w-full flex flex-col">
-      {/* Enhanced header with controls */}
-      <div className="py-3 px-4 bg-ui-primary border-b border-ui-border sticky top-0 z-10 w-full shadow-sm">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center">
-            <h3 className="text-lg font-semibold text-accent-primary">
-              Query Results
-            </h3>
-            {result && result.executionTime && (
-              <Badge variant="secondary" size="sm" className="ml-3">
-                {result.executionTime.toFixed(2)}ms
-              </Badge>
-            )}
-          </div>
 
-          {result && result.results.length > 0 && (
+  // If there's no query yet, show a welcome message
+  if (!currentQuery && !result && !error && !isLoading) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center p-8 text-center">
+        <div className="w-24 h-24 mb-6 text-accent-primary">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={1.5}
+              d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
+            />
+          </svg>
+        </div>
+        <h2 className="text-2xl font-bold text-gray-300 mb-4">
+          Ask Questions About Your Data
+        </h2>
+        <p className="text-gray-400 max-w-lg mb-6">
+          Type a question in natural language in the input field below to
+          analyze your data. You can ask questions like "Show me the top 10
+          customers by revenue" or "What's the average age by department?"
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
+          <div className="bg-ui-secondary p-4 rounded-lg border border-ui-border">
+            <h3 className="font-medium text-gray-300 mb-2 flex items-center">
+              <FaTable className="mr-2" /> Upload Data
+            </h3>
+            <p className="text-sm text-gray-400">
+              Start by uploading your CSV or Excel files using the Upload Data
+              section in the sidebar.
+            </p>
+          </div>
+          <div className="bg-ui-secondary p-4 rounded-lg border border-ui-border">
+            <h3 className="font-medium text-gray-300 mb-2 flex items-center">
+              <FaFilter className="mr-2" /> Filter & Sort
+            </h3>
+            <p className="text-sm text-gray-400">
+              Once you have results, you can filter, sort, and export your data
+              using the tools above the table.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full w-full flex flex-col">
+      {/* Enhanced header with controls */}
+      {result && result.results.length > 0 && (
+        <div className="py-3 px-4 bg-ui-primary border-b border-ui-border sticky top-0 z-10 w-full shadow-sm mb-4 rounded-lg">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center">
+              <h3 className="text-lg font-semibold text-accent-primary">
+                Query Results
+              </h3>
+              {result && result.executionTime && (
+                <Badge variant="secondary" size="sm" className="ml-3">
+                  {result.executionTime.toFixed(2)}ms
+                </Badge>
+              )}
+              {result && result.totalRows !== undefined && (
+                <Badge variant="info" size="sm" className="ml-2">
+                  {result.totalRows.toLocaleString()}{" "}
+                  {result.totalRows === 1 ? "row" : "rows"}
+                </Badge>
+              )}
+            </div>
+
             <div className="flex items-center space-x-2">
+              <Button
+                onClick={() => setShowSqlQuery(!showSqlQuery)}
+                variant={showSqlQuery ? "primary" : "secondary"}
+                size="sm"
+                className="flex items-center"
+                title="View SQL Query"
+              >
+                <FaInfoCircle className="mr-1" />
+                SQL Query
+              </Button>
               <Button
                 onClick={() => setShowColumnMergeModal(true)}
                 variant={showColumnMergeModal ? "primary" : "secondary"}
@@ -288,20 +344,7 @@ const QueryResultsPane: React.FC<QueryResultsPaneProps> = ({
                 className="flex items-center"
                 title="Merge columns for better visualization"
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-4 w-4 mr-1"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v6a2 2 0 002 2h2"
-                  />
-                </svg>
+                <FaColumns className="mr-1" />
                 Merge Columns
               </Button>
               <Button
@@ -311,20 +354,7 @@ const QueryResultsPane: React.FC<QueryResultsPaneProps> = ({
                 className="flex items-center"
                 title="Configure column display"
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-4 w-4 mr-1"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
-                  />
-                </svg>
+                <FaFilter className="mr-1" />
                 Columns
               </Button>
               <Button
@@ -334,41 +364,25 @@ const QueryResultsPane: React.FC<QueryResultsPaneProps> = ({
                 className="flex items-center"
                 title="Export results as CSV"
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-4 w-4 mr-1"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                  />
-                </svg>
-                Export CSV
+                <FaFileExport className="mr-1" />
+                Export
               </Button>
             </div>
-          )}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Query Results Section - Enhanced with better spacing and visual hierarchy */}
+      {/* Query Results Section */}
       <div className="flex-1 pt-2 px-0 pb-[80px] overflow-y-auto overflow-x-auto">
         {isLoading && (
-          <div className="flex justify-center items-center h-32">
-            <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-accent-primary border-r-2 border-r-indigo-200"></div>
+          <div className="flex justify-center items-center h-64">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-accent-primary"></div>
+            <span className="ml-3 text-gray-300">Processing your query...</span>
           </div>
         )}
 
         {error && (
-          <Card
-            variant="default"
-            padding="md"
-            className="animate-fadeIn bg-red-900/30 border-red-800"
-          >
+          <Card variant="danger" padding="md" className="animate-fadeIn">
             <h3 className="text-lg font-medium text-red-400 flex items-center">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -387,16 +401,76 @@ const QueryResultsPane: React.FC<QueryResultsPaneProps> = ({
               Error
             </h3>
             <p className="text-red-400 mt-2">{error}</p>
+            <div className="mt-4 p-3 bg-red-900/20 border border-red-800 rounded-md">
+              <p className="text-sm text-red-300">
+                <strong>Troubleshooting:</strong> Make sure you have uploaded
+                data files and that your query is clear. Try rephrasing your
+                question or selecting a specific file from the sidebar.
+              </p>
+            </div>
           </Card>
         )}
 
-        {result && result.results.length > 0 && (
+        {result && (
           <div className="flex flex-col">
+            {/* SQL Query and Explanation */}
+            {showSqlQuery && result.sqlQuery && (
+              <Card
+                variant="default"
+                padding="md"
+                className="mb-4 animate-fadeIn"
+              >
+                <div className="mb-4">
+                  <h3 className="text-lg font-medium mb-2 text-gray-300 flex items-center">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-5 w-5 mr-2"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"
+                      />
+                    </svg>
+                    SQL Query
+                  </h3>
+                  <pre className="p-3 bg-ui-tertiary rounded-md overflow-x-auto text-sm">
+                    <code>{result.sqlQuery}</code>
+                  </pre>
+                </div>
+
+                <div>
+                  <h3 className="text-lg font-medium mb-2 text-gray-300 flex items-center">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-5 w-5 mr-2"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                    Explanation
+                  </h3>
+                  <p className="text-gray-400">{result.explanation}</p>
+                </div>
+              </Card>
+            )}
+
             {/* Column Filter Modal */}
             <ColumnFilterModal
               isOpen={showColumnFilterModal}
               onClose={() => setShowColumnFilterModal(false)}
-              columns={allAvailableColumns} // Use allAvailableColumns to show all possible columns
+              columns={allAvailableColumns}
               initialVisibleColumns={visibleColumns}
               onApplyFilters={handleApplyColumnFilters}
               viewStateManager={viewStateManager}
@@ -407,7 +481,7 @@ const QueryResultsPane: React.FC<QueryResultsPaneProps> = ({
               isOpen={showColumnMergeModal}
               onClose={() => setShowColumnMergeModal(false)}
               fileId="query-results"
-              columns={allAvailableColumns} // Use allAvailableColumns to show all possible columns
+              columns={allAvailableColumns}
               initialColumnMerges={result.columnMerges}
               onColumnMergesChange={onColumnMergesChange}
               data={processedResults}
@@ -415,41 +489,71 @@ const QueryResultsPane: React.FC<QueryResultsPaneProps> = ({
             />
 
             {/* Data Table with Column Merge Manager */}
-            <Card
-              variant="default"
-              padding="none"
-              className="flex-1 mb-4 overflow-hidden"
-            >
-              <ColumnMergeManager
-                fileId="query-results"
-                data={processedResults}
-                onSortChange={onSortChange}
-                onPageChange={onPageChange}
-                currentPage={result.currentPage}
-                totalPages={result.totalPages}
-                totalRows={result.totalRows}
-                serverSideSort={true}
-                className="w-full"
-                initialColumnMerges={
-                  viewStateManager
-                    ? loadColumnMergesFromViewState(viewStateManager)
-                    : result.columnMerges
-                }
-                onColumnMergesChange={(merges) => {
-                  // Update view state manager if available
-                  if (viewStateManager) {
-                    syncColumnMergesToViewState(viewStateManager, merges);
+            {result.results.length > 0 ? (
+              <Card
+                variant="default"
+                padding="none"
+                className="flex-1 overflow-hidden"
+              >
+                <ColumnMergeManager
+                  fileId="query-results"
+                  data={processedResults}
+                  onSortChange={onSortChange}
+                  onPageChange={onPageChange}
+                  currentPage={result.currentPage}
+                  totalPages={result.totalPages}
+                  totalRows={result.totalRows}
+                  serverSideSort={true}
+                  className="w-full"
+                  initialColumnMerges={
+                    viewStateManager
+                      ? loadColumnMergesFromViewState(viewStateManager)
+                      : result.columnMerges
                   }
+                  onColumnMergesChange={(merges) => {
+                    // Update view state manager if available
+                    if (viewStateManager) {
+                      syncColumnMergesToViewState(viewStateManager, merges);
+                    }
 
-                  // Call the original callback
-                  if (onColumnMergesChange) {
-                    onColumnMergesChange(merges);
-                  }
-                }}
-                visibleColumns={visibleColumns}
-                viewStateManager={viewStateManager}
-              />
-            </Card>
+                    // Call the original callback
+                    if (onColumnMergesChange) {
+                      onColumnMergesChange(merges);
+                    }
+                  }}
+                  visibleColumns={visibleColumns}
+                  viewStateManager={viewStateManager}
+                />
+              </Card>
+            ) : (
+              <Card
+                variant="default"
+                padding="lg"
+                className="flex flex-col items-center justify-center h-64"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-12 w-12 text-gray-500"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.5}
+                    d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <h3 className="mt-4 text-lg font-medium text-gray-300">
+                  No Results Found
+                </h3>
+                <p className="mt-2 text-gray-400 text-center max-w-md">
+                  Your query executed successfully, but didn&apos;t return any
+                  data. Try modifying your query or checking your data source.
+                </p>
+              </Card>
+            )}
 
             {/* Share Modal */}
             <ShareModal
@@ -464,39 +568,9 @@ const QueryResultsPane: React.FC<QueryResultsPaneProps> = ({
             />
           </div>
         )}
-
-        {result && result.results.length === 0 && (
-          <Card
-            variant="default"
-            padding="lg"
-            className="flex flex-col items-center justify-center h-64"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-12 w-12 text-gray-500"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.5}
-                d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-            <h3 className="mt-4 text-lg font-medium text-gray-300">
-              No Results Found
-            </h3>
-            <p className="mt-2 text-gray-400 text-center max-w-md">
-              Your query executed successfully, but didn&apos;t return any data.
-              Try modifying your query or checking your data source.
-            </p>
-          </Card>
-        )}
       </div>
     </div>
   );
 };
 
-export default QueryResultsPane;
+export default ImprovedQueryResultsPane;

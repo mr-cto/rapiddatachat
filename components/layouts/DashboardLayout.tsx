@@ -2,6 +2,7 @@ import React from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/router";
 import Image from "next/image";
+import { Button, Link } from "../ui";
 
 interface DashboardLayoutProps {
   children?: React.ReactNode;
@@ -35,10 +36,10 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   // Show loading state while checking authentication
   if (status === "loading") {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-screen flex items-center justify-center bg-ui-primary">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 border-r-2 border-r-indigo-300 mx-auto"></div>
-          <p className="mt-4 text-slate-600 font-medium">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-accent-primary border-r-2 border-r-indigo-300 mx-auto"></div>
+          <p className="mt-4 text-gray-300 font-medium">
             Loading your dashboard...
           </p>
         </div>
@@ -52,16 +53,18 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   };
 
   return (
-    <div className="h-screen flex flex-col bg-slate-50">
+    <div className="h-screen flex flex-col bg-background">
       {/* Header */}
-      <header className="flex justify-between items-center px-6 h-16 border-b bg-white shadow-md">
+      <header className="flex justify-between items-center px-6 h-16 border-b border-ui-border bg-ui-primary shadow-md">
         <div className="flex items-center space-x-6">
-          <h1 className="text-xl font-bold text-indigo-700 hover:text-indigo-600 transition-colors">
+          <h1 className="text-xl font-bold text-accent-primary hover:text-accent-primary-hover transition-colors">
             RapidDataChat
           </h1>
-          <button
+          <Button
             onClick={() => router.push("/project")}
-            className="flex items-center px-3 py-1.5 text-sm bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md transition-all hover:shadow-sm"
+            variant="secondary"
+            size="sm"
+            className="flex items-center"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -76,7 +79,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
               />
             </svg>
             Back to Projects
-          </button>
+          </Button>
         </div>
         <div className="flex items-center space-x-4">
           {session?.user && (
@@ -91,22 +94,19 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                     className="rounded-full border-2 border-indigo-100"
                   />
                 ) : (
-                  <div className="w-9 h-9 rounded-full bg-indigo-600 flex items-center justify-center text-white shadow-sm">
+                  <div className="w-9 h-9 rounded-full bg-accent-primary flex items-center justify-center text-white shadow-sm">
                     {session.user.name?.charAt(0) ||
                       session.user.email?.charAt(0) ||
                       "U"}
                   </div>
                 )}
-                <span className="ml-2 text-sm font-medium text-slate-700">
+                <span className="ml-2 text-sm font-medium text-gray-300">
                   {session.user.name || session.user.email}
                 </span>
               </div>
-              <button
-                onClick={handleSignOut}
-                className="px-4 py-1.5 text-sm bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md transition-all hover:shadow-sm"
-              >
+              <Button onClick={handleSignOut} variant="outline" size="sm">
                 Sign Out
-              </button>
+              </Button>
             </>
           )}
         </div>
@@ -115,19 +115,19 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
       {/* Main Content */}
       <div className="flex-1 grid grid-cols-[280px_1fr] h-[calc(100vh-4rem)] overflow-hidden">
         {/* Left Panel - Files and Schema Management */}
-        <div className="bg-white border-r border-slate-200 flex flex-col">
+        <div className="bg-ui-primary border-r border-ui-border flex flex-col">
           {/* Files Section - Takes half height */}
-          <div className="h-1/2 overflow-y-auto border-b border-slate-200">
-            <div className="p-3 bg-slate-50 border-b border-slate-200">
-              <h2 className="text-sm font-semibold text-slate-700">Files</h2>
+          <div className="h-1/2 overflow-y-auto border-b border-ui-border">
+            <div className="p-3 bg-ui-secondary border-b border-ui-border">
+              <h2 className="text-sm font-semibold text-gray-300">Files</h2>
             </div>
             <div className="p-1">{filesPane}</div>
           </div>
 
           {/* Schema Management Section - Takes half height */}
           <div className="h-1/2 overflow-y-auto">
-            <div className="p-3 bg-slate-50 border-b border-slate-200">
-              <h2 className="text-sm font-semibold text-slate-700">
+            <div className="p-3 bg-ui-secondary border-b border-ui-border">
+              <h2 className="text-sm font-semibold text-gray-300">
                 Schema Management
               </h2>
             </div>
@@ -136,7 +136,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         </div>
 
         {/* Main Panel - Chat or Query Results + Chat Input */}
-        <div className="bg-slate-50 flex flex-col overflow-hidden p-4">
+        <div className="bg-background flex flex-col overflow-hidden p-4">
           {/* If chatPane is provided, use it (for backward compatibility) */}
           {chatPane ? (
             <div className="flex-1 overflow-y-auto">{chatPane}</div>
@@ -150,7 +150,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 </div>
 
                 {/* Chat Input Section - Fixed at the bottom with improved styling */}
-                <div className="fixed bottom-0 left-[280px] right-0 h-[70px] w-[calc(100vw-280px)] bg-white border-t border-slate-200 shadow-md z-10 px-4">
+                <div className="fixed bottom-0 left-[280px] right-0 h-[70px] w-[calc(100vw-280px)] bg-ui-primary border-t border-ui-border shadow-lg z-10 px-4">
                   {chatInputPane}
                 </div>
               </div>
