@@ -2,15 +2,15 @@ import React, { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/router";
 import { FaDatabase } from "react-icons/fa";
-import { SchemaManager } from "../SchemaManager";
+import { ColumnManager } from "../ColumnManager";
 import { GlobalSchema } from "../../lib/schemaManagement";
 
-interface SchemaManagementPaneProps {
-  onSchemaChange?: (schema: GlobalSchema | null) => void;
+interface ColumnManagementPaneProps {
+  onColumnChange?: (column: GlobalSchema | null) => void;
 }
 
-const SchemaManagementPane: React.FC<SchemaManagementPaneProps> = ({
-  onSchemaChange,
+const ColumnManagementPane: React.FC<ColumnManagementPaneProps> = ({
+  onColumnChange,
 }) => {
   const { data: session } = useSession();
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +20,7 @@ const SchemaManagementPane: React.FC<SchemaManagementPaneProps> = ({
   if (!session?.user) {
     return (
       <div className="p-4 text-center text-gray-500">
-        Please sign in to manage schemas.
+        Please sign in to manage columns.
       </div>
     );
   }
@@ -28,7 +28,7 @@ const SchemaManagementPane: React.FC<SchemaManagementPaneProps> = ({
   if (!projectId || typeof projectId !== "string") {
     return (
       <div className="p-4 text-center text-gray-500">
-        Project ID is required to manage schemas.
+        Project ID is required to manage columns.
       </div>
     );
   }
@@ -38,7 +38,7 @@ const SchemaManagementPane: React.FC<SchemaManagementPaneProps> = ({
       <div className="p-2 border-b">
         <div className="flex justify-between items-center">
           <h2 className="text-md font-semibold flex items-center text-black dark:text-black">
-            <FaDatabase className="mr-1" /> Schema Management
+            <FaDatabase className="mr-1" /> Column Management
           </h2>
         </div>
 
@@ -50,14 +50,14 @@ const SchemaManagementPane: React.FC<SchemaManagementPaneProps> = ({
       </div>
 
       <div className="overflow-y-auto flex-1 p-3">
-        <SchemaManager
+        <ColumnManager
           userId={session.user.email || session.user.id || ""}
           projectId={projectId}
-          onSchemaChange={onSchemaChange}
+          onColumnChange={onColumnChange}
         />
       </div>
     </div>
   );
 };
 
-export default SchemaManagementPane;
+export default ColumnManagementPane;

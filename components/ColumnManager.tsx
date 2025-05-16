@@ -3,6 +3,25 @@ import { GlobalSchema, SchemaColumn } from "../lib/schemaManagement";
 import { ViewStateManager } from "../lib/viewStateManager";
 import Modal from "./Modal";
 import { v4 as uuidv4 } from "uuid";
+import {
+  Card,
+  CardHeader,
+  CardContent,
+  CardFooter,
+  CardTitle,
+  CardDescription,
+} from "./ui/Card";
+import { Button } from "./ui/Button";
+import { Badge } from "./ui/Badge";
+import {
+  FaPlus,
+  FaEdit,
+  FaTrash,
+  FaCheck,
+  FaDatabase,
+  FaColumns,
+  FaTable,
+} from "react-icons/fa";
 
 interface ColumnManagerProps {
   userId: string;
@@ -357,81 +376,173 @@ export const ColumnManager: React.FC<ColumnManagerProps> = ({
     setShowEditModal(true);
   };
 
+  // Get data type icon
+  const getDataTypeIcon = (type: string) => {
+    switch (type.toLowerCase()) {
+      case "text":
+      case "string":
+        return <span className="text-blue-400">Aa</span>;
+      case "integer":
+      case "numeric":
+      case "number":
+        return <span className="text-green-400">#</span>;
+      case "boolean":
+        return <span className="text-yellow-400">Y/N</span>;
+      case "timestamp":
+      case "date":
+        return <span className="text-purple-400">📅</span>;
+      default:
+        return <span className="text-gray-400">?</span>;
+    }
+  };
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h2 className="text-lg font-semibold">Global Columns</h2>
-        {columns.length === 0 && (
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="px-3 py-1 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-            disabled={isLoading}
-          >
-            Create New Column
-          </button>
-        )}
+      <div className="flex justify-between items-center mb-6">
+        <div className="flex items-center space-x-2">
+          <FaColumns className="text-accent-primary" />
+          <h2 className="text-lg font-semibold text-gray-200">Data Columns</h2>
+        </div>
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => setShowCreateModal(true)}
+          disabled={isLoading}
+          className="flex items-center"
+        >
+          <FaPlus className="mr-2" /> Create Column
+        </Button>
       </div>
 
       {error && (
-        <div className="p-3 bg-red-100 text-red-700 rounded-md">{error}</div>
+        <div className="p-3 bg-red-900/20 border border-red-800 rounded-md text-red-400 mb-4 flex items-center">
+          <svg
+            className="w-5 h-5 mr-2"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+            />
+          </svg>
+          {error}
+        </div>
       )}
 
-      {isLoading ? (
-        <div className="flex justify-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+      {isLoading && columns.length === 0 ? (
+        <div className="flex justify-center items-center py-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-accent-primary"></div>
         </div>
       ) : columns.length === 0 ? (
-        <div className="p-4 text-center text-gray-500 border border-dashed border-gray-300 rounded-md">
-          No columns available. Create a new column to get started.
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {columns.map((column) => (
-            <div
-              key={column.id}
-              className={`p-3 border rounded-md ${
-                column.isActive
-                  ? "border-indigo-500 bg-indigo-50"
-                  : "border-gray-200"
-              }`}
-            >
-              <div className="flex justify-between items-center">
-                <div>
-                  <h3 className="font-medium">{column.name}</h3>
-                  {column.description && (
-                    <p className="text-sm text-gray-500">
-                      {column.description}
-                    </p>
-                  )}
-                  <p className="text-xs text-gray-400">
-                    {column.columns.length} columns • Last updated:{" "}
-                    {new Date(column.updatedAt).toLocaleString()}
-                  </p>
-                </div>
-                <div className="flex space-x-2">
-                  {!column.isActive && (
-                    <button
-                      onClick={() => handleSetActiveColumn(column)}
-                      className="px-2 py-1 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200"
-                    >
-                      Set Active
-                    </button>
-                  )}
-                  <button
-                    onClick={() => openEditModal(column)}
-                    className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDeleteColumn(column.id)}
-                    className="px-2 py-1 text-xs bg-red-500 text-white font-bold rounded hover:bg-red-600"
-                  >
-                    Delete Column
-                  </button>
-                </div>
-              </div>
+        <Card variant="outline" className="border-dashed">
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+            <div className="bg-ui-secondary p-4 rounded-full mb-4">
+              <FaDatabase className="w-10 h-10 text-accent-primary opacity-70" />
             </div>
+            <CardTitle className="mb-2">No columns available</CardTitle>
+            <CardDescription className="max-w-md mb-6">
+              Columns help organize your data structure. Create a new column to
+              get started with your data analysis.
+            </CardDescription>
+            <Button
+              variant="primary"
+              onClick={() => setShowCreateModal(true)}
+              className="flex items-center"
+            >
+              <FaPlus className="mr-2" /> Create New Column
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 gap-4">
+          {columns.map((column) => (
+            <Card
+              key={column.id}
+              variant={column.isActive ? "success" : "default"}
+              className="transition-all duration-200 hover:shadow-md"
+            >
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <div className="flex items-center space-x-2">
+                  <CardTitle className="text-gray-200">{column.name}</CardTitle>
+                  {column.isActive && (
+                    <Badge
+                      variant="success"
+                      size="sm"
+                      icon={<FaCheck size={10} />}
+                    >
+                      Active
+                    </Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0">
+                {column.description && (
+                  <CardDescription className="mb-3">
+                    {column.description}
+                  </CardDescription>
+                )}
+                <div className="flex items-center text-xs text-gray-400 mb-3">
+                  <FaTable className="mr-1" />
+                  <span>{column.columns.length} data columns</span>
+                  <span className="mx-2">•</span>
+                  <span>
+                    Updated {new Date(column.updatedAt).toLocaleDateString()}
+                  </span>
+                </div>
+
+                {column.columns.length > 0 && (
+                  <div className="mt-3 grid grid-cols-2 gap-2 max-h-24 overflow-y-auto pr-2">
+                    {column.columns.slice(0, 6).map((col, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center text-xs bg-ui-secondary p-1.5 rounded"
+                      >
+                        <div className="mr-1.5">
+                          {getDataTypeIcon(col.type)}
+                        </div>
+                        <span className="text-gray-300 truncate">
+                          {col.name}
+                        </span>
+                      </div>
+                    ))}
+                    {column.columns.length > 6 && (
+                      <div className="flex items-center justify-center text-xs bg-ui-secondary p-1.5 rounded text-gray-400">
+                        +{column.columns.length - 6} more
+                      </div>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+              <CardFooter className="flex justify-end space-x-2 pt-2 border-t border-ui-border">
+                {!column.isActive && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => handleSetActiveColumn(column)}
+                  >
+                    Set Active
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => openEditModal(column)}
+                >
+                  <FaEdit className="mr-1" /> Edit
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => handleDeleteColumn(column.id)}
+                >
+                  <FaTrash className="mr-1" /> Delete
+                </Button>
+              </CardFooter>
+            </Card>
           ))}
         </div>
       )}
@@ -448,77 +559,82 @@ export const ColumnManager: React.FC<ColumnManagerProps> = ({
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700">
+            <label className="block text-sm font-medium text-gray-300 mb-1">
               Column Name
             </label>
             <input
               type="text"
               value={newColumnName}
               onChange={(e) => setNewColumnName(e.target.value)}
-              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+              className="w-full px-3 py-2 bg-ui-secondary border border-ui-border rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-accent-primary text-gray-200"
               placeholder="Enter column name"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">
+            <label className="block text-sm font-medium text-gray-300 mb-1">
               Description (optional)
             </label>
             <textarea
               value={newColumnDescription}
               onChange={(e) => setNewColumnDescription(e.target.value)}
-              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+              className="w-full px-3 py-2 bg-ui-secondary border border-ui-border rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-accent-primary text-gray-200"
               placeholder="Enter column description"
               rows={3}
             />
           </div>
 
           {/* Column Type Selection */}
-          <div className="border-t border-gray-200 pt-4">
-            <div className="flex items-center space-x-4 mb-4">
-              <button
-                type="button"
-                onClick={() => setCreateCustomColumn(false)}
-                className={`px-3 py-2 rounded-md ${
-                  !createCustomColumn
-                    ? "bg-indigo-100 text-indigo-700 border border-indigo-300"
-                    : "bg-gray-100 text-gray-700 border border-gray-300"
-                }`}
-              >
-                Create from Files
-              </button>
-              <button
-                type="button"
-                onClick={() => setCreateCustomColumn(true)}
-                className={`px-3 py-2 rounded-md ${
-                  createCustomColumn
-                    ? "bg-indigo-100 text-indigo-700 border border-indigo-300"
-                    : "bg-gray-100 text-gray-700 border border-gray-300"
-                }`}
-              >
-                Create Custom Column
-              </button>
+          <div className="border-t border-ui-border pt-4">
+            <div className="flex flex-col space-y-3 mb-4">
+              <h3 className="text-sm font-medium text-gray-300">
+                Column Source
+              </h3>
+              <div className="flex space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setCreateCustomColumn(false)}
+                  className={`flex-1 px-3 py-2 rounded-md transition-colors ${
+                    !createCustomColumn
+                      ? "bg-accent-primary text-white"
+                      : "bg-ui-secondary text-gray-300 hover:bg-ui-tertiary"
+                  }`}
+                >
+                  From Files
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCreateCustomColumn(true)}
+                  className={`flex-1 px-3 py-2 rounded-md transition-colors ${
+                    createCustomColumn
+                      ? "bg-accent-primary text-white"
+                      : "bg-ui-secondary text-gray-300 hover:bg-ui-tertiary"
+                  }`}
+                >
+                  Custom Column
+                </button>
+              </div>
             </div>
 
             {createCustomColumn && (
-              <div className="space-y-3 border border-gray-200 rounded-md p-3 bg-gray-50">
+              <div className="space-y-3 border border-ui-border rounded-md p-4 bg-ui-secondary">
                 <div className="flex justify-between items-center">
-                  <h3 className="text-sm font-medium text-gray-700">
+                  <h3 className="text-sm font-medium text-gray-300">
                     Custom Columns
                   </h3>
-                  <button
-                    type="button"
+                  <Button
+                    variant="secondary"
+                    size="sm"
                     onClick={addCustomColumn}
-                    className="px-2 py-1 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700"
                   >
-                    Add Column
-                  </button>
+                    <FaPlus className="mr-1" /> Add Column
+                  </Button>
                 </div>
 
-                <div className="space-y-2 max-h-60 overflow-y-auto">
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                   {customColumns.map((column, index) => (
                     <div
                       key={index}
-                      className="flex items-center space-x-2 bg-white p-2 rounded border border-gray-200"
+                      className="flex items-center space-x-2 bg-ui-tertiary p-2 rounded border border-ui-border"
                     >
                       <input
                         type="text"
@@ -526,7 +642,7 @@ export const ColumnManager: React.FC<ColumnManagerProps> = ({
                         onChange={(e) =>
                           updateCustomColumn(index, "name", e.target.value)
                         }
-                        className="flex-1 border border-gray-300 rounded-md p-1 text-sm"
+                        className="flex-1 px-2 py-1 bg-ui-secondary border border-ui-border rounded text-sm text-gray-200"
                         placeholder="Column name"
                       />
                       <select
@@ -534,7 +650,7 @@ export const ColumnManager: React.FC<ColumnManagerProps> = ({
                         onChange={(e) =>
                           updateCustomColumn(index, "type", e.target.value)
                         }
-                        className="border border-gray-300 rounded-md p-1 text-sm"
+                        className="px-2 py-1 bg-ui-secondary border border-ui-border rounded text-sm text-gray-200"
                       >
                         <option value="text">Text</option>
                         <option value="integer">Integer</option>
@@ -545,48 +661,39 @@ export const ColumnManager: React.FC<ColumnManagerProps> = ({
                       <button
                         type="button"
                         onClick={() => removeCustomColumn(index)}
-                        className="text-red-500 hover:text-red-700"
+                        className="text-red-400 hover:text-red-300 p-1"
                         disabled={customColumns.length <= 1}
                       >
-                        <svg
-                          className="w-4 h-4"
-                          fill="currentColor"
-                          viewBox="0 0 20 20"
-                        >
-                          <path
-                            fillRule="evenodd"
-                            d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
+                        <FaTrash size={14} />
                       </button>
                     </div>
                   ))}
                 </div>
 
                 {customColumns.length === 0 && (
-                  <div className="text-center text-gray-500 py-2">
-                    No columns added. Click &quot;Add Column&quot; to add one.
+                  <div className="text-center text-gray-500 py-4">
+                    No columns added. Click "Add Column" to add one.
                   </div>
                 )}
               </div>
             )}
           </div>
 
-          <div className="flex justify-end space-x-2 pt-2">
-            <button
+          <div className="flex justify-end space-x-3 pt-4 border-t border-ui-border">
+            <Button
+              variant="outline"
               onClick={() => {
                 setShowCreateModal(false);
                 setCreateCustomColumn(false);
                 setCustomColumns([{ id: uuidv4(), name: "", type: "text" }]);
               }}
-              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="primary"
               onClick={handleCreateColumn}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+              isLoading={isLoading}
               disabled={
                 !newColumnName ||
                 isLoading ||
@@ -594,8 +701,8 @@ export const ColumnManager: React.FC<ColumnManagerProps> = ({
                   customColumns.every((col) => !col.name.trim()))
               }
             >
-              {isLoading ? "Creating..." : "Create Column"}
-            </button>
+              Create Column
+            </Button>
           </div>
         </div>
       </Modal>
@@ -609,7 +716,7 @@ export const ColumnManager: React.FC<ColumnManagerProps> = ({
         {editingColumn && (
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700">
+              <label className="block text-sm font-medium text-gray-300 mb-1">
                 Column Name
               </label>
               <input
@@ -618,12 +725,12 @@ export const ColumnManager: React.FC<ColumnManagerProps> = ({
                 onChange={(e) =>
                   setEditingColumn({ ...editingColumn, name: e.target.value })
                 }
-                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                className="w-full px-3 py-2 bg-ui-secondary border border-ui-border rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-accent-primary text-gray-200"
                 placeholder="Enter column name"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">
+              <label className="block text-sm font-medium text-gray-300 mb-1">
                 Description (optional)
               </label>
               <textarea
@@ -634,23 +741,26 @@ export const ColumnManager: React.FC<ColumnManagerProps> = ({
                     description: e.target.value,
                   })
                 }
-                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                className="w-full px-3 py-2 bg-ui-secondary border border-ui-border rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-accent-primary text-gray-200"
                 placeholder="Enter column description"
                 rows={3}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Columns
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Data Columns
               </label>
-              <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-md p-2">
+              <div className="max-h-60 overflow-y-auto border border-ui-border rounded-md bg-ui-secondary p-3">
                 {editingColumn.columns.map((column, index) => (
                   <div
                     key={index}
-                    className="flex items-center justify-between py-1 border-b border-gray-100 last:border-b-0"
+                    className="flex items-center justify-between py-2 px-3 border-b border-ui-border last:border-b-0 hover:bg-ui-tertiary rounded-sm"
                   >
-                    <div>
-                      <span className="font-medium">{column.name}</span>
+                    <div className="flex items-center">
+                      <div className="mr-2">{getDataTypeIcon(column.type)}</div>
+                      <span className="font-medium text-gray-300">
+                        {column.name}
+                      </span>
                       <span className="text-xs text-gray-500 ml-2">
                         ({column.type})
                       </span>
@@ -670,38 +780,45 @@ export const ColumnManager: React.FC<ColumnManagerProps> = ({
                             columns: updatedColumns,
                           });
                         }}
-                        className="mr-2"
+                        className="mr-2 h-4 w-4 rounded border-ui-border bg-ui-tertiary focus:ring-accent-primary"
                       />
-                      <label className="text-xs">Required</label>
+                      <label className="text-xs text-gray-400">Required</label>
                     </div>
                   </div>
                 ))}
+
+                {editingColumn.columns.length === 0 && (
+                  <div className="py-4 text-center text-gray-500">
+                    No data columns available
+                  </div>
+                )}
               </div>
             </div>
-            <div className="flex justify-between space-x-2">
-              <button
+            <div className="flex justify-between pt-4 border-t border-ui-border">
+              <Button
+                variant="danger"
                 onClick={() =>
                   editingColumn && handleDeleteColumn(editingColumn.id)
                 }
-                className="px-4 py-2 bg-red-500 text-white font-bold rounded-md hover:bg-red-600"
               >
-                Delete Column
-              </button>
+                <FaTrash className="mr-1" /> Delete Column
+              </Button>
 
-              <div className="flex space-x-2">
-                <button
+              <div className="flex space-x-3">
+                <Button
+                  variant="outline"
                   onClick={() => setShowEditModal(false)}
-                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="primary"
                   onClick={handleUpdateColumn}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+                  isLoading={isLoading}
                   disabled={!editingColumn.name || isLoading}
                 >
-                  {isLoading ? "Saving..." : "Save Changes"}
-                </button>
+                  Save Changes
+                </Button>
               </div>
             </div>
           </div>

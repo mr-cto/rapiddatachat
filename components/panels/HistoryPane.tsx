@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { FaHistory, FaSearch, FaSpinner } from "react-icons/fa";
 
@@ -35,49 +35,82 @@ const HistoryPane: React.FC<HistoryPaneProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>("");
 
-  // Fetch query history
+  // Track if this is the initial mount
+  const initialMountRef = useRef(true);
+  const visibilityChangedRef = useRef(false);
+
+  // Memoize the fetch function to avoid recreating it on every render
+  const fetchQueries = useCallback(async () => {
+    if (!session?.user) return;
+
+    try {
+      setLoading(true);
+      // Add projectId to the query if available
+      const url = projectId
+        ? `/api/query-history?projectId=${projectId}`
+        : "/api/query-history";
+
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch query history");
+      }
+
+      const data = await response.json();
+      // Map the history data to the expected Query format
+      const formattedQueries = (data.history || []).map(
+        (query: HistoryItem) => ({
+          id: query.id,
+          text:
+            query.query || query.naturalLanguageQuery || query.queryText || "",
+          createdAt: query.timestamp || new Date().toISOString(),
+          userId: query.userId || "",
+        })
+      );
+      setQueries(formattedQueries);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An error occurred");
+      console.error("Error fetching query history:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [session, projectId]);
+
+  // Initial fetch and visibility change handler setup
   useEffect(() => {
-    const fetchQueries = async () => {
-      if (!session?.user) return;
+    // Only fetch on initial mount
+    fetchQueries();
 
-      try {
-        setLoading(true);
-        // Add projectId to the query if available
-        const url = projectId
-          ? `/api/query-history?projectId=${projectId}`
-          : "/api/query-history";
-
-        const response = await fetch(url);
-
-        if (!response.ok) {
-          throw new Error("Failed to fetch query history");
-        }
-
-        const data = await response.json();
-        // Map the history data to the expected Query format
-        const formattedQueries = (data.history || []).map(
-          (query: HistoryItem) => ({
-            id: query.id,
-            text:
-              query.query ||
-              query.naturalLanguageQuery ||
-              query.queryText ||
-              "",
-            createdAt: query.timestamp || new Date().toISOString(),
-            userId: query.userId || "",
-          })
-        );
-        setQueries(formattedQueries);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "An error occurred");
-        console.error("Error fetching query history:", err);
-      } finally {
-        setLoading(false);
+    // Set up visibility change handler to prevent fetches on tab focus
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        visibilityChangedRef.current = true;
       }
     };
 
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [fetchQueries]);
+
+  // Handle session or projectId changes, but avoid fetching on visibility change
+  useEffect(() => {
+    // Skip the first render since we already fetched in the mount effect
+    if (initialMountRef.current) {
+      initialMountRef.current = false;
+      return;
+    }
+
+    // Skip fetches triggered by tab focus
+    if (visibilityChangedRef.current) {
+      visibilityChangedRef.current = false;
+      return;
+    }
+
     fetchQueries();
-  }, [session, projectId]);
+  }, [session, projectId, fetchQueries]);
 
   // Format date for display
   const formatDate = (dateString: string) => {

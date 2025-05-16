@@ -1,7 +1,14 @@
-import React, { useState, useEffect } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  memo,
+  useRef,
+} from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/router";
-import { FaFile, FaTrash, FaEye } from "react-icons/fa";
+import { FaFile, FaTrash, FaEye, FaUpload } from "react-icons/fa";
 import SchemaColumnMapper from "../SchemaColumnMapper";
 import { Button, Card } from "../ui";
 
@@ -36,6 +43,120 @@ interface FilesPaneProps {
   selectedFileId?: string;
   projectId?: string;
 }
+
+// Memoized file item component to prevent unnecessary re-renders
+const FileItem = memo(
+  ({
+    file,
+    onSelectFile,
+    viewSynopsis,
+    handleDeleteClick,
+    deleteConfirmation,
+    handleDeleteFile,
+    cancelDelete,
+    formatFileSize,
+    getStatusBadgeColor,
+  }: {
+    file: FileData;
+    onSelectFile: (fileId: string) => void;
+    viewSynopsis: (fileId: string) => void;
+    handleDeleteClick: (fileId: string) => void;
+    deleteConfirmation: string | null;
+    handleDeleteFile: (fileId: string) => void;
+    cancelDelete: () => void;
+    formatFileSize: (bytes: number) => string;
+    getStatusBadgeColor: (status: string) => string;
+  }) => {
+    return (
+      <div
+        className="border border-ui-border rounded-lg p-2 hover:shadow-md transition-shadow"
+        onClick={() => onSelectFile(file.id)}
+      >
+        <div className="flex justify-between items-start mb-1">
+          <h3 className="text-sm font-medium text-gray-300 break-words pr-2">
+            {file.filename}
+          </h3>
+          <div className="flex space-x-2">
+            <Button
+              onClick={(e) => {
+                e.stopPropagation();
+                viewSynopsis(file.id);
+              }}
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 p-1 text-accent-primary"
+              title="View Synopsis"
+            >
+              <FaEye />
+            </Button>
+            {deleteConfirmation === file.id ? (
+              <div className="flex items-center space-x-2">
+                <Button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteFile(file.id);
+                  }}
+                  variant="danger"
+                  size="sm"
+                  title="Confirm Delete"
+                >
+                  Yes
+                </Button>
+                <Button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    cancelDelete();
+                  }}
+                  variant="secondary"
+                  size="sm"
+                  title="Cancel Delete"
+                >
+                  No
+                </Button>
+              </div>
+            ) : (
+              <Button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteClick(file.id);
+                }}
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 p-1 text-red-400"
+                title="Delete File"
+              >
+                <FaTrash />
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <div className="text-xs text-gray-400 mb-1">
+          {file.format?.toUpperCase() || "Unknown format"} •{" "}
+          {formatFileSize(file.sizeBytes)}
+        </div>
+
+        {/* Display status badge */}
+        <div className="mb-1">
+          <span
+            className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadgeColor(
+              file.status
+            )}`}
+          >
+            {file.status}
+          </span>
+          {file._count.fileErrors > 0 && (
+            <span className="text-xs text-red-500 ml-2">
+              {file._count.fileErrors} error(s)
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+);
+
+FileItem.displayName = "FileItem";
 
 const FilesPane: React.FC<FilesPaneProps> = ({
   onSelectFile,
@@ -85,17 +206,11 @@ const FilesPane: React.FC<FilesPaneProps> = ({
     direction: "desc",
   });
 
-  // Check if there's an active schema
-  const checkActiveSchema = async () => {
+  // Check if there's an active schema - only used during file upload, not in fetchFiles
+  const checkActiveSchema = useCallback(async () => {
     if (!session?.user) return false;
 
     try {
-      // First check if there are any files - if no files, then no schema
-      if (files.length === 0) {
-        setHasActiveSchema(false);
-        return false;
-      }
-
       // Use project-specific endpoint if projectId is provided
       const endpoint = projectId
         ? `/api/schema-management?projectId=${projectId}`
@@ -106,14 +221,11 @@ const FilesPane: React.FC<FilesPaneProps> = ({
 
         // If the endpoint returns a 404, it means there's no schema yet
         if (response.status === 404) {
-          setHasActiveSchema(false);
           return false;
         }
 
         if (!response.ok) {
-          console.warn("Schema check returned non-OK status:", response.status);
           // Don't throw an error, just assume no schema to allow the flow to continue
-          setHasActiveSchema(false);
           return false;
         }
 
@@ -121,37 +233,19 @@ const FilesPane: React.FC<FilesPaneProps> = ({
 
         // If we have any schemas at all, consider that we have an active schema
         const hasSchema = data.schemas && data.schemas.length > 0;
-
-        console.log("Schema check result:", {
-          hasSchema,
-          schemas: data.schemas,
-        });
-
-        setHasActiveSchema(hasSchema);
         return hasSchema;
       } catch (schemaErr) {
-        console.warn(
-          "Error fetching schema, falling back to file count check:",
-          schemaErr
-        );
-
         // If schema check fails, fall back to checking if there are files
-        // If there are files, assume there's a schema (since files require schemas)
-        const hasSchema = files.length > 0;
-        setHasActiveSchema(hasSchema);
-        return hasSchema;
+        return false;
       }
     } catch (err) {
-      console.error("Error checking active schema:", err);
       // Don't let schema check errors block the upload flow
-      setHasActiveSchema(false);
       return false;
     }
-  };
+  }, [session, projectId]);
 
-  // Fetch files
-  const fetchFiles = async () => {
-    console.log("Fetching files", session?.user);
+  // Fetch files - memoized with useCallback to prevent unnecessary re-renders
+  const fetchFiles = useCallback(async () => {
     if (!session?.user) return;
 
     try {
@@ -169,33 +263,13 @@ const FilesPane: React.FC<FilesPaneProps> = ({
         ? `/api/projects/${projectId}/files?${queryParams}`
         : `/api/files?${queryParams}`;
 
-      console.log(`Fetching files from endpoint: ${endpoint}`);
-
       const response = await fetch(endpoint);
-      console.log("Response status:", response.status);
-      console.log("Response status text:", response.statusText);
 
       if (!response.ok) {
         throw new Error(`Failed to fetch files: ${response.statusText}`);
       }
 
       const data = await response.json();
-      console.log("Files API response:", data);
-      console.log("Files count:", data.files ? data.files.length : 0);
-      console.log(
-        "Full API response structure:",
-        JSON.stringify(data, null, 2)
-      );
-
-      if (data.files && data.files.length > 0) {
-        console.log("First file:", data.files[0]);
-      } else {
-        console.log("No files returned from API");
-        // Check if there's any data in a different format
-        if (data && typeof data === "object") {
-          console.log("Available keys in response:", Object.keys(data));
-        }
-      }
 
       // Ensure we have a valid files array
       if (data.files && Array.isArray(data.files)) {
@@ -207,25 +281,14 @@ const FilesPane: React.FC<FilesPaneProps> = ({
 
         // If there are files, assume there's a schema
         setHasActiveSchema(!filesEmpty);
-
-        console.log(`Set ${data.files.length} files in state`);
       } else {
-        console.warn("No valid files array in API response:", data);
         setFiles([]);
         setIsFirstUpload(true);
         setHasActiveSchema(false);
       }
 
-      // Always check if there's an active schema, but don't await it
-      // This prevents blocking the UI if the schema check fails
-      checkActiveSchema().catch((err) => {
-        console.warn(
-          "Schema check failed, assuming schema based on file count:",
-          err
-        );
-        // If schema check fails, fall back to file count
-        setHasActiveSchema(files.length > 0);
-      });
+      // Don't check schema again here to avoid infinite loop
+      // The initial hasActiveSchema value based on files is sufficient
 
       setPagination({
         page: data.pagination.page,
@@ -239,12 +302,42 @@ const FilesPane: React.FC<FilesPaneProps> = ({
     } finally {
       setLoading(false);
     }
-  };
+  }, [session, pagination.page, pagination.pageSize, sorting, projectId]);
 
-  // Fetch files on component mount and when pagination/sorting changes
+  // Track if this is the initial mount
+  const initialMountRef = useRef(true);
+
+  // Initial fetch on mount only
   useEffect(() => {
     fetchFiles();
-  }, [session, pagination.page, pagination.pageSize, sorting, projectId]);
+
+    // Add event listener to prevent unnecessary fetches on window focus
+    const handleVisibilityChange = () => {
+      // Do nothing - we'll handle fetches manually
+    };
+
+    // Add visibility change listener
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    // Cleanup
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Fetch when pagination or sorting changes, but not on window focus events
+  useEffect(() => {
+    // Skip the first render since we already fetched in the mount effect
+    if (initialMountRef.current) {
+      initialMountRef.current = false;
+      return;
+    }
+
+    if (session) {
+      fetchFiles();
+    }
+  }, [pagination.page, pagination.pageSize, sorting, fetchFiles, session]);
 
   // Validate files
   const validateFiles = (
@@ -565,14 +658,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
 
             // For first upload or no active schema, redirect to schema creation page
             // Also check isFirstUpload as a fallback in case schema check failed
-            console.log(
-              "Deciding whether to show schema mapper or create schema:",
-              {
-                hasSchema,
-                isFirstUpload,
-                filesLength: files.length,
-              }
-            );
+            // Decide whether to show schema mapper or create schema
 
             if (!hasSchema) {
               setUploadStatus("Redirecting to schema creation...");
@@ -767,17 +853,17 @@ const FilesPane: React.FC<FilesPaneProps> = ({
     });
   };
 
-  // Format file size for display
-  const formatFileSize = (bytes: number) => {
+  // Format file size for display - memoized to prevent recreation on each render
+  const formatFileSize = useCallback((bytes: number) => {
     if (bytes === 0) return "0 Bytes";
     const k = 1024;
     const sizes = ["Bytes", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-  };
+  }, []);
 
-  // Get status badge color
-  const getStatusBadgeColor = (status: string) => {
+  // Get status badge color - memoized to prevent recreation on each render
+  const getStatusBadgeColor = useCallback((status: string) => {
     switch (status.toLowerCase()) {
       case "active":
         return "bg-green-100 text-green-800";
@@ -790,85 +876,133 @@ const FilesPane: React.FC<FilesPaneProps> = ({
       default:
         return "bg-gray-100 text-gray-800";
     }
-  };
+  }, []);
 
-  // Render file upload UI
-  const renderFileUpload = () => {
-    return (
-      <div className="w-full">
-        <div
-          className={`border-2 border-dashed rounded-lg p-6 flex flex-col items-center justify-center transition-colors duration-200 ${
-            dragActive
-              ? "border-accent-primary bg-ui-tertiary"
-              : "border-gray-600 bg-ui-primary"
-          } ${uploading ? "opacity-50 pointer-events-none" : ""}`}
-          onDragEnter={handleDrag}
-          onDragOver={handleDrag}
-          onDragLeave={handleDrag}
-          onDrop={handleDrop}
-          onClick={() => !uploading && inputRef.current?.click()}
-          style={{ cursor: uploading ? "default" : "pointer" }}
-        >
-          <input
-            ref={inputRef}
-            type="file"
-            accept=".csv,.xlsx"
-            multiple={!isFirstUpload && hasActiveSchema}
-            className="hidden"
-            onChange={handleChange}
-            disabled={uploading}
-          />
+  // Memoized file upload component
+  const FileUploadComponent = memo(
+    ({
+      dragActive,
+      uploading,
+      uploadStatus,
+      uploadProgress,
+      isFirstUpload,
+      hasActiveSchema,
+      MAX_FILE_SIZE,
+      handleDrag,
+      handleDrop,
+      inputRef,
+      handleChange,
+    }: {
+      dragActive: boolean;
+      uploading: boolean;
+      uploadStatus: string;
+      uploadProgress: number;
+      isFirstUpload: boolean;
+      hasActiveSchema: boolean;
+      MAX_FILE_SIZE: number;
+      handleDrag: (e: React.DragEvent<HTMLDivElement>) => void;
+      handleDrop: (e: React.DragEvent<HTMLDivElement>) => void;
+      inputRef: React.RefObject<HTMLInputElement | null>;
+      handleChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    }) => {
+      return (
+        <div className="w-full">
+          <div
+            className={`border-2 border-dashed rounded-lg p-6 flex flex-col items-center justify-center transition-colors duration-200 ${
+              dragActive
+                ? "border-accent-primary bg-ui-tertiary"
+                : "border-gray-600 bg-ui-primary"
+            } ${uploading ? "opacity-50 pointer-events-none" : ""}`}
+            onDragEnter={handleDrag}
+            onDragOver={handleDrag}
+            onDragLeave={handleDrag}
+            onDrop={handleDrop}
+            onClick={() => !uploading && inputRef.current?.click()}
+            style={{ cursor: uploading ? "default" : "pointer" }}
+          >
+            <input
+              ref={inputRef}
+              type="file"
+              accept=".csv,.xlsx"
+              multiple={!isFirstUpload && hasActiveSchema}
+              className="hidden"
+              onChange={handleChange}
+              disabled={uploading}
+            />
 
-          {uploading ? (
-            <div className="w-full">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-accent-primary">
-                  {uploadStatus || "Uploading..."}
-                </span>
-                <span className="text-sm font-medium text-accent-primary">
-                  {Math.round(uploadProgress)}%
-                </span>
+            {uploading ? (
+              <div className="w-full">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-accent-primary">
+                    {uploadStatus || "Uploading..."}
+                  </span>
+                  <span className="text-sm font-medium text-accent-primary">
+                    {Math.round(uploadProgress)}%
+                  </span>
+                </div>
+                <div className="w-full bg-ui-tertiary rounded-full h-2.5">
+                  <div
+                    className="bg-accent-primary h-2.5 rounded-full transition-all duration-300"
+                    style={{ width: `${uploadProgress}%` }}
+                  ></div>
+                </div>
               </div>
-              <div className="w-full bg-ui-tertiary rounded-full h-2.5">
-                <div
-                  className="bg-accent-primary h-2.5 rounded-full transition-all duration-300"
-                  style={{ width: `${uploadProgress}%` }}
-                ></div>
-              </div>
-            </div>
-          ) : (
-            <>
-              <svg
-                className="w-12 h-12 text-accent-primary mb-2"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M7 16v-4a4 4 0 018 0v4m-4 4v-4m0 0V4m0 12a4 4 0 01-4-4V4a4 4 0 018 0v8a4 4 0 01-4 4z"
-                />
-              </svg>
-              <p className="text-gray-300 mb-2">
-                Drag and drop CSV or XLSX files here, or{" "}
-                <span className="text-accent-primary underline">browse</span>
-              </p>
-              <p className="text-xs text-gray-400">
-                {isFirstUpload || !hasActiveSchema
-                  ? "Upload your first CSV or XLSX file to create a schema for your project."
-                  : "Upload CSV or XLSX files to add data to your project. Files will be automatically processed and mapped to your schema."}
-              </p>
-              <p className="text-xs text-gray-400 mt-2">
-                Maximum file size: {Math.round(MAX_FILE_SIZE / (1024 * 1024))}MB
-              </p>
-            </>
-          )}
+            ) : (
+              <>
+                <FaUpload className="w-12 h-12 text-accent-primary mb-2" />
+                <p className="text-gray-300 mb-2">
+                  Drag and drop CSV or XLSX files here, or{" "}
+                  <span className="text-accent-primary underline">browse</span>
+                </p>
+                <p className="text-xs text-gray-400">
+                  {isFirstUpload || !hasActiveSchema
+                    ? "Upload your first CSV or XLSX file to create a schema for your project."
+                    : "Upload CSV or XLSX files to add data to your project. Files will be automatically processed and mapped to your schema."}
+                </p>
+                <p className="text-xs text-gray-400 mt-2">
+                  Maximum file size: {Math.round(MAX_FILE_SIZE / (1024 * 1024))}
+                  MB
+                </p>
+              </>
+            )}
+          </div>
         </div>
-      </div>
-    );
-  };
+      );
+    }
+  );
+
+  FileUploadComponent.displayName = "FileUploadComponent";
+
+  // Create a memoized file upload component
+  const fileUploadElement = useMemo(
+    () => (
+      <FileUploadComponent
+        dragActive={dragActive}
+        uploading={uploading}
+        uploadStatus={uploadStatus}
+        uploadProgress={uploadProgress}
+        isFirstUpload={isFirstUpload}
+        hasActiveSchema={hasActiveSchema}
+        MAX_FILE_SIZE={MAX_FILE_SIZE}
+        handleDrag={handleDrag}
+        handleDrop={handleDrop}
+        inputRef={inputRef}
+        handleChange={handleChange}
+      />
+    ),
+    [
+      dragActive,
+      uploading,
+      uploadStatus,
+      uploadProgress,
+      isFirstUpload,
+      hasActiveSchema,
+      MAX_FILE_SIZE,
+      handleDrag,
+      handleDrop,
+      handleChange,
+    ]
+  );
 
   // Render file list UI
   const renderFileList = () => {
@@ -903,27 +1037,14 @@ const FilesPane: React.FC<FilesPaneProps> = ({
       return (
         <Card variant="default" padding="none">
           <div className="p-8 text-center">
-            <svg
-              className="mx-auto h-16 w-16 text-gray-500"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"
-              />
-            </svg>
+            <FaFile className="mx-auto h-16 w-16 text-gray-500" />
             <h3 className="mt-4 text-lg font-medium text-gray-300">
               No files available
             </h3>
             <p className="mt-2 text-sm text-gray-400 max-w-md mx-auto">
               Upload a file to see its columns and data structure.
             </p>
-            <div className="mt-6 max-w-md mx-auto">{renderFileUpload()}</div>
+            <div className="mt-6 max-w-md mx-auto">{fileUploadElement}</div>
           </div>
         </Card>
       );
@@ -934,106 +1055,25 @@ const FilesPane: React.FC<FilesPaneProps> = ({
       <Card variant="default" padding="none" className="overflow-hidden">
         <div className="p-1 grid grid-cols-1 gap-2">
           {files.map((file) => (
-            <div
+            <FileItem
               key={file.id}
-              className="border border-ui-border rounded-lg p-2 hover:shadow-md transition-shadow"
-              onClick={() => onSelectFile(file.id)}
-            >
-              <div className="flex justify-between items-start mb-1">
-                <h3 className="text-sm font-medium text-gray-300 break-words pr-2">
-                  {file.filename}
-                </h3>
-                <div className="flex space-x-2">
-                  <Button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      viewSynopsis(file.id);
-                    }}
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 p-1 text-accent-primary"
-                    title="View Synopsis"
-                  >
-                    <FaEye />
-                  </Button>
-                  {deleteConfirmation === file.id ? (
-                    <div className="flex items-center space-x-2">
-                      <Button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteFile(file.id);
-                        }}
-                        variant="danger"
-                        size="sm"
-                        title="Confirm Delete"
-                      >
-                        Yes
-                      </Button>
-                      <Button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          cancelDelete();
-                        }}
-                        variant="secondary"
-                        size="sm"
-                        title="Cancel Delete"
-                      >
-                        No
-                      </Button>
-                    </div>
-                  ) : (
-                    <Button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteClick(file.id);
-                      }}
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 p-1 text-red-400"
-                      title="Delete File"
-                    >
-                      <FaTrash />
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              <div className="text-xs text-gray-400 mb-1">
-                {file.format?.toUpperCase() || "Unknown format"} •{" "}
-                {formatFileSize(file.sizeBytes)}
-              </div>
-
-              {/* Display status badge */}
-              <div className="mb-1">
-                <span
-                  className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadgeColor(
-                    file.status
-                  )}`}
-                >
-                  {file.status}
-                </span>
-                {file._count.fileErrors > 0 && (
-                  <span className="text-xs text-red-500 ml-2">
-                    {file._count.fileErrors} error(s)
-                  </span>
-                )}
-              </div>
-            </div>
+              file={file}
+              onSelectFile={onSelectFile}
+              viewSynopsis={viewSynopsis}
+              handleDeleteClick={handleDeleteClick}
+              deleteConfirmation={deleteConfirmation}
+              handleDeleteFile={handleDeleteFile}
+              cancelDelete={cancelDelete}
+              formatFileSize={formatFileSize}
+              getStatusBadgeColor={getStatusBadgeColor}
+            />
           ))}
         </div>
       </Card>
     );
   };
 
-  // Debug information
-  console.log("FilesPane render state:", {
-    filesCount: files.length,
-    loading,
-    error,
-    projectId,
-    selectedFileId,
-    hasActiveSchema,
-  });
+  // Remove debug console.log to improve performance
 
   return (
     <div className="h-[50vh] flex flex-col">
@@ -1050,8 +1090,9 @@ const FilesPane: React.FC<FilesPaneProps> = ({
               size="sm"
               className="ml-2 h-6 px-2 py-0"
               title="Force refresh files list"
+              isLoading={loading}
             >
-              ↻
+              {!loading && "↻"}
             </Button>
           </div>
           <div className="flex items-center">
@@ -1095,7 +1136,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
 
         {!successMessage && files.length > 0 && (
           <div className="mt-2 mb-2 p-3 border border-ui-border rounded-md bg-ui-secondary">
-            {renderFileUpload()}
+            {fileUploadElement}
           </div>
         )}
 

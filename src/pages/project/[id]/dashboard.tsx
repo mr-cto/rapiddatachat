@@ -4,7 +4,7 @@ import { useSession } from "next-auth/react";
 import ImprovedDashboardLayout from "../../../../components/layouts/ImprovedDashboardLayout";
 import HistoryPane from "../../../../components/panels/HistoryPane";
 import FilesPane from "../../../../components/panels/FilesPane";
-import SchemaManagementPane from "../../../../components/panels/SchemaManagementPane";
+import ColumnManagementPane from "../../../../components/panels/ColumnManagementPane";
 import ImprovedQueryResultsPane from "../../../../components/panels/ImprovedQueryResultsPane";
 import ImprovedChatInputPane from "../../../../components/panels/ImprovedChatInputPane";
 
@@ -25,7 +25,7 @@ interface Project {
 
 const ProjectDashboard: React.FC = () => {
   const router = useRouter();
-  const { id: projectId, schemaCreated, fileMapped } = router.query;
+  const { id: projectId, columnCreated, fileMapped } = router.query;
   const { data: session, status } = useSession();
   const [project, setProject] = useState<Project | null>(null);
   const [selectedQuery, setSelectedQuery] = useState<Query | undefined>(
@@ -63,9 +63,9 @@ const ProjectDashboard: React.FC = () => {
 
   // Handle success messages from URL parameters
   useEffect(() => {
-    if (schemaCreated === "true") {
+    if (columnCreated === "true") {
       setSuccessMessage(
-        "Schema created successfully! Your file has been mapped to the schema."
+        "Column created successfully! Your file has been mapped to the column."
       );
 
       // Remove the query parameter to prevent showing the message on refresh
@@ -81,7 +81,7 @@ const ProjectDashboard: React.FC = () => {
     }
 
     if (fileMapped === "true") {
-      setSuccessMessage("File successfully mapped to schema!");
+      setSuccessMessage("File successfully mapped to column!");
 
       // Remove the query parameter to prevent showing the message on refresh
       const { pathname } = router;
@@ -94,7 +94,7 @@ const ProjectDashboard: React.FC = () => {
 
       return () => clearTimeout(timer);
     }
-  }, [schemaCreated, fileMapped, router]);
+  }, [columnCreated, fileMapped, router]);
 
   // Fetch project data
   useEffect(() => {
@@ -454,12 +454,12 @@ const ProjectDashboard: React.FC = () => {
             projectId={projectId as string}
           />
         }
-        schemaManagementPane={
-          <SchemaManagementPane
-            onSchemaChange={(schema) => {
-              // If a schema is selected, show a success message
-              if (schema) {
-                setSuccessMessage(`Schema "${schema.name}" is now active.`);
+        columnManagementPane={
+          <ColumnManagementPane
+            onColumnChange={(column) => {
+              // If a column is selected, show a success message
+              if (column) {
+                setSuccessMessage(`Column "${column.name}" is now active.`);
 
                 // Clear the message after a few seconds
                 setTimeout(() => {

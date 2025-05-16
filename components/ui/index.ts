@@ -7,3 +7,4 @@ export * from "./Badge";
 export * from "./Card";
 export * from "./Breadcrumb";
 export * from "./Modal";
+export * from "./ResizablePanel";

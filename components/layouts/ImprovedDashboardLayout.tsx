@@ -1,8 +1,14 @@
-import React, { useState } from "react";
+import React, {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/router";
 import Image from "next/image";
-import { Button, Link, Card } from "../ui";
+import { Button, Link, Card, ResizablePanel, ResizablePanelGroup } from "../ui";
 import {
   FaDatabase,
   FaHistory,
@@ -15,7 +21,7 @@ interface ImprovedDashboardLayoutProps {
   children?: React.ReactNode;
   historyPane?: React.ReactNode;
   filesPane?: React.ReactNode;
-  schemaManagementPane?: React.ReactNode;
+  columnManagementPane?: React.ReactNode;
   queryResultsPane?: React.ReactNode;
   chatInputPane?: React.ReactNode;
   projectName?: string;
@@ -25,19 +31,129 @@ const ImprovedDashboardLayout: React.FC<ImprovedDashboardLayoutProps> = ({
   children,
   historyPane,
   filesPane,
-  schemaManagementPane,
+  columnManagementPane,
   queryResultsPane,
   chatInputPane,
   projectName,
 }) => {
   const { data: session, status } = useSession();
   const router = useRouter();
+  // UI state
   const [showFileUpload, setShowFileUpload] = useState(false);
-  const [showSchemaManagement, setShowSchemaManagement] = useState(false);
+  const [showColumnManagement, setShowColumnManagement] = useState(false);
   const [showHistory, setShowHistory] = useState(true);
+  const [sidebarWidth, setSidebarWidth] = useState(400); // Default width (match minWidth)
+  const [isInitialRender, setIsInitialRender] = useState(true);
+
+  // Reference to track initial mount
+  const initialMountRef = useRef(true);
+
+  // Memoize child components to prevent re-renders when toggling sections
+  const memoizedHistoryPane = useMemo(() => historyPane, [historyPane]);
+  const memoizedFilesPane = useMemo(() => filesPane, [filesPane]);
+  const memoizedColumnManagementPane = useMemo(
+    () => columnManagementPane,
+    [columnManagementPane]
+  );
+
+  // Store sidebar width and panel states in localStorage to persist between sessions
+  useEffect(() => {
+    // Try to get saved width from localStorage
+    const savedWidth = localStorage.getItem("sidebarWidth");
+    if (savedWidth) {
+      setSidebarWidth(parseInt(savedWidth, 10));
+    }
+
+    // Mark that initial render is complete
+    setIsInitialRender(false);
+
+    // Try to get saved panel states from localStorage
+    const savedPanelStates = localStorage.getItem("panelStates");
+    if (savedPanelStates) {
+      try {
+        const states = JSON.parse(savedPanelStates);
+        if (states.showFileUpload !== undefined)
+          setShowFileUpload(states.showFileUpload);
+        if (states.showColumnManagement !== undefined)
+          setShowColumnManagement(states.showColumnManagement);
+        if (states.showHistory !== undefined)
+          setShowHistory(states.showHistory);
+      } catch (e) {
+        // Ignore parsing errors
+      }
+    }
+
+    // Add event listener to prevent unnecessary re-renders on window focus
+    const handleVisibilityChange = () => {
+      // Do nothing - we'll handle updates manually
+    };
+
+    // Add visibility change listener
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    // Cleanup
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+
+  // Update localStorage when width changes
+  const handleSidebarResize = useCallback((width: number) => {
+    setSidebarWidth(width);
+    localStorage.setItem("sidebarWidth", width.toString());
+
+    // Force update chat input position
+    const chatInput = document.querySelector(".chat-input-container");
+    if (chatInput) {
+      (chatInput as HTMLElement).style.left = `${width}px`;
+    }
+  }, []);
+
+  // Toggle panel visibility and save state to localStorage
+  const togglePanel = useCallback(
+    (panel: "history" | "files" | "columns") => {
+      let newState;
+      switch (panel) {
+        case "history":
+          newState = !showHistory;
+          setShowHistory(newState);
+          break;
+        case "files":
+          newState = !showFileUpload;
+          setShowFileUpload(newState);
+          break;
+        case "columns":
+          newState = !showColumnManagement;
+          setShowColumnManagement(newState);
+          break;
+      }
+
+      // Save all panel states to localStorage
+      const panelStates = {
+        showHistory,
+        showFileUpload,
+        showColumnManagement,
+        [panel === "history"
+          ? "showHistory"
+          : panel === "files"
+          ? "showFileUpload"
+          : "showColumnManagement"]: newState,
+      };
+      localStorage.setItem("panelStates", JSON.stringify(panelStates));
+    },
+    [showHistory, showFileUpload, showColumnManagement]
+  );
 
   // Redirect to sign-in page if not authenticated
   React.useEffect(() => {
+    // Skip on window focus events
+    if (initialMountRef.current) {
+      initialMountRef.current = false;
+    } else if (document.visibilityState === "visible") {
+      // Don't redirect on tab focus
+      return;
+    }
+
     if (status === "unauthenticated") {
       router.push("/auth/signin");
     }
@@ -128,92 +244,157 @@ const ImprovedDashboardLayout: React.FC<ImprovedDashboardLayoutProps> = ({
       </header>
 
       {/* Main Content with Improved Layout */}
-      <div className="flex-1 flex h-[calc(100vh-4rem)] overflow-hidden">
-        {/* Left Sidebar - History and Tools */}
-        <div className="w-64 bg-ui-primary border-r border-ui-border flex flex-col">
-          {/* History Section with Toggle */}
-          <div className="border-b border-ui-border">
-            <div
-              className="p-3 bg-ui-secondary flex justify-between items-center cursor-pointer"
-              onClick={() => setShowHistory(!showHistory)}
-            >
-              <h2 className="text-sm font-semibold text-gray-300 flex items-center">
-                <FaHistory className="mr-2" /> Query History
-              </h2>
-              {showHistory ? (
-                <FaChevronUp size={14} />
-              ) : (
-                <FaChevronDown size={14} />
-              )}
+      <div className="flex-1 h-[calc(100vh-4rem)] overflow-hidden">
+        <ResizablePanelGroup
+          defaultLeftWidth={sidebarWidth}
+          minLeftWidth={400}
+          maxLeftWidth={800}
+          onResize={(leftWidth) => {
+            setSidebarWidth(leftWidth);
+            localStorage.setItem("sidebarWidth", leftWidth.toString());
+
+            // Force update chat input position
+            const chatInput = document.querySelector(".chat-input-container");
+            if (chatInput) {
+              (chatInput as HTMLElement).style.left = `${leftWidth}px`;
+            }
+          }}
+          className="h-full"
+        >
+          {/* Left Sidebar - History and Tools */}
+          <ResizablePanel
+            type="left"
+            className="bg-ui-primary border-r border-ui-border flex flex-col"
+            scrollable={true}
+          >
+            {/* History Section with Toggle */}
+            <div className="border-b border-ui-border">
+              <div
+                className="p-3 bg-ui-secondary flex justify-between items-center cursor-pointer"
+                onClick={() => togglePanel("history")}
+              >
+                <h2 className="text-sm font-semibold text-gray-300 flex items-center">
+                  <FaHistory className="mr-2" /> Query History
+                </h2>
+                {showHistory ? (
+                  <FaChevronUp size={14} />
+                ) : (
+                  <FaChevronDown size={14} />
+                )}
+              </div>
+              <div
+                className={`max-h-[30vh] overflow-y-auto transition-all duration-300 ${
+                  showHistory
+                    ? "opacity-100 max-h-[30vh]"
+                    : "opacity-0 max-h-0 overflow-hidden"
+                }`}
+              >
+                {historyPane}
+              </div>
             </div>
-            {showHistory && (
-              <div className="max-h-[30vh] overflow-y-auto">{historyPane}</div>
-            )}
-          </div>
 
-          {/* File Upload Section with Toggle */}
-          <div className="border-b border-ui-border">
-            <div
-              className="p-3 bg-ui-secondary flex justify-between items-center cursor-pointer"
-              onClick={() => setShowFileUpload(!showFileUpload)}
-            >
-              <h2 className="text-sm font-semibold text-gray-300 flex items-center">
-                <FaUpload className="mr-2" /> Upload Data
-              </h2>
-              {showFileUpload ? (
-                <FaChevronUp size={14} />
-              ) : (
-                <FaChevronDown size={14} />
-              )}
+            {/* File Upload Section with Toggle */}
+            <div className="border-b border-ui-border">
+              <div
+                className="p-3 bg-ui-secondary flex justify-between items-center cursor-pointer"
+                onClick={() => togglePanel("files")}
+              >
+                <h2 className="text-sm font-semibold text-gray-300 flex items-center">
+                  <FaUpload className="mr-2" /> Upload Data
+                </h2>
+                {showFileUpload ? (
+                  <FaChevronUp size={14} />
+                ) : (
+                  <FaChevronDown size={14} />
+                )}
+              </div>
+              <div
+                className={`p-3 transition-all duration-300 ${
+                  showFileUpload
+                    ? "opacity-100"
+                    : "opacity-0 h-0 overflow-hidden p-0"
+                }`}
+              >
+                {filesPane}
+              </div>
             </div>
-            {showFileUpload && <div className="p-3">{filesPane}</div>}
-          </div>
 
-          {/* Schema Management Section (Collapsed by Default) */}
-          <div className="border-b border-ui-border">
-            <div
-              className="p-3 bg-ui-secondary flex justify-between items-center cursor-pointer"
-              onClick={() => setShowSchemaManagement(!showSchemaManagement)}
-            >
-              <h2 className="text-sm font-semibold text-gray-300 flex items-center">
-                <FaDatabase className="mr-2" /> Schema Management
-              </h2>
-              {showSchemaManagement ? (
-                <FaChevronUp size={14} />
-              ) : (
-                <FaChevronDown size={14} />
-              )}
+            {/* Column Management Section (Collapsed by Default) */}
+            <div className="border-b border-ui-border">
+              <div
+                className="p-3 bg-ui-secondary flex justify-between items-center cursor-pointer"
+                onClick={() => togglePanel("columns")}
+              >
+                <h2 className="text-sm font-semibold text-gray-300 flex items-center">
+                  <FaDatabase className="mr-2" /> Column Management
+                </h2>
+                {showColumnManagement ? (
+                  <FaChevronUp size={14} />
+                ) : (
+                  <FaChevronDown size={14} />
+                )}
+              </div>
+              <div
+                className={`p-3 transition-all duration-300 ${
+                  showColumnManagement
+                    ? "opacity-100"
+                    : "opacity-0 h-0 overflow-hidden p-0"
+                }`}
+              >
+                {columnManagementPane}
+              </div>
             </div>
-            {showSchemaManagement && (
-              <div className="p-3">{schemaManagementPane}</div>
-            )}
-          </div>
 
-          {/* Quick Upload Button - Always Visible */}
-          <div className="p-4 mt-auto">
-            <Button
-              onClick={() => setShowFileUpload(true)}
-              variant="primary"
-              fullWidth
-              className="flex items-center justify-center"
+            {/* Quick Upload Button - Always Visible */}
+            <div className="p-4 mt-auto">
+              <Button
+                onClick={() => {
+                  setShowFileUpload(true);
+                  // Save panel state to localStorage
+                  const panelStates = {
+                    showHistory,
+                    showFileUpload: true,
+                    showColumnManagement,
+                  };
+                  localStorage.setItem(
+                    "panelStates",
+                    JSON.stringify(panelStates)
+                  );
+                }}
+                variant="primary"
+                fullWidth
+                className="flex items-center justify-center"
+              >
+                <FaUpload className="mr-2" /> Upload New Data
+              </Button>
+            </div>
+          </ResizablePanel>
+
+          {/* Main Panel - Chat Results + Chat Input */}
+          <ResizablePanel
+            type="right"
+            className="flex flex-col bg-background overflow-hidden"
+          >
+            {/* Query Results Section - Takes all available space with padding for chat input */}
+            <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 pb-24">
+              <div className="max-w-full break-words">
+                {queryResultsPane || children}
+              </div>
+            </div>
+
+            {/* Chat Input Section - Fixed at the bottom with dynamic left offset */}
+            <div
+              className="fixed bottom-0 right-0 bg-ui-primary border-t border-ui-border shadow-lg z-10 p-4 chat-input-container"
+              style={{
+                left: `${sidebarWidth}px`,
+                transition: isInitialRender ? "none" : "all 0s linear",
+                width: `calc(100% - ${sidebarWidth}px)`,
+              }}
             >
-              <FaUpload className="mr-2" /> Upload New Data
-            </Button>
-          </div>
-        </div>
-
-        {/* Main Panel - Chat Results + Chat Input */}
-        <div className="flex-1 flex flex-col bg-background overflow-hidden">
-          {/* Query Results Section - Takes all available space with padding for chat input */}
-          <div className="flex-1 overflow-y-auto p-4 pb-24">
-            {queryResultsPane || children}
-          </div>
-
-          {/* Chat Input Section - Fixed at the bottom */}
-          <div className="fixed bottom-0 left-64 right-0 bg-ui-primary border-t border-ui-border shadow-lg z-10 p-4">
-            {chatInputPane}
-          </div>
-        </div>
+              <div className="w-full overflow-hidden">{chatInputPane}</div>
+            </div>
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </div>
     </div>
   );
