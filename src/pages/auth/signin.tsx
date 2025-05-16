@@ -1,33 +1,100 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
 import { FcGoogle } from "react-icons/fc";
 import Link from "next/link";
+import { useRouter } from "next/router";
 
 export default function SignIn() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const router = useRouter();
+
+  // Handle URL error parameters
+  useEffect(() => {
+    // Check for error in URL query parameters
+    const { error: errorType } = router.query;
+
+    if (errorType) {
+      switch (errorType) {
+        case "CredentialsSignin":
+          setError("Invalid email or password");
+          break;
+        case "OAuthAccountNotLinked":
+          setError("Email already used with a different provider");
+          break;
+        case "OAuthSignin":
+        case "OAuthCallback":
+          setError("Error signing in with social provider");
+          break;
+        case "SessionRequired":
+          setError("You must be signed in to access this page");
+          break;
+        default:
+          setError("An error occurred during sign in");
+          break;
+      }
+    }
+  }, [router.query]);
+
+  // Validate email format
+  const isValidEmail = (email: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
 
   async function handleEmailSignIn(e: React.FormEvent) {
     e.preventDefault();
+
+    // Client-side validation
+    if (!email.trim()) {
+      setError("Email is required");
+      return;
+    }
+
+    if (!isValidEmail(email)) {
+      setError("Please enter a valid email address");
+      return;
+    }
+
+    if (!password) {
+      setError("Password is required");
+      return;
+    }
+
     setLoading(true);
     setError("");
-    const res = await signIn("credentials", {
-      redirect: true,
-      email,
-      password,
-      callbackUrl: "/project",
-    });
-    setLoading(false);
-    if (res?.error) setError("Invalid email or password");
-    // NextAuth redirect callback will handle redirection
+
+    try {
+      const res = await signIn("credentials", {
+        redirect: false,
+        email,
+        password,
+        callbackUrl: "/project",
+      });
+
+      if (res?.error) {
+        setError("Invalid email or password");
+      } else if (res?.url) {
+        // Manually redirect on success
+        router.push(res.url);
+      }
+    } catch (err) {
+      setError("Network error. Please try again later.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleGoogleSignIn() {
     setLoading(true);
-    await signIn("google", { callbackUrl: "/project" });
-    // NextAuth redirect callback will handle redirection
+    try {
+      await signIn("google", { callbackUrl: "/project" });
+    } catch (err) {
+      setError("Failed to connect to Google. Please try again.");
+      setLoading(false);
+    }
   }
 
   return (
@@ -62,7 +129,7 @@ export default function SignIn() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="Email"
-            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-ui-primary dark:bg-ui-secondary text-black dark:text-black rounded-lg focus:outline-none focus:ring-2 focus:ring-accent-primary"
+            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-ui-primary dark:bg-ui-secondary text-white dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-accent-primary"
             required
           />
           <input
@@ -70,7 +137,7 @@ export default function SignIn() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Password"
-            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-ui-primary dark:bg-ui-secondary text-black dark:text-black rounded-lg focus:outline-none focus:ring-2 focus:ring-accent-primary"
+            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-ui-primary dark:bg-ui-secondary text-white dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-accent-primary"
             required
           />
 
@@ -85,7 +152,7 @@ export default function SignIn() {
 
           <button
             type="submit"
-            className="w-full bg-accent-secondary hover:bg-accent-secondary-hover text-white font-semibold py-2 rounded-lg transition"
+            className="w-full bg-white hover:bg-accent-secondary-hover text-white hover:cursor-pointer font-semibold py-2 rounded-lg transition"
             disabled={loading}
           >
             {loading ? "Signing in..." : "Sign in with Email"}
@@ -93,7 +160,7 @@ export default function SignIn() {
         </form>
 
         {error && (
-          <div className="mt-4 text-center text-red-600 dark:text-red-400 font-medium">
+          <div className="mt-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-800 rounded-lg text-center text-red-600 dark:text-red-400 font-medium">
             {error}
           </div>
         )}

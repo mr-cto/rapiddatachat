@@ -14,10 +14,16 @@ export default async function handler(
     const { name, email, password } = req.body;
 
     // Validate required fields
-    if (!email || !password) {
-      return res
-        .status(400)
-        .json({ message: "Email and password are required" });
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: "Name is required" });
+    }
+
+    if (!email || !email.trim()) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    if (!password) {
+      return res.status(400).json({ message: "Password is required" });
     }
 
     // Validate email format
@@ -26,11 +32,25 @@ export default async function handler(
       return res.status(400).json({ message: "Invalid email format" });
     }
 
-    // Validate password strength
+    // Enhanced password validation
     if (password.length < 8) {
       return res
         .status(400)
         .json({ message: "Password must be at least 8 characters long" });
+    }
+
+    // Check password strength
+    let strengthScore = 0;
+    if (/[a-z]/.test(password)) strengthScore++; // Has lowercase
+    if (/[A-Z]/.test(password)) strengthScore++; // Has uppercase
+    if (/\d/.test(password)) strengthScore++; // Has number
+    if (/[^A-Za-z0-9]/.test(password)) strengthScore++; // Has special char
+
+    if (strengthScore < 3) {
+      return res.status(400).json({
+        message:
+          "Password is too weak. Include uppercase, lowercase, numbers, and special characters.",
+      });
     }
 
     // Create user
@@ -54,10 +74,51 @@ export default async function handler(
 
     // Handle known errors
     if (error.message === "User with this email already exists") {
-      return res.status(409).json({ message: error.message });
+      return res
+        .status(409)
+        .json({
+          message:
+            "Email already in use. Please use a different email or sign in.",
+        });
     }
 
+    // Handle database connection errors
+    if (
+      error.code === "P1001" ||
+      error.message?.includes("database connection")
+    ) {
+      console.error("Database connection error:", error);
+      return res
+        .status(503)
+        .json({
+          message: "Service temporarily unavailable. Please try again later.",
+        });
+    }
+
+    // Handle validation errors from database
+    if (error.code === "P2002") {
+      return res
+        .status(409)
+        .json({
+          message:
+            "Email already in use. Please use a different email or sign in.",
+        });
+    }
+
+    // Handle other Prisma errors
+    if (error.code?.startsWith("P")) {
+      console.error("Prisma error:", error);
+      return res
+        .status(500)
+        .json({ message: "Database error. Please try again later." });
+    }
+
+    // Log the full error for debugging
+    console.error("Unhandled signup error:", error);
+
     // Handle unknown errors
-    return res.status(500).json({ message: "Something went wrong" });
+    return res
+      .status(500)
+      .json({ message: "Something went wrong. Please try again later." });
   }
 }

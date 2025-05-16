@@ -68,7 +68,7 @@ const ProjectCreation: React.FC<ProjectCreationProps> = ({
 
   return (
     <div className="max-w-md mx-auto p-6 bg-ui-secondary dark:bg-ui-secondary rounded-lg shadow-md">
-      <h2 className="text-2xl font-bold mb-6 text-primary dark:text-primary">
+      <h2 className="text-2xl font-bold mb-6 text-primary dark:text-secondary">
         Create New Project
       </h2>
 
@@ -91,7 +91,7 @@ const ProjectCreation: React.FC<ProjectCreationProps> = ({
             id="name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-accent-primary"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-accent-primary text-secondary"
             placeholder="Enter project name"
             required
           />
@@ -108,7 +108,7 @@ const ProjectCreation: React.FC<ProjectCreationProps> = ({
             id="description"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-accent-primary"
+            className="w-full px-3 py-2 border border-gray-300 dark:text-secondary dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-accent-primary"
             placeholder="Enter project description (optional)"
             rows={4}
           />

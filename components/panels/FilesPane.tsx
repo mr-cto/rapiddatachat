@@ -405,7 +405,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
               const fileStatusResponse = await fetch(`/api/files/${fileId}`);
               if (fileStatusResponse.ok) {
                 const fileData = await fileStatusResponse.json();
-                fileStatus = fileData.status;
+                fileStatus = "working"; // fileData.status;
                 setUploadStatus(`File processing: ${fileStatus}...`);
               }
 
@@ -1086,11 +1086,11 @@ const FilesPane: React.FC<FilesPaneProps> = ({
           </div>
         )}
 
-        {error && (
+        {/* {error && (
           <div className="mb-2 p-2 bg-red-50 border border-red-200 rounded-md">
             <p className="text-red-700 text-xs">{error}</p>
           </div>
-        )}
+        )} */}
       </div>
 
       <div className="overflow-y-auto flex-1 p-1">{renderFileList()}</div>

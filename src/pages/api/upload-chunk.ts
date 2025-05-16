@@ -5,13 +5,69 @@ import { v4 as uuidv4 } from "uuid";
 import { executeQuery } from "../../../lib/database";
 import formidable from "formidable";
 import fs from "fs";
+import path from "path";
 import {
   ensureDirectoriesExist,
-  saveChunk,
-  areAllChunksUploaded,
-  reassembleChunks,
-  ChunkMetadata,
+  UPLOADS_DIR,
+  PROCESSED_DIR,
 } from "../../../lib/fileUtils";
+
+// Define chunk-related functions that are missing from fileUtils
+interface ChunkMetadata {
+  fileId: string;
+  totalChunks: number;
+  currentChunk: number;
+  originalFilename: string;
+}
+
+// Save a chunk to disk
+function saveChunk(fileId: string, chunkIndex: number, data: Buffer): void {
+  const chunkDir = path.join(UPLOADS_DIR, fileId);
+  if (!fs.existsSync(chunkDir)) {
+    fs.mkdirSync(chunkDir, { recursive: true });
+  }
+  fs.writeFileSync(path.join(chunkDir, `${chunkIndex}`), data);
+}
+
+// Check if all chunks have been uploaded
+function areAllChunksUploaded(fileId: string, totalChunks: number): boolean {
+  const chunkDir = path.join(UPLOADS_DIR, fileId);
+  if (!fs.existsSync(chunkDir)) {
+    return false;
+  }
+
+  for (let i = 0; i < totalChunks; i++) {
+    if (!fs.existsSync(path.join(chunkDir, `${i}`))) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// Reassemble chunks into a complete file
+function reassembleChunks(
+  fileId: string,
+  originalFilename: string,
+  totalChunks: number
+): string {
+  const chunkDir = path.join(UPLOADS_DIR, fileId);
+  const ext = path.extname(originalFilename);
+  const outputPath = path.join(PROCESSED_DIR, `${fileId}${ext}`);
+
+  const outputStream = fs.createWriteStream(outputPath);
+
+  for (let i = 0; i < totalChunks; i++) {
+    const chunkPath = path.join(chunkDir, `${i}`);
+    const chunkData = fs.readFileSync(chunkPath);
+    outputStream.write(chunkData);
+  }
+
+  outputStream.end();
+
+  return outputPath;
+}
+
 import { ProjectService } from "../../../lib/project/projectService";
 
 // Disable the default body parser to handle file uploads

@@ -57,7 +57,7 @@ const CreateProject: React.FC = () => {
         </button>
       </div>
 
-      <h1 className="text-3xl font-bold text-primary dark:text-primary mb-8">
+      <h1 className="text-3xl font-bold text-primary dark:text-secondary mb-8">
         Create New Project
       </h1>
 

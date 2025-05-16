@@ -45,30 +45,57 @@ class UserService {
    * @returns Created user (without password)
    */
   async createUser(data: UserCreateInput) {
-    // Check if user already exists
-    const existingUser = this.users.find((user) => user.email === data.email);
-    if (existingUser) {
-      throw new Error("User with this email already exists");
+    try {
+      // Validate input data
+      if (!data.email || typeof data.email !== "string") {
+        throw new Error("Valid email is required");
+      }
+
+      if (!data.password || typeof data.password !== "string") {
+        throw new Error("Valid password is required");
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(data.email)) {
+        throw new Error("Invalid email format");
+      }
+
+      // Check if user already exists
+      const existingUser = this.users.find(
+        (user) => user.email.toLowerCase() === data.email.toLowerCase()
+      );
+      if (existingUser) {
+        throw new Error("User with this email already exists");
+      }
+
+      // Validate password strength
+      if (data.password.length < 8) {
+        throw new Error("Password must be at least 8 characters long");
+      }
+
+      // Hash the password
+      const hashedPassword = await hash(data.password, 12);
+
+      // Create the user
+      const user: MockUser = {
+        id: crypto.randomUUID(),
+        name: data.name?.trim() || undefined,
+        email: data.email.toLowerCase().trim(),
+        password: hashedPassword,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      this.users.push(user);
+
+      // Return user without password
+      const { password, ...userWithoutPassword } = user;
+      return userWithoutPassword;
+    } catch (error) {
+      // Re-throw the error to be handled by the caller
+      throw error;
     }
-
-    // Hash the password
-    const hashedPassword = await hash(data.password, 12);
-
-    // Create the user
-    const user: MockUser = {
-      id: crypto.randomUUID(),
-      name: data.name,
-      email: data.email,
-      password: hashedPassword,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    this.users.push(user);
-
-    // Return user without password
-    const { password, ...userWithoutPassword } = user;
-    return userWithoutPassword;
   }
 
   /**
@@ -96,15 +123,37 @@ class UserService {
    * @returns User if credentials are valid, null otherwise
    */
   async validateCredentials(email: string, password: string) {
-    const user = await this.findUserByEmail(email);
-    if (!user) return null;
+    try {
+      // Validate inputs
+      if (!email || typeof email !== "string") {
+        throw new Error("Invalid email format");
+      }
 
-    const isValid = await compare(password, user.password);
-    if (!isValid) return null;
+      if (!password || typeof password !== "string") {
+        throw new Error("Invalid password format");
+      }
 
-    // Return user without password
-    const { password: _, ...userWithoutPassword } = user;
-    return userWithoutPassword;
+      const user = await this.findUserByEmail(email);
+      if (!user) {
+        // Use a generic error message to avoid revealing which part of the credentials is incorrect
+        // This helps prevent user enumeration attacks
+        console.log(`Login attempt failed: User with email ${email} not found`);
+        return null;
+      }
+
+      const isValid = await compare(password, user.password);
+      if (!isValid) {
+        console.log(`Login attempt failed: Invalid password for user ${email}`);
+        return null;
+      }
+
+      // Return user without password
+      const { password: _, ...userWithoutPassword } = user;
+      return userWithoutPassword;
+    } catch (error) {
+      console.error("Error validating credentials:", error);
+      return null;
+    }
   }
 
   /**

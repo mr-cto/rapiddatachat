@@ -91,7 +91,7 @@ const ProjectList: React.FC = () => {
 
       {projects.length === 0 ? (
         <div className="bg-ui-secondary dark:bg-ui-secondary rounded-lg p-8 text-center">
-          <h2 className="text-xl font-semibold text-primary dark:text-primary mb-4">
+          <h2 className="text-xl font-semibold text-primary dark:text-secondary mb-4">
             No Projects Yet
           </h2>
           <p className="text-secondary dark:text-secondary mb-6">
@@ -99,7 +99,7 @@ const ProjectList: React.FC = () => {
           </p>
           <button
             onClick={handleCreateProject}
-            className="px-6 py-3 bg-accent-primary text-white rounded-md hover:bg-accent-primary-hover"
+            className="px-6 py-3 bg-white text-dark rounded-md hover:bg-black hover:text-white hover:border-white border border-dark hover:cursor-pointer"
           >
             Create Your First Project
           </button>
