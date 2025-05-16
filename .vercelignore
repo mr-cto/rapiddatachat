@@ -1,0 +1,11 @@
+# Exclude webpack cache to reduce serverless function size
+.next/cache/webpack
+node_modules/**/*.{md,d.ts,map}
+
+# Other files that don't need to be deployed
+.git
+.github
+__tests__
+cypress
+docs
+scripts

@@ -26,5 +26,10 @@
         }
       ]
     }
-  ]
+  ],
+  "functions": {
+    "api/debug.js": {
+      "includeFiles": "!.next/cache/webpack/**"
+    }
+  }
 }

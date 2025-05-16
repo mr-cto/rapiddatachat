@@ -12,6 +12,10 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // Optimize serverless functions
+  experimental: {
+    outputStandalone: true,
+  },
 };
 
 export default nextConfig;
