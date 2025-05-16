@@ -1,0 +1,18 @@
+# Task ID: 13
+# Title: Implement Schema Management Interface
+# Status: done
+# Dependencies: 8, 11
+# Priority: low
+# Description: Create an interface for viewing and managing the global schema outside of the upload flow.
+# Details:
+Develop an interface that allows users to:
+- View the current global schema
+- Edit column names, descriptions, and data types
+- Add new columns manually
+- View schema version history
+- See which files contribute to which schema columns
+
+Implement validation to prevent breaking changes. Provide clear feedback for schema update operations.
+
+# Test Strategy:
+Unit test schema management components. Test validation logic for schema changes. Integration test for schema update operations. Usability testing for the schema management interface. Verify schema changes are correctly persisted and reflected in the data access.

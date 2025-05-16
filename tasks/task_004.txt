@@ -1,0 +1,43 @@
+# Task ID: 4
+# Title: Update Import Paths in Component Files
+# Status: pending
+# Dependencies: 2, 3
+# Priority: high
+# Description: Update all import paths within the moved component files to reflect the new directory structure.
+# Details:
+1. Create a script to update import paths in all component files:
+   ```javascript
+   const fs = require('fs');
+   const path = require('path');
+   const glob = require('glob');
+   
+   // Get all component files
+   const componentFiles = glob.sync('src/components/**/*.{js,jsx,ts,tsx}');
+   
+   componentFiles.forEach(file => {
+     let content = fs.readFileSync(file, 'utf8');
+     
+     // Update imports from components
+     content = content.replace(
+       /from ['"](.+?\/components\/)/g, 
+       'from "../components/'
+     );
+     
+     // Update imports from lib
+     content = content.replace(
+       /from ['"](.+?\/lib\/)/g, 
+       'from "../lib/'
+     );
+     
+     fs.writeFileSync(file, content);
+   });
+   ```
+2. Run the script and verify changes
+3. Manually check complex import cases that might not be caught by regex
+4. Test component rendering after import updates
+
+# Test Strategy:
+1. Verify a sample of files to ensure import paths have been updated correctly
+2. Check for any remaining references to the old paths
+3. Run a build to identify any import errors
+4. Test basic component rendering

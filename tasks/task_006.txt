@@ -1,0 +1,46 @@
+# Task ID: 6
+# Title: Update Import Paths in Pages and App Router Files
+# Status: pending
+# Dependencies: 4, 5
+# Priority: high
+# Description: Update all import paths in pages and app router files that reference components or library files.
+# Details:
+1. Create a script to update import paths in all page and app router files:
+   ```javascript
+   const fs = require('fs');
+   const path = require('path');
+   const glob = require('glob');
+   
+   // Get all page and app router files
+   const pageFiles = glob.sync('src/pages/**/*.{js,jsx,ts,tsx}');
+   const appFiles = glob.sync('src/app/**/*.{js,jsx,ts,tsx}');
+   const allFiles = [...pageFiles, ...appFiles];
+   
+   allFiles.forEach(file => {
+     let content = fs.readFileSync(file, 'utf8');
+     
+     // Update imports from components to src/components
+     content = content.replace(
+       /from ['"](.+?\/components\/)/g, 
+       'from "../components/'
+     );
+     
+     // Update imports from lib to src/lib
+     content = content.replace(
+       /from ['"](.+?\/lib\/)/g, 
+       'from "../lib/'
+     );
+     
+     fs.writeFileSync(file, content);
+   });
+   ```
+2. Run the script and verify changes
+3. Manually check complex import cases that might not be caught by regex
+4. Adjust relative paths based on the nesting level of each file
+5. Test page rendering after import updates
+
+# Test Strategy:
+1. Verify a sample of files to ensure import paths have been updated correctly
+2. Check for any remaining references to the old paths
+3. Run a build to identify any import errors
+4. Test page rendering and navigation

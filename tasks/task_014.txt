@@ -1,0 +1,18 @@
+# Task ID: 14
+# Title: Implement End-to-End Testing and Integration
+# Status: done
+# Dependencies: 3, 4, 5, 7, 9, 10, 12, 13
+# Priority: medium
+# Description: Develop comprehensive end-to-end tests for the complete data upload and schema management flow.
+# Details:
+Create end-to-end tests that cover:
+- Project creation
+- First file upload and schema creation
+- Subsequent file uploads and column mapping
+- Schema evolution
+- Data querying and access
+
+Use testing frameworks like Cypress, Selenium, or Playwright for frontend testing. Implement API-level integration tests. Create test data generators for various scenarios.
+
+# Test Strategy:
+Develop automated test scripts for all major user flows. Test with various file types and sizes. Verify data integrity throughout the process. Test performance under load. Conduct user acceptance testing with stakeholders.

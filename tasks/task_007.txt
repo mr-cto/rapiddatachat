@@ -1,0 +1,39 @@
+# Task ID: 7
+# Title: Update Next.js Configuration
+# Status: pending
+# Dependencies: 2, 3
+# Priority: medium
+# Description: Update Next.js configuration files to support the new directory structure.
+# Details:
+1. Review and update next.config.js/ts to ensure it supports the src directory pattern:
+   ```javascript
+   // Example next.config.js update
+   module.exports = {
+     // Ensure any path references are updated
+     // For example, if there are sassOptions or other path configurations:
+     sassOptions: {
+       includePaths: [path.join(__dirname, 'src/styles')],
+     },
+     // Update any other path-dependent configurations
+   };
+   ```
+2. Check for any custom webpack configurations that might reference specific paths
+3. Update tsconfig.json or jsconfig.json to include proper path aliases:
+   ```json
+   {
+     "compilerOptions": {
+       "baseUrl": ".",
+       "paths": {
+         "@/components/*": ["src/components/*"],
+         "@/lib/*": ["src/lib/*"]
+       }
+     }
+   }
+   ```
+4. Update any environment variable references that might contain paths
+
+# Test Strategy:
+1. Run a development build to verify configuration changes
+2. Run a production build to ensure optimizations work
+3. Test path aliases in imports
+4. Verify any custom webpack configurations still work
