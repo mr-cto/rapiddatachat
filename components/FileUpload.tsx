@@ -1,7 +1,7 @@
 import React, { useRef, useState } from "react";
 
-// Maximum file size: 50MB in bytes
-const MAX_FILE_SIZE = 50 * 1024 * 1024;
+// Maximum file size: 500MB in bytes
+const MAX_FILE_SIZE = 500 * 1024 * 1024;
 const ALLOWED_FILE_TYPES = [
   "text/csv",
   "application/vnd.ms-excel",

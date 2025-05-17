@@ -113,7 +113,7 @@ export default async function handler(
     const userId = userEmail || "unknown";
     const form = formidable({
       maxFiles: 1,
-      maxFileSize: 50 * 1024 * 1024, // 50MB per chunk
+      maxFileSize: 500 * 1024 * 1024, // 500MB per chunk
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       filter: (part) => {
         // Only accept CSV and Excel files

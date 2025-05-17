@@ -90,7 +90,7 @@ export default async function handler(
     // Configure formidable
     const formOptions: formidable.Options = {
       maxFiles: 5,
-      maxFileSize: 50 * 1024 * 1024, // 50MB
+      maxFileSize: 500 * 1024 * 1024, // 500MB
       keepExtensions: true,
       uploadDir: UPLOADS_DIR, // Use the UPLOADS_DIR which is now /tmp/uploads in Vercel
       filter: (part) => {
