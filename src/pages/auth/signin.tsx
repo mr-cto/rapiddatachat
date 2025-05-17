@@ -75,21 +75,64 @@ export default function SignIn() {
     setError("");
 
     try {
-      const res = await signIn("credentials", {
-        redirect: false,
-        email,
+      console.log("Attempting to sign in with:", {
+        email: email.toLowerCase(),
+      });
+
+      // Use the standard NextAuth.js approach with redirect: true
+      // This is the recommended way according to NextAuth.js documentation
+      await signIn("credentials", {
+        redirect: true,
+        email: email.toLowerCase(),
         password,
         callbackUrl: "/project",
       });
 
-      if (res?.error) {
-        setError("Invalid email or password");
-      } else if (res?.url) {
-        // Manually redirect on success
-        router.push(res.url);
-      }
+      // Note: The code below will not execute if redirect is true
+      // as the browser will be redirected by NextAuth.js
+      console.log("If you see this message, the redirect failed");
     } catch (err) {
-      setError("Network error. Please try again later.");
+      console.error("Sign in exception:", err);
+
+      // More detailed error handling for network issues
+      if (err instanceof Error) {
+        // Log the error details
+        console.error("Error name:", err.name);
+        console.error("Error message:", err.message);
+        console.error("Error stack:", err.stack);
+        console.error("Browser info:", navigator.userAgent);
+        console.error("Current URL:", window.location.href);
+
+        // Handle specific error types
+        if (err.message.includes("URL") || err.message.includes("url")) {
+          console.error("URL construction error detected");
+          setError(
+            "Authentication system error. Please try refreshing the page."
+          );
+
+          // Try to redirect anyway after a delay
+          setTimeout(() => {
+            window.location.href = "/project";
+          }, 2000);
+        } else if (err.message.includes("fetch")) {
+          setError(`Network connectivity error: ${err.message}`);
+        } else if (err.message.includes("CORS")) {
+          setError(
+            `Cross-Origin error: ${err.message}. This may be due to domain configuration issues.`
+          );
+        } else if (
+          err.message.includes("timeout") ||
+          err.message.includes("timed out")
+        ) {
+          setError(
+            `Request timed out: ${err.message}. The server may be overloaded or unreachable.`
+          );
+        } else {
+          setError(`Authentication error: ${err.message}`);
+        }
+      } else {
+        setError("Network error: Unknown error type");
+      }
     } finally {
       setLoading(false);
     }
@@ -98,8 +141,16 @@ export default function SignIn() {
   async function handleGoogleSignIn() {
     setLoading(true);
     try {
-      await signIn("google", { callbackUrl: "/project" });
+      // Use redirect: true explicitly for consistency
+      await signIn("google", {
+        redirect: true,
+        callbackUrl: "/project",
+      });
+
+      // This code won't execute if redirect is successful
+      console.log("If you see this message, Google redirect failed");
     } catch (err) {
+      console.error("Google sign in error:", err);
       setError("Failed to connect to Google. Please try again.");
       setLoading(false);
     }

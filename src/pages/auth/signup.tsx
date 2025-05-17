@@ -141,11 +141,13 @@ export default function SignUp() {
       try {
         // Auto sign-in after successful registration
         const signInRes = await signIn("credentials", {
-          redirect: false,
-          email,
+          redirect: true,
+          email: email.toLowerCase(),
           password,
+          callbackUrl: "/project",
         });
 
+        // Note: The code below will only run if redirect is set to false
         if (signInRes?.error) {
           // Sign-in failed after successful registration
           setError(

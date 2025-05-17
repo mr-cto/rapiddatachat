@@ -1,5 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { userService } from "../../../../lib/user/userService";
+import { PrismaClient } from "@prisma/client";
+import { hash } from "bcryptjs";
+
+const prisma = new PrismaClient();
 
 export default async function handler(
   req: NextApiRequest,
@@ -53,14 +56,45 @@ export default async function handler(
       });
     }
 
-    // Create user
-    const user = await userService.createUser({
-      name,
-      email,
-      password,
+    console.log(`Signup attempt for email: ${email.toLowerCase().trim()}`);
+
+    // Check if user already exists
+    const existingUser = await prisma.user.findUnique({
+      where: { email: email.toLowerCase().trim() },
     });
 
-    // Return success
+    if (existingUser) {
+      console.log(`Signup failed: Email ${email} already exists in database`);
+      return res.status(409).json({
+        message:
+          "Email already in use. Please use a different email or sign in.",
+      });
+    }
+
+    console.log("Hashing password...");
+    // Hash the password
+    const hashedPassword = await hash(password, 12);
+    console.log("Password hashed successfully");
+
+    console.log("Creating user in database...");
+    // Create user in the database
+    const user = await prisma.user.create({
+      data: {
+        name: name.trim(),
+        email: email.toLowerCase().trim(),
+        password: hashedPassword,
+      },
+    });
+
+    console.log(`User created successfully with ID: ${user.id}`);
+
+    // Log all users in the database for debugging
+    const allUsers = await prisma.user.findMany({
+      select: { id: true, email: true, name: true },
+    });
+    console.log("All users in database:", JSON.stringify(allUsers, null, 2));
+
+    // Return success (without password)
     return res.status(201).json({
       message: "User created successfully",
       user: {
@@ -74,12 +108,10 @@ export default async function handler(
 
     // Handle known errors
     if (error.message === "User with this email already exists") {
-      return res
-        .status(409)
-        .json({
-          message:
-            "Email already in use. Please use a different email or sign in.",
-        });
+      return res.status(409).json({
+        message:
+          "Email already in use. Please use a different email or sign in.",
+      });
     }
 
     // Handle database connection errors
@@ -88,21 +120,17 @@ export default async function handler(
       error.message?.includes("database connection")
     ) {
       console.error("Database connection error:", error);
-      return res
-        .status(503)
-        .json({
-          message: "Service temporarily unavailable. Please try again later.",
-        });
+      return res.status(503).json({
+        message: "Service temporarily unavailable. Please try again later.",
+      });
     }
 
     // Handle validation errors from database
     if (error.code === "P2002") {
-      return res
-        .status(409)
-        .json({
-          message:
-            "Email already in use. Please use a different email or sign in.",
-        });
+      return res.status(409).json({
+        message:
+          "Email already in use. Please use a different email or sign in.",
+      });
     }
 
     // Handle other Prisma errors
