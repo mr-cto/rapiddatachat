@@ -1,10 +1,13 @@
 // Use dynamic imports for Node.js modules to avoid client-side errors
 import { executeQuery } from "./database";
+import { isVercelEnvironment } from "./fileUtils";
+import axios from "axios";
 
 // These imports will only be used on the server side
 let fs: any;
 let csvParser: any;
 let xlsx: any;
+let stream: any;
 
 // Only import Node.js modules on the server side
 if (typeof window === "undefined") {
@@ -12,6 +15,7 @@ if (typeof window === "undefined") {
   fs = require("fs");
   csvParser = require("csv-parser");
   xlsx = require("xlsx");
+  stream = require("stream");
 }
 
 // Define file formats
@@ -41,28 +45,65 @@ export interface ParsedData {
  * @returns Promise with parsed data
  */
 export async function parseCSV(filePath: string): Promise<ParsedData> {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     const rows: Record<string, unknown>[] = [];
     let headers: string[] = [];
 
-    fs.createReadStream(filePath)
-      .pipe(csvParser())
-      .on("headers", (headerList: string[]) => {
-        headers = headerList;
-      })
-      .on("data", (row: Record<string, unknown>) => {
-        rows.push(row);
-      })
-      .on("end", () => {
-        resolve({
-          headers,
-          rows,
-          rowCount: rows.length,
+    try {
+      // Handle remote files (URLs)
+      if (filePath.startsWith("http")) {
+        console.log(`Parsing remote CSV file: ${filePath}`);
+        const response = await axios.get(filePath, {
+          responseType: "arraybuffer",
         });
-      })
-      .on("error", (error: Error) => {
-        reject(error);
-      });
+        const fileContent = Buffer.from(response.data);
+
+        // Create a readable stream from the buffer
+        const bufferStream = new stream.PassThrough();
+        bufferStream.end(fileContent);
+
+        bufferStream
+          .pipe(csvParser())
+          .on("headers", (headerList: string[]) => {
+            headers = headerList;
+          })
+          .on("data", (row: Record<string, unknown>) => {
+            rows.push(row);
+          })
+          .on("end", () => {
+            resolve({
+              headers,
+              rows,
+              rowCount: rows.length,
+            });
+          })
+          .on("error", (error: Error) => {
+            reject(error);
+          });
+      } else {
+        // Handle local files
+        fs.createReadStream(filePath)
+          .pipe(csvParser())
+          .on("headers", (headerList: string[]) => {
+            headers = headerList;
+          })
+          .on("data", (row: Record<string, unknown>) => {
+            rows.push(row);
+          })
+          .on("end", () => {
+            resolve({
+              headers,
+              rows,
+              rowCount: rows.length,
+            });
+          })
+          .on("error", (error: Error) => {
+            reject(error);
+          });
+      }
+    } catch (error) {
+      reject(error);
+    }
   });
 }
 
@@ -73,7 +114,21 @@ export async function parseCSV(filePath: string): Promise<ParsedData> {
  */
 export async function parseXLSX(filePath: string): Promise<ParsedData> {
   try {
-    const workbook = xlsx.readFile(filePath);
+    let workbook;
+
+    // Handle remote files (URLs)
+    if (filePath.startsWith("http")) {
+      console.log(`Parsing remote XLSX file: ${filePath}`);
+      const response = await axios.get(filePath, {
+        responseType: "arraybuffer",
+      });
+      const fileContent = Buffer.from(response.data);
+      workbook = xlsx.read(fileContent, { type: "buffer" });
+    } else {
+      // Handle local files
+      workbook = xlsx.readFile(filePath);
+    }
+
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
 
@@ -99,6 +154,7 @@ export async function parseXLSX(filePath: string): Promise<ParsedData> {
       rowCount: rows.length,
     };
   } catch (error) {
+    console.error(`Error parsing XLSX file: ${error}`);
     throw error;
   }
 }

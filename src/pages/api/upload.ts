@@ -5,10 +5,13 @@ import { v4 as uuidv4 } from "uuid";
 import { executeQuery } from "../../../lib/database";
 import { PrismaClient } from "@prisma/client";
 import formidable, { File as FormidableFile } from "formidable";
+import fs from "fs";
 import {
   UPLOADS_DIR,
   ensureDirectoriesExist,
   generateUniqueFilename,
+  uploadToCloudStorage,
+  isVercelEnvironment,
 } from "../../../lib/fileUtils";
 import { ProjectService } from "../../../lib/project/projectService";
 // Removed import for fileActivationSimple
@@ -78,16 +81,18 @@ export default async function handler(
     const userId = userEmail || "unknown";
     console.log(`User ID: ${userId}`);
     console.log("Initializing formidable...");
-    console.log(`Upload directory: ${UPLOADS_DIR}`);
-    const form = formidable({
+    console.log(
+      `Upload directory: ${
+        isVercelEnvironment ? "Vercel Blob Storage" : UPLOADS_DIR
+      }`
+    );
+
+    // Configure formidable
+    const formOptions: formidable.Options = {
       maxFiles: 5,
       maxFileSize: 50 * 1024 * 1024, // 50MB
-      uploadDir: UPLOADS_DIR,
       keepExtensions: true,
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      filename: (name, ext, _) => {
-        return generateUniqueFilename(name + ext);
-      },
+      uploadDir: UPLOADS_DIR, // Use the UPLOADS_DIR which is now /tmp/uploads in Vercel
       filter: (part) => {
         // Only accept CSV and Excel files
         if (part.mimetype) {
@@ -95,7 +100,14 @@ export default async function handler(
         }
         return false;
       },
-    });
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    formOptions.filename = (name, ext, _) => {
+      return generateUniqueFilename(name + ext);
+    };
+
+    const form = formidable(formOptions);
 
     // Parse the form data
     console.log("Parsing form data...");
@@ -161,7 +173,55 @@ export default async function handler(
         const originalFilename = file.originalFilename || "unknown";
         const format = originalFilename.split(".").pop() || "";
         console.log(`Processing file: ${originalFilename}, ID: ${fileId}`);
-        console.log(`File path: ${file.filepath}`);
+
+        // Handle file storage based on environment
+        let filePath = file.filepath;
+
+        try {
+          if (isVercelEnvironment) {
+            console.log(
+              `Processing file in Vercel environment: ${file.filepath}`
+            );
+
+            // Check if file exists
+            if (!fs.existsSync(file.filepath)) {
+              console.error(`File does not exist at path: ${file.filepath}`);
+              throw new Error(`File not found at ${file.filepath}`);
+            }
+
+            // Read the file content
+            console.log(`Reading file content from: ${file.filepath}`);
+            const fileContent = fs.readFileSync(file.filepath);
+            console.log(
+              `File content read successfully, size: ${fileContent.length} bytes`
+            );
+
+            // Generate a unique filename
+            const uniqueFilename = generateUniqueFilename(originalFilename);
+            console.log(`Generated unique filename: ${uniqueFilename}`);
+
+            // Upload to cloud storage or /tmp
+            filePath = await uploadToCloudStorage(fileContent, uniqueFilename);
+            console.log(`File stored at: ${filePath}`);
+          }
+        } catch (fileError) {
+          console.error(`Error processing file in Vercel:`, fileError);
+          console.log(
+            `File error details: ${
+              fileError instanceof Error ? fileError.message : "Unknown"
+            }`
+          );
+          console.log(
+            `File error stack: ${
+              fileError instanceof Error ? fileError.stack : "No stack trace"
+            }`
+          );
+
+          // Continue with the original filepath
+          console.log(`Continuing with original filepath: ${file.filepath}`);
+        }
+
+        console.log(`File path: ${filePath}`);
         console.log(`File size: ${file.size} bytes, format: ${format}`);
         // Get mime type but don't use it yet - will be used in future features
         // const mimeType = getMimeTypeFromExtension(originalFilename) || "";
@@ -184,7 +244,7 @@ export default async function handler(
               CURRENT_TIMESTAMP,
               ${file.size},
               '${format}',
-              '${file.filepath.replace(/'/g, "''")}'
+              '${filePath.replace(/'/g, "''")}'
             )
           `);
 
@@ -251,7 +311,7 @@ export default async function handler(
           size: file.size,
           status: "pending",
           format,
-          path: file.filepath,
+          path: filePath,
           dbOperationSuccess,
           projectId: projectId || null,
         };
@@ -260,14 +320,14 @@ export default async function handler(
 
     // Check if any database operations failed
     const anyDbOperationFailed = fileResults.some(
-      (file) => !file.dbOperationSuccess
+      (file: any) => !file.dbOperationSuccess
     );
     console.log(`Any database operations failed: ${anyDbOperationFailed}`);
 
     // Return success response with file information
     const response = {
       success: true,
-      files: fileResults.map((file) => ({
+      files: fileResults.map((file: any) => ({
         id: file.id,
         name: file.name,
         size: file.size,
@@ -288,6 +348,8 @@ export default async function handler(
     // Process files asynchronously
     console.log("Starting asynchronous file processing...");
     processFilesAsync(fileResults, req.headers.cookie || "", userId);
+
+    // Note: Files uploaded to Vercel Blob will be automatically deleted after successful ingestion
 
     console.log("=== API UPLOAD HANDLER COMPLETE ===");
     return;

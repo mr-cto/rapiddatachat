@@ -40,7 +40,6 @@ next-env.d.ts
 /logs
 
 # uploads and processed data
-/uploads
 /processed
 
 # package-lock (use yarn.lock instead)

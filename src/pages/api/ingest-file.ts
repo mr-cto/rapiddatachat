@@ -15,7 +15,11 @@ import {
   addProvenanceColumns,
 } from "../../../lib/fileIngestion";
 import { convertToParquet } from "../../../lib/parquetConversion";
-import { UPLOADS_DIR } from "../../../lib/fileUtils";
+import {
+  UPLOADS_DIR,
+  isVercelEnvironment,
+  cleanupTempFiles,
+} from "../../../lib/fileUtils";
 import {
   handleFileError,
   ErrorType,
@@ -57,6 +61,7 @@ export default async function handler(
 
   let fileId: string | null = null;
   let dbOperationsSkipped = false;
+  let filePath: string = "";
 
   try {
     fileId = req.body.fileId;
@@ -96,10 +101,13 @@ export default async function handler(
         sourceId = fileId;
       }
 
-      filePath = path.join(
-        UPLOADS_DIR,
-        path.basename((file.filepath as string) || "")
-      );
+      // Handle file path based on environment
+      filePath = file.filepath as string;
+
+      // If it's a local path in development, ensure it's properly joined
+      if (!isVercelEnvironment && !filePath.startsWith("http")) {
+        filePath = path.join(UPLOADS_DIR, path.basename(filePath || ""));
+      }
       format = file.format as string;
     } catch (dbError) {
       // Check if this is a DuckDB server environment error
@@ -118,18 +126,24 @@ export default async function handler(
 
         // Try to get file information from request body or fallback to defaults
         sourceId = req.body.sourceId || fileId;
-        filePath = path.join(
-          UPLOADS_DIR,
-          req.body.filename || `${fileId}.unknown`
-        );
+
+        // Use the filepath directly if it's a URL (Vercel Blob)
+        if (req.body.filepath && req.body.filepath.startsWith("http")) {
+          filePath = req.body.filepath;
+        } else {
+          filePath = path.join(
+            UPLOADS_DIR,
+            req.body.filename || `${fileId}.unknown`
+          );
+        }
         format = req.body.format || "csv";
       } else {
         throw dbError;
       }
     }
 
-    // Check if file exists
-    if (!fs.existsSync(filePath)) {
+    // Check if file exists (only for local files, not for URLs)
+    if (!filePath.startsWith("http") && !fs.existsSync(filePath)) {
       await handleFileError(
         fileId,
         ErrorType.VALIDATION,
@@ -295,6 +309,20 @@ export default async function handler(
       }
     }
 
+    // Clean up the file from Blob storage if it's a URL (Vercel environment)
+    if (isVercelEnvironment && filePath.startsWith("http")) {
+      try {
+        logDebug(`Cleaning up file from Blob storage: ${filePath}`);
+        await cleanupTempFiles([filePath]);
+        logDebug(`Successfully cleaned up file from Blob storage`);
+      } catch (cleanupError) {
+        console.warn(
+          `Warning: Failed to clean up file from Blob storage: ${cleanupError}`
+        );
+        // Don't fail the request if cleanup fails
+      }
+    }
+
     logDebug(`Completed ingestion for file ${fileId}`);
 
     return res.status(200).json({
@@ -310,6 +338,24 @@ export default async function handler(
     });
   } catch (error) {
     console.error("File ingestion error:", error);
+
+    // Clean up the file from Blob storage if it's a URL (Vercel environment)
+    if (
+      isVercelEnvironment &&
+      typeof filePath === "string" &&
+      filePath.startsWith("http")
+    ) {
+      try {
+        logDebug(`Cleaning up file from Blob storage after error: ${filePath}`);
+        await cleanupTempFiles([filePath]);
+        logDebug(`Successfully cleaned up file from Blob storage after error`);
+      } catch (cleanupError) {
+        console.warn(
+          `Warning: Failed to clean up file from Blob storage after error: ${cleanupError}`
+        );
+        // Don't fail the request if cleanup fails
+      }
+    }
 
     // Handle the error
     if (fileId) {

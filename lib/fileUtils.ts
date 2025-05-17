@@ -1,19 +1,110 @@
 import fs from "fs";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
+import { put, list, del } from "@vercel/blob";
 
 // Define paths for file storage
-export const UPLOADS_DIR = path.join(process.cwd(), "uploads");
-export const PROCESSED_DIR = path.join(process.cwd(), "processed");
+export const UPLOADS_DIR =
+  process.env.VERCEL === "1"
+    ? "/tmp/uploads"
+    : path.join(process.cwd(), "uploads");
+export const PROCESSED_DIR =
+  process.env.VERCEL === "1"
+    ? "/tmp/processed"
+    : path.join(process.cwd(), "processed");
+
+// Check if we're in a Vercel environment
+export const isVercelEnvironment = process.env.VERCEL === "1";
 
 // Ensure directories exist
 export function ensureDirectoriesExist() {
-  if (!fs.existsSync(UPLOADS_DIR)) {
-    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-  }
+  try {
+    // Create directories regardless of environment
+    // In Vercel, we'll use /tmp which is writable
+    if (!fs.existsSync(UPLOADS_DIR)) {
+      console.log(`Creating uploads directory: ${UPLOADS_DIR}`);
+      fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+    }
 
-  if (!fs.existsSync(PROCESSED_DIR)) {
-    fs.mkdirSync(PROCESSED_DIR, { recursive: true });
+    if (!fs.existsSync(PROCESSED_DIR)) {
+      console.log(`Creating processed directory: ${PROCESSED_DIR}`);
+      fs.mkdirSync(PROCESSED_DIR, { recursive: true });
+    }
+
+    console.log(
+      `Directories created successfully: ${UPLOADS_DIR}, ${PROCESSED_DIR}`
+    );
+  } catch (error) {
+    console.error("Error creating directories:", error);
+    if (isVercelEnvironment) {
+      console.error(
+        "This may be due to permissions in the Vercel environment."
+      );
+    }
+  }
+}
+
+// Upload a file to cloud storage
+export async function uploadToCloudStorage(
+  file: Buffer | Blob,
+  filename: string
+): Promise<string> {
+  if (isVercelEnvironment) {
+    try {
+      // Check if BLOB_READ_WRITE_TOKEN is set
+      if (!process.env.BLOB_READ_WRITE_TOKEN) {
+        console.warn(
+          "BLOB_READ_WRITE_TOKEN is not set. File will be stored in /tmp but may not persist."
+        );
+
+        // Fall back to local storage in /tmp
+        const filePath = path.join(UPLOADS_DIR, filename);
+        if (file instanceof Buffer) {
+          fs.writeFileSync(filePath, file);
+        } else {
+          const blobFile = file as Blob;
+          const arrayBuffer = await blobFile.arrayBuffer();
+          fs.writeFileSync(filePath, Buffer.from(arrayBuffer));
+        }
+        return filePath;
+      }
+
+      // Use Vercel Blob in production with explicit token
+      console.log(`Uploading file to Vercel Blob: ${filename}`);
+      const blob = await put(filename, file, {
+        access: "public",
+        token: process.env.BLOB_READ_WRITE_TOKEN,
+      });
+      console.log(`File uploaded to Vercel Blob: ${blob.url}`);
+      return blob.url;
+    } catch (error) {
+      console.error("Error uploading to Vercel Blob:", error);
+
+      // Fall back to local storage in /tmp
+      console.log(`Falling back to local storage in ${UPLOADS_DIR}`);
+      const filePath = path.join(UPLOADS_DIR, filename);
+      if (file instanceof Buffer) {
+        fs.writeFileSync(filePath, file);
+      } else {
+        const blobFile = file as Blob;
+        const arrayBuffer = await blobFile.arrayBuffer();
+        fs.writeFileSync(filePath, Buffer.from(arrayBuffer));
+      }
+      return filePath;
+    }
+  } else {
+    // In development, save to local filesystem
+    const filePath = path.join(UPLOADS_DIR, filename);
+    if (file instanceof Buffer) {
+      fs.writeFileSync(filePath, file);
+    } else {
+      // For Blob objects, we need to handle them differently
+      // This is a type guard to ensure TypeScript knows we're dealing with a Blob
+      const blobFile = file as Blob;
+      const arrayBuffer = await blobFile.arrayBuffer();
+      fs.writeFileSync(filePath, Buffer.from(arrayBuffer));
+    }
+    return filePath;
   }
 }
 
@@ -64,14 +155,41 @@ export function getHumanReadableSize(bytes: number): string {
 }
 
 // Clean up temporary files
-export function cleanupTempFiles(filePaths: string[]): void {
-  filePaths.forEach((filePath) => {
+export async function cleanupTempFiles(filePaths: string[]): Promise<void> {
+  for (const filePath of filePaths) {
     try {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+      if (isVercelEnvironment) {
+        // Delete from Vercel Blob if it's a URL
+        if (filePath.startsWith("http")) {
+          console.log(`Deleting file from Vercel Blob: ${filePath}`);
+          if (process.env.BLOB_READ_WRITE_TOKEN) {
+            await del(filePath, { token: process.env.BLOB_READ_WRITE_TOKEN });
+            console.log(`Successfully deleted from Vercel Blob: ${filePath}`);
+          } else {
+            console.warn(
+              `Cannot delete from Vercel Blob: BLOB_READ_WRITE_TOKEN not set`
+            );
+          }
+        }
+        // Also try to delete from /tmp if it exists
+        else if (fs.existsSync(filePath)) {
+          console.log(`Deleting file from /tmp: ${filePath}`);
+          fs.unlinkSync(filePath);
+          console.log(`Successfully deleted from /tmp: ${filePath}`);
+        }
+      } else {
+        // Delete from local filesystem
+        if (fs.existsSync(filePath)) {
+          console.log(`Deleting file from local filesystem: ${filePath}`);
+          fs.unlinkSync(filePath);
+          console.log(`Successfully deleted file: ${filePath}`);
+        }
       }
     } catch (error) {
       console.error(`Error cleaning up file ${filePath}:`, error);
+      console.error(
+        `Error details: ${error instanceof Error ? error.message : "Unknown"}`
+      );
     }
-  });
+  }
 }
