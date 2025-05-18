@@ -30,6 +30,7 @@ export enum BatchPartitionStatus {
   FAILED = "failed",
   CANCELLED = "cancelled",
   PAUSED = "paused",
+  TERMINATED = "terminated",
 }
 
 /**
@@ -207,7 +208,7 @@ class Worker extends EventEmitter {
       clearInterval(this.processingInterval);
       this.processingInterval = null;
     }
-    this._status = "terminated";
+    this._status = BatchPartitionStatus.TERMINATED;
   }
 }
 
