@@ -7,6 +7,7 @@ import FilesPane from "../../../../components/panels/FilesPane";
 import ColumnManagementPane from "../../../../components/panels/ColumnManagementPane";
 import ImprovedQueryResultsPane from "../../../../components/panels/ImprovedQueryResultsPane";
 import ImprovedChatInputPane from "../../../../components/panels/ImprovedChatInputPane";
+import UploadPreviewPane from "../../../../components/panels/UploadPreviewPane";
 
 interface Query {
   id: string;
@@ -37,6 +38,7 @@ const ProjectDashboard: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [uploadPreview, setUploadPreview] = useState<Record<string, unknown>[] | null>(null);
   const [result, setResult] = useState<{
     sqlQuery: string;
     explanation: string;
@@ -452,6 +454,7 @@ const ProjectDashboard: React.FC = () => {
             onSelectFile={handleFileSelect}
             selectedFileId={selectedFileId}
             projectId={projectId as string}
+            onPreviewParsed={(data) => setUploadPreview(data)}
           />
         }
         columnManagementPane={
@@ -470,17 +473,24 @@ const ProjectDashboard: React.FC = () => {
           />
         }
         queryResultsPane={
-          <ImprovedQueryResultsPane
-            isLoading={isLoading}
-            error={error}
-            result={result}
-            currentQuery={currentQuery}
-            onPageChange={handlePageChange}
-            onSortChange={handleSortChange}
-            onApplyFilters={handleApplyFilters}
-            onColumnMergesChange={handleColumnMergesChange}
-            userId={session?.user?.id}
-          />
+          uploadPreview ? (
+            <UploadPreviewPane
+              data={uploadPreview}
+              onClear={() => setUploadPreview(null)}
+            />
+          ) : (
+            <ImprovedQueryResultsPane
+              isLoading={isLoading}
+              error={error}
+              result={result}
+              currentQuery={currentQuery}
+              onPageChange={handlePageChange}
+              onSortChange={handleSortChange}
+              onApplyFilters={handleApplyFilters}
+              onColumnMergesChange={handleColumnMergesChange}
+              userId={session?.user?.id}
+            />
+          )
         }
         chatInputPane={
           <ImprovedChatInputPane

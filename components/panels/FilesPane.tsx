@@ -11,6 +11,7 @@ import { useRouter } from "next/router";
 import { FaFile, FaTrash, FaEye, FaUpload } from "react-icons/fa";
 import SchemaColumnMapper from "../SchemaColumnMapper";
 import { Button, Card } from "../ui";
+import { parseFileClient } from "../../utils/clientParse";
 
 interface FileData {
   id: string;
@@ -42,6 +43,7 @@ interface FilesPaneProps {
   onSelectFile: (fileId: string) => void;
   selectedFileId?: string;
   projectId?: string;
+  onPreviewParsed?: (preview: Record<string, unknown>[]) => void;
 }
 
 // Memoized file item component to prevent unnecessary re-renders
@@ -162,6 +164,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
   onSelectFile,
   selectedFileId,
   projectId,
+  onPreviewParsed,
 }) => {
   const { data: session } = useSession();
   const [files, setFiles] = useState<FileData[]>([]);
@@ -372,7 +375,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
   };
 
   // Handle file selection
-  const handleFiles = (files: FileList | null) => {
+  const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
 
     const { valid, errors } = validateFiles(files);
@@ -383,6 +386,14 @@ const FilesPane: React.FC<FilesPaneProps> = ({
     }
 
     if (valid.length > 0) {
+      if (onPreviewParsed) {
+        try {
+          const preview = await parseFileClient(valid[0]);
+          onPreviewParsed(preview);
+        } catch (err) {
+          console.warn("Preview parsing failed", err);
+        }
+      }
       handleFilesUpload(valid);
     }
   };
