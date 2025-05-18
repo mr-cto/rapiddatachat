@@ -249,18 +249,27 @@ const ProjectList: React.FC = () => {
     showArchived ? project.archived : !project.archived
   );
 
+  // Use a consistent structure for loading state to avoid hydration errors
   if (status === "loading" || isLoading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-accent-primary"></div>
+      <div className="min-h-screen flex flex-col bg-background">
+        <Header title="RapidDataChat" />
+        <div className="max-w-6xl mx-auto px-4 py-8 w-full flex justify-center items-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-accent-primary"></div>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="p-4 bg-red-900/30 border border-red-800 rounded-lg text-red-400 max-w-6xl mx-auto mt-8">
-        {error}
+      <div className="min-h-screen flex flex-col bg-background">
+        <Header title="RapidDataChat" />
+        <div className="max-w-6xl mx-auto px-4 py-8 w-full">
+          <div className="p-4 bg-red-900/30 border border-red-800 rounded-lg text-red-400">
+            {error}
+          </div>
+        </div>
       </div>
     );
   }

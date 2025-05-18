@@ -38,10 +38,6 @@ console.log(
 );
 console.log("- NODE_ENV:", process.env.NODE_ENV);
 console.log("- DATABASE_URL:", process.env.DATABASE_URL ? "Set" : "Not set");
-console.log(
-  "- PRISMA_STORAGE_DATABASE_URL:",
-  process.env.PRISMA_STORAGE_DATABASE_URL ? "Set" : "Not set"
-);
 
 // Create handler with error logging
 const authHandler = NextAuth(authOptions);

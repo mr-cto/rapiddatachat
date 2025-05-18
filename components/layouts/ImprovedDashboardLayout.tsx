@@ -5,7 +5,8 @@ import React, {
   useMemo,
   useRef,
 } from "react";
-import { useSession, signOut } from "next-auth/react";
+import { signOut } from "next-auth/react";
+import { useStableSession } from "../../lib/hooks/useStableSession";
 import { useRouter } from "next/router";
 import Image from "next/image";
 import { Button, Link, Card, ResizablePanel, ResizablePanelGroup } from "../ui";
@@ -36,7 +37,7 @@ const ImprovedDashboardLayout: React.FC<ImprovedDashboardLayoutProps> = ({
   chatInputPane,
   projectName,
 }) => {
-  const { data: session, status } = useSession();
+  const { data: session, status, isAuthenticated } = useStableSession();
   const router = useRouter();
   // UI state
   const [showFileUpload, setShowFileUpload] = useState(false);
@@ -146,18 +147,21 @@ const ImprovedDashboardLayout: React.FC<ImprovedDashboardLayoutProps> = ({
 
   // Redirect to sign-in page if not authenticated
   React.useEffect(() => {
-    // Skip on window focus events
+    // Always check authentication on initial mount
     if (initialMountRef.current) {
       initialMountRef.current = false;
-    } else if (document.visibilityState === "visible") {
-      // Don't redirect on tab focus
-      return;
-    }
 
-    if (status === "unauthenticated") {
-      router.push("/auth/signin");
+      // If not authenticated and status is resolved, redirect
+      if (!isAuthenticated && status === "unauthenticated") {
+        router.push("/auth/signin");
+      }
+    } else if (document.visibilityState === "visible") {
+      // On tab focus, only check if status is explicitly unauthenticated
+      if (status === "unauthenticated") {
+        router.push("/auth/signin");
+      }
     }
-  }, [status, router]);
+  }, [isAuthenticated, status, router]);
 
   // Show loading state while checking authentication
   if (status === "loading") {

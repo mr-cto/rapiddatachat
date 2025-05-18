@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { useSession } from "next-auth/react";
 import { useRouter } from "next/router";
+import { useStableSession } from "../../lib/hooks/useStableSession";
 import { FaDatabase, FaColumns } from "react-icons/fa";
 import { ColumnManager } from "../ColumnManager";
 import { GlobalSchema } from "../../lib/schemaManagement";
@@ -13,12 +13,12 @@ interface ColumnManagementPaneProps {
 const ColumnManagementPane: React.FC<ColumnManagementPaneProps> = ({
   onColumnChange,
 }) => {
-  const { data: session } = useSession();
+  const { data: session, isAuthenticated, userId } = useStableSession();
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const { id: projectId } = router.query;
 
-  if (!session?.user) {
+  if (!isAuthenticated) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-6 text-center text-gray-400 bg-ui-secondary rounded-md">
         <FaDatabase className="w-12 h-12 mb-4 opacity-30" />
@@ -81,7 +81,7 @@ const ColumnManagementPane: React.FC<ColumnManagementPaneProps> = ({
 
       <div className="overflow-y-auto flex-1 p-4 bg-ui-primary">
         <ColumnManager
-          userId={session.user.email || session.user.id || ""}
+          userId={userId || ""}
           projectId={projectId}
           onColumnChange={onColumnChange}
         />

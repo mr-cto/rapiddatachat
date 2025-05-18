@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useSession } from "next-auth/react";
 import { FaHistory, FaSearch, FaSpinner } from "react-icons/fa";
+import { useStableSession } from "../../lib/hooks/useStableSession";
 
 interface Query {
   id: string;
@@ -29,7 +29,7 @@ const HistoryPane: React.FC<HistoryPaneProps> = ({
   selectedQueryId,
   projectId,
 }) => {
-  const { data: session } = useSession();
+  const { data: session, userId } = useStableSession();
   const [queries, setQueries] = useState<Query[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +41,7 @@ const HistoryPane: React.FC<HistoryPaneProps> = ({
 
   // Memoize the fetch function to avoid recreating it on every render
   const fetchQueries = useCallback(async () => {
-    if (!session?.user) return;
+    if (!userId) return;
 
     try {
       setLoading(true);
@@ -74,7 +74,7 @@ const HistoryPane: React.FC<HistoryPaneProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [session, projectId]);
+  }, [userId, projectId]);
 
   // Initial fetch and visibility change handler setup
   useEffect(() => {
@@ -110,7 +110,7 @@ const HistoryPane: React.FC<HistoryPaneProps> = ({
     }
 
     fetchQueries();
-  }, [session, projectId, fetchQueries]);
+  }, [userId, projectId, fetchQueries]);
 
   // Format date for display
   const formatDate = (dateString: string) => {

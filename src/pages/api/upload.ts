@@ -12,6 +12,7 @@ import {
   generateUniqueFilename,
   uploadToCloudStorage,
   isVercelEnvironment,
+  generateFilePath,
 } from "../../../lib/fileUtils";
 import { ProjectService } from "../../../lib/project/projectService";
 // Removed import for fileActivationSimple
@@ -200,8 +201,14 @@ export default async function handler(
             const uniqueFilename = generateUniqueFilename(originalFilename);
             console.log(`Generated unique filename: ${uniqueFilename}`);
 
-            // Upload to cloud storage or /tmp
-            filePath = await uploadToCloudStorage(fileContent, uniqueFilename);
+            // Upload to cloud storage or /tmp with folder structure
+            filePath = await uploadToCloudStorage(
+              fileContent,
+              uniqueFilename,
+              userId,
+              projectId,
+              fileId
+            );
             console.log(`File stored at: ${filePath}`);
           }
         } catch (fileError) {

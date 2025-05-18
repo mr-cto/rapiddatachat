@@ -5,16 +5,7 @@ import fs from "fs";
 import path from "path";
 import { dropMergedColumnView } from "../../../../lib/columnMergeService";
 import { authOptions } from "../../../../lib/authOptions";
-
-// Initialize Prisma client (singleton)
-let prismaInstance: PrismaClient | null = null;
-
-function getPrismaClient(): PrismaClient {
-  if (!prismaInstance) {
-    prismaInstance = new PrismaClient();
-  }
-  return prismaInstance;
-}
+import { getPrismaClient } from "../../../../lib/prisma/replicaClient";
 
 export default async function handler(
   req: NextApiRequest,
@@ -66,19 +57,23 @@ async function handleGetRequest(
 ) {
   try {
     // Get the file
-    const file = await prisma.file.findFirst({
-      where: {
-        id: fileId,
-        userId: userEmail,
-      },
-      include: {
-        _count: {
-          select: {
-            fileErrors: true,
+    const file = await (prisma as any).useReplica(
+      async (replicaClient: PrismaClient) => {
+        return await replicaClient.file.findFirst({
+          where: {
+            id: fileId,
+            userId: userEmail,
           },
-        },
-      },
-    });
+          include: {
+            _count: {
+              select: {
+                fileErrors: true,
+              },
+            },
+          },
+        });
+      }
+    );
 
     if (!file) {
       return res.status(404).json({ error: "File not found" });
@@ -106,60 +101,115 @@ async function handleDeleteRequest(
 ) {
   try {
     // Get the file to check if it exists and belongs to the user
-    const file = await prisma.file.findFirst({
-      where: {
-        id: fileId,
-        userId: userEmail,
-      },
-    });
+    const file = await (prisma as any).useReplica(
+      async (replicaClient: PrismaClient) => {
+        return await replicaClient.file.findFirst({
+          where: {
+            id: fileId,
+            userId: userEmail,
+          },
+        });
+      }
+    );
 
     if (!file) {
       return res.status(404).json({ error: "File not found" });
     }
 
-    // Delete the file data
-    await prisma.fileData.deleteMany({
-      where: {
-        fileId,
-      },
-    });
+    // Delete the file data using batched deletion to prevent timeouts
+    console.log(`Starting batched deletion of file data for file ${fileId}`);
+
+    // First, count how many records we need to delete
+    const countResult = await (prisma as any).useReplica(
+      async (replicaClient: PrismaClient) => {
+        return await replicaClient.$queryRaw<[{ count: number }]>`
+        SELECT COUNT(*) as count FROM file_data WHERE file_id = ${fileId}
+      `;
+      }
+    );
+
+    const totalRecords = parseInt(countResult[0].count.toString());
+    console.log(`Found ${totalRecords} records to delete`);
+
+    if (totalRecords > 0) {
+      // Use batched deletion with direct SQL for better performance
+      const batchSize = 5000;
+      let deletedCount = 0;
+
+      while (deletedCount < totalRecords) {
+        // Use raw SQL with the read replica connection for better performance
+        await (prisma as any).useReplica(
+          async (replicaClient: PrismaClient) => {
+            return await replicaClient.$executeRaw`
+            DELETE FROM file_data
+            WHERE id IN (
+              SELECT id FROM file_data
+              WHERE file_id = ${fileId}
+              LIMIT ${batchSize}
+            )
+          `;
+          }
+        );
+
+        deletedCount += batchSize;
+        console.log(
+          `Deleted ${Math.min(
+            deletedCount,
+            totalRecords
+          )} of ${totalRecords} records`
+        );
+      }
+    }
+
+    console.log(`Completed deletion of file data for file ${fileId}`);
 
     // Delete file errors
-    await prisma.fileError.deleteMany({
-      where: {
-        fileId,
-      },
+    await (prisma as any).useReplica(async (replicaClient: PrismaClient) => {
+      return await replicaClient.fileError.deleteMany({
+        where: {
+          fileId,
+        },
+      });
     });
 
     // Delete dead letter queue items
-    await prisma.deadLetterQueueItem.deleteMany({
-      where: {
-        fileId,
-      },
+    await (prisma as any).useReplica(async (replicaClient: PrismaClient) => {
+      return await replicaClient.deadLetterQueueItem.deleteMany({
+        where: {
+          fileId,
+        },
+      });
     });
 
     // Delete sources
-    await prisma.source.deleteMany({
-      where: {
-        fileId,
-      },
+    await (prisma as any).useReplica(async (replicaClient: PrismaClient) => {
+      return await replicaClient.source.deleteMany({
+        where: {
+          fileId,
+        },
+      });
     });
 
     // Delete column mappings (this was missing and causing the foreign key constraint error)
-    await prisma.columnMapping.deleteMany({
-      where: {
-        fileId,
-      },
+    await (prisma as any).useReplica(async (replicaClient: PrismaClient) => {
+      return await replicaClient.columnMapping.deleteMany({
+        where: {
+          fileId,
+        },
+      });
     });
 
     // Get and delete column merges
-    // Use any as a workaround for TypeScript errors with Prisma
-    const prismaAny = prisma as any;
-    const columnMerges = await prismaAny.columnMerge.findMany({
-      where: {
-        fileId,
-      },
-    });
+    // Get column merges
+    const columnMerges = await (prisma as any).useReplica(
+      async (replicaClient: PrismaClient) => {
+        return await (replicaClient as any).columnMerge.findMany({
+          where: {
+            fileId,
+          },
+        });
+      }
+    );
 
     // Drop PostgreSQL views for each column merge
     for (const merge of columnMerges) {
@@ -182,17 +232,21 @@ async function handleDeleteRequest(
     }
 
     // Delete column merges
-    await prismaAny.columnMerge.deleteMany({
-      where: {
-        fileId,
-      },
+    await (prisma as any).useReplica(async (replicaClient: PrismaClient) => {
+      return await (replicaClient as any).columnMerge.deleteMany({
+        where: {
+          fileId,
+        },
+      });
     });
 
     // Delete the file record
-    await prisma.file.delete({
-      where: {
-        id: fileId,
-      },
+    await (prisma as any).useReplica(async (replicaClient: PrismaClient) => {
+      return await replicaClient.file.delete({
+        where: {
+          id: fileId,
+        },
+      });
     });
 
     // Delete the physical file if it exists
