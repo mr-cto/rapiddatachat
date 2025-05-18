@@ -47,8 +47,13 @@ export function ensureDirectoriesExist() {
 // Upload a file to cloud storage
 export async function uploadToCloudStorage(
   file: Buffer | Blob,
-  filename: string
+  filename: string,
+  userId: string = "unknown",
+  projectId: string | null = null,
+  fileId: string = uuidv4()
 ): Promise<string> {
+  // Generate the folder path
+  const folderPath = generateFilePath(userId, projectId, fileId, filename);
   if (isVercelEnvironment) {
     try {
       // Check if BLOB_READ_WRITE_TOKEN is set
@@ -57,8 +62,13 @@ export async function uploadToCloudStorage(
           "BLOB_READ_WRITE_TOKEN is not set. File will be stored in /tmp but may not persist."
         );
 
-        // Fall back to local storage in /tmp
-        const filePath = path.join(UPLOADS_DIR, filename);
+        // Fall back to local storage in /tmp with folder structure
+        const fullDir = path.join(UPLOADS_DIR, folderPath);
+
+        // Create directory structure if it doesn't exist
+        fs.mkdirSync(fullDir, { recursive: true });
+
+        const filePath = path.join(fullDir, filename);
         if (file instanceof Buffer) {
           fs.writeFileSync(filePath, file);
         } else {
@@ -70,8 +80,10 @@ export async function uploadToCloudStorage(
       }
 
       // Use Vercel Blob in production with explicit token
-      console.log(`Uploading file to Vercel Blob: ${filename}`);
-      const blob = await put(filename, file, {
+      // Include the folder path in the blob key
+      const blobKey = path.join(folderPath, filename).replace(/\\/g, "/");
+      console.log(`Uploading file to Vercel Blob: ${blobKey}`);
+      const blob = await put(blobKey, file, {
         access: "public",
         token: process.env.BLOB_READ_WRITE_TOKEN,
       });
@@ -80,9 +92,14 @@ export async function uploadToCloudStorage(
     } catch (error) {
       console.error("Error uploading to Vercel Blob:", error);
 
-      // Fall back to local storage in /tmp
+      // Fall back to local storage in /tmp with folder structure
       console.log(`Falling back to local storage in ${UPLOADS_DIR}`);
-      const filePath = path.join(UPLOADS_DIR, filename);
+      const fullDir = path.join(UPLOADS_DIR, folderPath);
+
+      // Create directory structure if it doesn't exist
+      fs.mkdirSync(fullDir, { recursive: true });
+
+      const filePath = path.join(fullDir, filename);
       if (file instanceof Buffer) {
         fs.writeFileSync(filePath, file);
       } else {
@@ -93,8 +110,13 @@ export async function uploadToCloudStorage(
       return filePath;
     }
   } else {
-    // In development, save to local filesystem
-    const filePath = path.join(UPLOADS_DIR, filename);
+    // In development, save to local filesystem with folder structure
+    const fullDir = path.join(UPLOADS_DIR, folderPath);
+
+    // Create directory structure if it doesn't exist
+    fs.mkdirSync(fullDir, { recursive: true });
+
+    const filePath = path.join(fullDir, filename);
     if (file instanceof Buffer) {
       fs.writeFileSync(filePath, file);
     } else {
@@ -116,6 +138,26 @@ export function generateUniqueFilename(originalFilename: string): string {
   const uniqueId = uuidv4().slice(0, 8);
 
   return `${sanitizedName}_${uniqueId}${ext}`;
+}
+
+// Generate a path based on user ID, project ID, and file ID
+export function generateFilePath(
+  userId: string,
+  projectId: string | null,
+  fileId: string,
+  filename: string
+): string {
+  // Sanitize user ID (remove special characters and convert to lowercase)
+  const sanitizedUserId = userId.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
+
+  // Create the path components
+  const userDir = sanitizedUserId || "unknown_user";
+  const projectDir = projectId ? projectId : "no_project";
+
+  // Create the full path
+  const relativePath = path.join(userDir, projectDir, fileId);
+
+  return relativePath;
 }
 
 // Get MIME type from file extension

@@ -1,10 +1,11 @@
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import type { NextAuthOptions } from "next-auth";
-import { PrismaClient } from "@prisma/client";
 import { compare } from "bcryptjs";
+import { getPrismaClient } from "./prisma/replicaClient";
 
-const prisma = new PrismaClient();
+// Initialize Prisma client using the replica-aware client
+const prisma = getPrismaClient();
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -35,8 +36,11 @@ export const authOptions: NextAuthOptions = {
           );
 
           // Find user in the database (case insensitive)
-          const user = await prisma.user.findUnique({
-            where: { email: credentials.email.toLowerCase() },
+          // Use the replica client directly to ensure we're using the correct database
+          const user = await prisma.useReplica(async (replicaClient) => {
+            return replicaClient.user.findUnique({
+              where: { email: credentials.email.toLowerCase() },
+            });
           });
 
           console.log(
