@@ -16,6 +16,7 @@ interface File {
   _count: {
     fileErrors: number;
   };
+  activationError?: string | null;
 }
 
 // Props for the FileList component
@@ -29,13 +30,17 @@ interface FileListProps {
 const FileList: React.FC<FileListProps> = ({
   files,
   onDelete,
-  // onRefresh,
+  onRefresh,
   loading,
 }) => {
   const router = useRouter();
   const [deleteConfirmation, setDeleteConfirmation] = useState<string | null>(
     null
   );
+  const [retryingFiles, setRetryingFiles] = useState<Record<string, boolean>>(
+    {}
+  );
+  const [retryErrors, setRetryErrors] = useState<Record<string, string>>({});
 
   // State to store columns for each file
   const [fileColumns, setFileColumns] = useState<Record<string, string[]>>({});
@@ -84,6 +89,26 @@ const FileList: React.FC<FileListProps> = ({
 
   // Confirm delete
   const confirmDelete = (fileId: string) => {
+    // Clear any cached columns for this file before deletion
+    setFileColumns((prev) => {
+      const newColumns = { ...prev };
+      delete newColumns[fileId];
+      return newColumns;
+    });
+
+    setFetchAttempted((prev) => {
+      const newAttempted = { ...prev };
+      delete newAttempted[fileId];
+      return newAttempted;
+    });
+
+    setLoadingColumns((prev) => {
+      const newLoading = { ...prev };
+      delete newLoading[fileId];
+      return newLoading;
+    });
+
+    // Call the parent's onDelete handler
     onDelete(fileId);
     setDeleteConfirmation(null);
   };
@@ -96,6 +121,48 @@ const FileList: React.FC<FileListProps> = ({
   // View file synopsis
   const viewSynopsis = (fileId: string) => {
     router.push(`/file/${fileId}`);
+  };
+
+  // Retry file ingestion
+  const retryFileIngestion = async (fileId: string) => {
+    try {
+      setRetryingFiles((prev) => ({ ...prev, [fileId]: true }));
+      setRetryErrors((prev) => {
+        const newErrors = { ...prev };
+        delete newErrors[fileId];
+        return newErrors;
+      });
+
+      const response = await fetch("/api/retry-file-ingestion", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ fileId }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          errorData.error ||
+            errorData.details ||
+            "Failed to retry file ingestion"
+        );
+      }
+
+      // Refresh the file list after successful retry
+      if (onRefresh) {
+        onRefresh();
+      }
+    } catch (error) {
+      console.error(`Error retrying file ingestion for ${fileId}:`, error);
+      setRetryErrors((prev) => ({
+        ...prev,
+        [fileId]: error instanceof Error ? error.message : "Unknown error",
+      }));
+    } finally {
+      setRetryingFiles((prev) => ({ ...prev, [fileId]: false }));
+    }
   };
 
   // Helper function to safely convert any value to a string
@@ -406,6 +473,36 @@ const FileList: React.FC<FileListProps> = ({
                   <Badge variant="danger" size="sm" className="ml-2">
                     {file._count.fileErrors} error(s)
                   </Badge>
+                )}
+
+                {/* Add retry button for files in error state */}
+                {file.status === "error" && (
+                  <div className="mt-1">
+                    {retryingFiles[file.id] ? (
+                      <div className="flex items-center">
+                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-accent-primary mr-1"></div>
+                        <span className="text-xs text-gray-400">
+                          Retrying...
+                        </span>
+                      </div>
+                    ) : (
+                      <div>
+                        <Button
+                          onClick={() => retryFileIngestion(file.id)}
+                          variant="primary"
+                          size="sm"
+                          className="text-xs"
+                        >
+                          Retry Ingestion
+                        </Button>
+                        {retryErrors[file.id] && (
+                          <div className="text-xs text-red-400 mt-1">
+                            {retryErrors[file.id]}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 

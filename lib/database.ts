@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { getPrismaClient as getReplicaPrismaClient } from "./prisma/replicaClient";
 
 // Initialize Prisma client (singleton)
 let prismaInstance: PrismaClient | null = null;
@@ -67,7 +68,8 @@ export class Database {
     sql: string,
     params?: unknown[]
   ): Promise<unknown> {
-    const prisma = getPrismaClient();
+    // Use the replica client for raw SQL queries to avoid permission issues with Prisma Accelerate
+    const prisma = getReplicaPrismaClient();
 
     try {
       // Extract the operation type from the SQL query
@@ -84,94 +86,118 @@ export class Database {
 
       // Handle different SQL operations
       try {
-        switch (operation) {
-          case "SELECT":
-            return await prisma.$queryRawUnsafe(finalSql, ...(params || []));
-
-          case "INSERT":
-            return await prisma.$executeRawUnsafe(finalSql, ...(params || []));
-
-          case "UPDATE":
-            return await prisma.$executeRawUnsafe(finalSql, ...(params || []));
-
-          case "DELETE":
-            return await prisma.$executeRawUnsafe(finalSql, ...(params || []));
-
-          case "CREATE":
-            // For CREATE TABLE statements, we need to handle them specially
-            // since Prisma manages the schema
-            if (sql.includes("CREATE TABLE")) {
-              console.warn(
-                "CREATE TABLE operations should be handled by Prisma migrations"
-              );
-              // We'll still execute it for compatibility, but this should be migrated
-              return await prisma.$executeRawUnsafe(
+        // Use the replica client's useReplica method to execute raw SQL queries on the direct database connection
+        return await prisma.useReplica(async (replicaClient) => {
+          switch (operation) {
+            case "SELECT":
+              return await replicaClient.$queryRawUnsafe(
                 finalSql,
                 ...(params || [])
               );
-            }
-            // Handle CREATE VIEW statements
-            if (
-              sql.includes("CREATE VIEW") ||
-              sql.includes("CREATE OR REPLACE VIEW")
-            ) {
-              console.log("Executing CREATE VIEW statement");
-              try {
-                return await prisma.$executeRawUnsafe(
+
+            case "INSERT":
+              return await replicaClient.$executeRawUnsafe(
+                finalSql,
+                ...(params || [])
+              );
+
+            case "UPDATE":
+              return await replicaClient.$executeRawUnsafe(
+                finalSql,
+                ...(params || [])
+              );
+
+            case "DELETE":
+              return await replicaClient.$executeRawUnsafe(
+                finalSql,
+                ...(params || [])
+              );
+
+            case "CREATE":
+              // For CREATE TABLE statements, we need to handle them specially
+              // since Prisma manages the schema
+              if (sql.includes("CREATE TABLE")) {
+                console.warn(
+                  "CREATE TABLE operations should be handled by Prisma migrations"
+                );
+                // We'll still execute it for compatibility, but this should be migrated
+                return await replicaClient.$executeRawUnsafe(
                   finalSql,
                   ...(params || [])
                 );
-              } catch (viewError) {
-                console.error("Error creating view:", viewError);
-                // If the view already exists, try to drop it first
-                if (
-                  viewError instanceof Error &&
-                  (viewError.message.includes("already exists") ||
-                    viewError.message.includes("relation already exists"))
-                ) {
-                  // Extract the view name from the CREATE VIEW statement
-                  const viewNameMatch = sql.match(
-                    /CREATE\s+(?:OR\s+REPLACE\s+)?VIEW\s+(?:"?([^"\s]+)"?|([^\s]+))\s+AS/i
+              }
+              // Handle CREATE VIEW statements
+              if (
+                sql.includes("CREATE VIEW") ||
+                sql.includes("CREATE OR REPLACE VIEW")
+              ) {
+                console.log("Executing CREATE VIEW statement");
+                try {
+                  return await replicaClient.$executeRawUnsafe(
+                    finalSql,
+                    ...(params || [])
                   );
-                  if (viewNameMatch) {
-                    const viewName = viewNameMatch[1] || viewNameMatch[2];
-                    console.log(
-                      `View ${viewName} already exists, trying to drop it first`
+                } catch (viewError) {
+                  console.error("Error creating view:", viewError);
+                  // If the view already exists, try to drop it first
+                  if (
+                    viewError instanceof Error &&
+                    (viewError.message.includes("already exists") ||
+                      viewError.message.includes("relation already exists"))
+                  ) {
+                    // Extract the view name from the CREATE VIEW statement
+                    const viewNameMatch = sql.match(
+                      /CREATE\s+(?:OR\s+REPLACE\s+)?VIEW\s+(?:"?([^"\s]+)"?|([^\s]+))\s+AS/i
                     );
-
-                    try {
-                      // Drop the view
-                      await prisma.$executeRawUnsafe(
-                        `DROP VIEW IF EXISTS "${viewName}"`
+                    if (viewNameMatch) {
+                      const viewName = viewNameMatch[1] || viewNameMatch[2];
+                      console.log(
+                        `View ${viewName} already exists, trying to drop it first`
                       );
-                      console.log(`Successfully dropped view ${viewName}`);
 
-                      // Try to create the view again
-                      return await prisma.$executeRawUnsafe(
-                        finalSql,
-                        ...(params || [])
-                      );
-                    } catch (dropError) {
+                      try {
+                        // Drop the view
+                        await replicaClient.$executeRawUnsafe(
+                          `DROP VIEW IF EXISTS "${viewName}"`
+                        );
+                        console.log(`Successfully dropped view ${viewName}`);
+
+                        // Try to create the view again
+                        return await replicaClient.$executeRawUnsafe(
+                          finalSql,
+                          ...(params || [])
+                        );
+                      } catch (dropError) {
+                        console.error(
+                          `Error dropping view ${viewName}:`,
+                          dropError
+                        );
+                        throw dropError;
+                      }
+                    } else {
                       console.error(
-                        `Error dropping view ${viewName}:`,
-                        dropError
+                        "Could not extract view name from SQL:",
+                        sql
                       );
-                      throw dropError;
+                      throw viewError;
                     }
                   } else {
-                    console.error("Could not extract view name from SQL:", sql);
                     throw viewError;
                   }
-                } else {
-                  throw viewError;
                 }
               }
-            }
-            return await prisma.$executeRawUnsafe(finalSql, ...(params || []));
+              return await replicaClient.$executeRawUnsafe(
+                finalSql,
+                ...(params || [])
+              );
 
-          default:
-            return await prisma.$executeRawUnsafe(finalSql, ...(params || []));
-        }
+            default:
+              return await replicaClient.$executeRawUnsafe(
+                finalSql,
+                ...(params || [])
+              );
+          }
+        });
       } catch (queryError) {
         // Handle specific error cases
         if (queryError instanceof Error) {
@@ -192,17 +218,19 @@ export class Database {
             if (fixedSql !== finalSql) {
               console.log("Attempting to execute with fixed SQL:", fixedSql);
               try {
-                if (operation === "SELECT") {
-                  return await prisma.$queryRawUnsafe(
-                    fixedSql,
-                    ...(params || [])
-                  );
-                } else {
-                  return await prisma.$executeRawUnsafe(
-                    fixedSql,
-                    ...(params || [])
-                  );
-                }
+                return await prisma.useReplica(async (replicaClient) => {
+                  if (operation === "SELECT") {
+                    return await replicaClient.$queryRawUnsafe(
+                      fixedSql,
+                      ...(params || [])
+                    );
+                  } else {
+                    return await replicaClient.$executeRawUnsafe(
+                      fixedSql,
+                      ...(params || [])
+                    );
+                  }
+                });
               } catch (retryError) {
                 console.error("Error executing fixed query:", retryError);
                 throw retryError;
@@ -245,30 +273,28 @@ export class Database {
   }
 
   /**
-   * Insert data into a file table
+   * Insert data into a file table with optimized batch processing
    * @param fileId File ID
    * @param rows Data rows
+   * @param batchSize Optional batch size (default: 2000)
+   */
+  /**
+   * Insert data into a file table with optimized batch processing
+   * @param fileId File ID
+   * @param rows Data rows
+   * @param batchSize Optional batch size (default: dynamically determined)
    */
   static async insertFileData(
     fileId: string,
-    rows: Record<string, unknown>[]
+    rows: Record<string, unknown>[],
+    batchSize?: number
   ): Promise<void> {
-    // Use PostgreSQL via Prisma
-    const prisma = getPrismaClient();
-
-    // Insert each row as a JSON object in the FileData table
-    await Promise.all(
-      rows.map(async (row: Record<string, unknown>) => {
-        await prisma.fileData.create({
-          data: {
-            fileId,
-            // Use JSON.stringify to ensure compatibility with Prisma's JSON type
-            data: JSON.parse(JSON.stringify(row)),
-          },
-        });
-      })
-    );
+    // Use the optimized BatchProcessor for file data insertion
+    const { BatchProcessor } = await import("./database/batchProcessor");
+    return BatchProcessor.insertFileData(fileId, rows, batchSize);
   }
+
+  // Note: Individual row insertion is now handled by BatchProcessor.insertIndividually
 
   /**
    * Get file data
@@ -277,10 +303,12 @@ export class Database {
    */
   static async getFileData(fileId: string): Promise<Record<string, unknown>[]> {
     // Use PostgreSQL via Prisma
-    const prisma = getPrismaClient();
+    const prisma = getReplicaPrismaClient();
 
-    const fileData = await prisma.fileData.findMany({
-      where: { fileId },
+    const fileData = await prisma.useReplica(async (replicaClient) => {
+      return await replicaClient.fileData.findMany({
+        where: { fileId },
+      });
     });
 
     // Convert the data back to the expected format and handle BigInt values
@@ -303,10 +331,12 @@ export class Database {
    */
   static async fileTableExists(fileId: string): Promise<boolean> {
     // Check if there are any FileData entries for this file
-    const prisma = getPrismaClient();
+    const prisma = getReplicaPrismaClient();
     try {
-      const count = await prisma.fileData.count({
-        where: { fileId },
+      const count = await prisma.useReplica(async (replicaClient) => {
+        return await replicaClient.fileData.count({
+          where: { fileId },
+        });
       });
       return count > 0;
     } catch (error) {
@@ -366,6 +396,29 @@ export class Database {
     }
 
     return obj;
+  }
+
+  /**
+   * Check if a table exists in the database
+   * @param tableName Table name
+   * @returns True if the table exists
+   */
+  private static async checkIfTableExists(tableName: string): Promise<boolean> {
+    try {
+      const result = await Database.executeQuery(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_name = '${tableName}'
+        ) as exists
+      `);
+
+      return (
+        Array.isArray(result) && result.length > 0 && result[0].exists === true
+      );
+    } catch (error) {
+      console.error(`Error checking if table exists: ${error}`);
+      return false;
+    }
   }
 }
 

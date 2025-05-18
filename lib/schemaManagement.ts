@@ -1,7 +1,8 @@
 import { v4 as uuidv4 } from "uuid";
 import { PrismaClient } from "@prisma/client";
+import { getPrismaClient } from "./prisma/replicaClient";
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 /**
  * Interface for schema column
@@ -60,40 +61,17 @@ export class SchemaService {
     schemaId: string
   ): Promise<ColumnMapping | null> {
     try {
-      // Use Prisma to find column mappings
-      const columnMappings = await prisma.columnMapping.findMany({
-        where: {
-          fileId: fileId,
-          globalSchemaId: schemaId,
-        },
-        include: {
-          schemaColumn: true,
-        },
-      });
-
-      if (!columnMappings || columnMappings.length === 0) {
-        return null;
-      }
-
-      // Convert Prisma model to our interface format
-      const mappings: Record<string, string> = {};
-
-      // Each mapping maps a file column to a schema column
-      columnMappings.forEach((mapping) => {
-        mappings[mapping.fileColumn] = mapping.schemaColumn.name;
-      });
-
-      return {
-        fileId,
-        schemaId,
-        mappings,
-      };
+      // Use the optimized ColumnMappingService for getting column mappings
+      const { ColumnMappingService } = await import(
+        "./schema/columnMappingService"
+      );
+      return ColumnMappingService.getColumnMapping(fileId, schemaId);
     } catch (error) {
       console.error(
         `[SchemaService] Error getting column mapping for file ${fileId} and schema ${schemaId}:`,
         error
       );
-      throw error;
+      return null;
     }
   }
 
@@ -104,161 +82,17 @@ export class SchemaService {
    */
   async saveColumnMapping(mapping: ColumnMapping): Promise<boolean> {
     try {
-      console.log(
-        `[saveColumnMapping] Saving mapping for schema ${mapping.schemaId}`
+      // Use the optimized ColumnMappingService for saving column mappings
+      const { ColumnMappingService } = await import(
+        "./schema/columnMappingService"
       );
-
-      // First, get the schema columns for this schema
-      const schema = await prisma.globalSchema.findUnique({
-        where: { id: mapping.schemaId },
-        include: { columns: true },
-      });
-
-      if (!schema) {
-        console.error(
-          `[saveColumnMapping] Schema ${mapping.schemaId} not found`
-        );
-        throw new Error(`Schema ${mapping.schemaId} not found`);
-      }
-
-      // Log schema columns for debugging
-      console.log(
-        "[saveColumnMapping] Schema columns:",
-        schema.columns.map((col) => ({ id: col.id, name: col.name }))
-      );
-      console.log("[saveColumnMapping] Mappings:", mapping.mappings);
-
-      // Try to directly query the schema columns
-      const directColumns = await prisma.schemaColumn.findMany({
-        where: { globalSchemaId: mapping.schemaId },
-      });
-
-      console.log(
-        "[saveColumnMapping] Direct schema columns query result:",
-        directColumns.map((col) => ({ id: col.id, name: col.name }))
-      );
-
-      // Delete existing mappings for this file and schema
-      await prisma.columnMapping.deleteMany({
-        where: {
-          fileId: mapping.fileId,
-          globalSchemaId: mapping.schemaId,
-        },
-      });
-
-      // Create new mappings
-      const mappingEntries = Object.entries(mapping.mappings);
-
-      // Normalize column names for comparison (remove spaces, special chars, lowercase)
-      const normalizeColumnName = (name: string): string => {
-        return name.toLowerCase().replace(/[^a-z0-9]/gi, "");
-      };
-
-      // Create a map of normalized column names to schema columns for faster lookup
-      const normalizedColumnMap = new Map<string, any>();
-      schema.columns.forEach((col) => {
-        normalizedColumnMap.set(normalizeColumnName(col.name), col);
-      });
-
-      // For each file column to schema column mapping
-      for (const [fileColumn, schemaColumnName] of mappingEntries) {
-        // Log the current mapping for debugging
-        console.log(
-          `Mapping file column "${fileColumn}" to schema column "${schemaColumnName}"`
-        );
-
-        const normalizedSchemaColumnName =
-          normalizeColumnName(schemaColumnName);
-
-        // Find the schema column by name with normalized comparison
-        const schemaColumn = normalizedColumnMap.get(
-          normalizedSchemaColumnName
-        );
-
-        if (schemaColumn) {
-          console.log(`Found matching schema column: ${schemaColumn.name}`);
-
-          try {
-            // Create the mapping
-            await prisma.columnMapping.create({
-              data: {
-                fileId: mapping.fileId,
-                globalSchemaId: mapping.schemaId,
-                schemaColumnId: schemaColumn.id,
-                fileColumn: fileColumn,
-              },
-            });
-          } catch (error) {
-            // Check if this is a unique constraint violation
-            if (
-              error instanceof Error &&
-              error.message.includes("Unique constraint failed")
-            ) {
-              console.log(
-                `Mapping already exists for file column ${fileColumn} and schema column ${schemaColumn.name}, skipping`
-              );
-              // Continue with the next mapping instead of failing
-              continue;
-            } else {
-              // For other errors, rethrow
-              throw error;
-            }
-          }
-        } else {
-          console.warn(
-            `Schema column ${schemaColumnName} not found in schema ${mapping.schemaId}`
-          );
-
-          // Create the schema column if it doesn't exist
-          console.log(
-            `[saveColumnMapping] Creating missing schema column: ${schemaColumnName}`
-          );
-          try {
-            const columnId = `col_${uuidv4()}`;
-            const newSchemaColumn = await prisma.schemaColumn.create({
-              data: {
-                id: columnId,
-                globalSchemaId: mapping.schemaId,
-                name: schemaColumnName,
-                description: null,
-                dataType: "text", // Default to text type
-                isRequired: false,
-              },
-            });
-
-            console.log(
-              `[saveColumnMapping] Created new schema column: ${newSchemaColumn.name} with ID ${columnId}`
-            );
-
-            // Create the mapping with the new schema column
-            await prisma.columnMapping.create({
-              data: {
-                fileId: mapping.fileId,
-                globalSchemaId: mapping.schemaId,
-                schemaColumnId: columnId,
-                fileColumn: fileColumn,
-              },
-            });
-
-            console.log(
-              `[saveColumnMapping] Created mapping for new schema column`
-            );
-          } catch (createError) {
-            console.error(
-              `[saveColumnMapping] Error creating schema column ${schemaColumnName}:`,
-              createError
-            );
-          }
-        }
-      }
-
-      return true;
+      return ColumnMappingService.saveColumnMapping(mapping);
     } catch (error) {
       console.error(
         `[SchemaService] Error saving column mapping for file ${mapping.fileId} and schema ${mapping.schemaId}:`,
         error
       );
-      throw error;
+      return false;
     }
   }
   /**
@@ -288,16 +122,20 @@ export class SchemaService {
 
       // Create the global schema using Prisma
       // Create the global schema using Prisma
-      const globalSchema = await prisma.globalSchema.create({
-        data: {
-          id: schemaId,
-          // Note: In the Prisma schema, fields use camelCase but are mapped to snake_case in DB
-          // The userId field might not be in the Prisma schema, so we'll handle it differently
-          projectId: projectId,
-          name: name,
-          description: description || null,
-        },
-      });
+      const globalSchema = await (prisma as any).useReplica(
+        async (replicaClient: PrismaClient) => {
+          return await replicaClient.globalSchema.create({
+            data: {
+              id: schemaId,
+              // Note: In the Prisma schema, fields use camelCase but are mapped to snake_case in DB
+              // The userId field might not be in the Prisma schema, so we'll handle it differently
+              projectId: projectId,
+              name: name,
+              description: description || null,
+            },
+          });
+        }
+      );
 
       console.log(`[createGlobalSchema] Created global schema:`, globalSchema);
 
@@ -321,16 +159,20 @@ export class SchemaService {
           );
 
           try {
-            const schemaColumn = await prisma.schemaColumn.create({
-              data: {
-                id: columnId,
-                globalSchemaId: schemaId,
-                name: column.name,
-                description: column.description || null,
-                dataType: column.type,
-                isRequired: column.isRequired || false,
-              },
-            });
+            const schemaColumn = await (prisma as any).useReplica(
+              async (replicaClient: PrismaClient) => {
+                return await replicaClient.schemaColumn.create({
+                  data: {
+                    id: columnId,
+                    globalSchemaId: schemaId,
+                    name: column.name,
+                    description: column.description || null,
+                    dataType: column.type,
+                    isRequired: column.isRequired || false,
+                  },
+                });
+              }
+            );
 
             console.log(
               `[createGlobalSchema] Created schema column with ID ${columnId}: ${schemaColumn.name}`
@@ -366,10 +208,14 @@ export class SchemaService {
       );
 
       // Verify the schema was created with columns by querying it directly
-      const createdSchema = await prisma.globalSchema.findUnique({
-        where: { id: schemaId },
-        include: { columns: true },
-      });
+      const createdSchema = await (prisma as any).useReplica(
+        async (replicaClient: PrismaClient) => {
+          return await replicaClient.globalSchema.findUnique({
+            where: { id: schemaId },
+            include: { columns: true },
+          });
+        }
+      );
 
       console.log(
         `[createGlobalSchema] Verifying created schema:`,
@@ -407,10 +253,14 @@ export class SchemaService {
       console.log(`[getGlobalSchemaById] Getting schema with ID: ${schemaId}`);
 
       // Use Prisma to get the schema with its columns
-      const schema = await prisma.globalSchema.findUnique({
-        where: { id: schemaId },
-        include: { columns: true },
-      });
+      const schema = await (prisma as any).useReplica(
+        async (replicaClient: PrismaClient) => {
+          return await replicaClient.globalSchema.findUnique({
+            where: { id: schemaId },
+            include: { columns: true },
+          });
+        }
+      );
 
       console.log(`[getGlobalSchemaById] Schema found:`, schema ? "yes" : "no");
 
@@ -493,19 +343,23 @@ export class SchemaService {
 
       // Use Prisma to get all schemas
       // If projectId is empty string, get all schemas regardless of projectId
-      const schemas = await prisma.globalSchema.findMany({
-        where: projectId
-          ? {
-              projectId: projectId,
-            }
-          : {},
-        include: {
-          columns: true,
-        },
-        orderBy: {
-          createdAt: "desc",
-        },
-      });
+      const schemas = await (prisma as any).useReplica(
+        async (replicaClient: PrismaClient) => {
+          return await replicaClient.globalSchema.findMany({
+            where: projectId
+              ? {
+                  projectId: projectId,
+                }
+              : {},
+            include: {
+              columns: true,
+            },
+            orderBy: {
+              createdAt: "desc",
+            },
+          });
+        }
+      );
 
       console.log(
         `[getGlobalSchemasForProject] Found ${schemas.length} schemas`
@@ -564,99 +418,55 @@ export class SchemaService {
    */
   async updateGlobalSchema(schema: GlobalSchema): Promise<GlobalSchema> {
     try {
-      console.log(`[updateGlobalSchema] Updating schema ${schema.id}`);
+      console.log(`[SchemaService] Updating schema ${schema.id}`);
 
-      // Ensure all columns have IDs
-      const columnsWithIds = schema.columns.map((column) => ({
-        ...column,
-        id: column.id || `col_${uuidv4()}`,
+      // Use the optimized SchemaUpdateService for schema updates
+      const { SchemaUpdateService } = await import(
+        "./schema/schemaUpdateService"
+      );
+
+      // Convert columns to the format expected by SchemaUpdateService
+      const formattedColumns = schema.columns.map((column) => ({
+        id: column.id,
+        name: column.name,
+        description: column.description,
+        dataType: column.type,
+        isRequired: column.isRequired || false,
       }));
 
-      // Update the global schema using Prisma
-      const updatedSchema = await prisma.globalSchema.update({
-        where: { id: schema.id },
-        data: {
-          name: schema.name,
-          description: schema.description || null,
-        },
-      });
+      // Use the optimized service to update the schema
+      const updatedSchema = await SchemaUpdateService.updateGlobalSchema(
+        schema.id,
+        schema.projectId,
+        schema.name,
+        schema.description || null,
+        formattedColumns
+      );
 
-      // Use a transaction to ensure all related records are deleted and created properly
-      return await prisma.$transaction(async (tx) => {
-        // First, find all column mappings for this schema
-        const columnMappings = await tx.columnMapping.findMany({
-          where: { globalSchemaId: schema.id },
-        });
-
-        console.log(
-          `[updateGlobalSchema] Found ${columnMappings.length} column mappings to delete`
-        );
-
-        // Delete all column mappings
-        if (columnMappings.length > 0) {
-          await tx.columnMapping.deleteMany({
-            where: { globalSchemaId: schema.id },
-          });
-          console.log(
-            `[updateGlobalSchema] Deleted ${columnMappings.length} column mappings`
-          );
-        }
-
-        // Now it's safe to delete schema columns
-        const schemaColumns = await tx.schemaColumn.findMany({
-          where: { globalSchemaId: schema.id },
-        });
-
-        console.log(
-          `[updateGlobalSchema] Found ${schemaColumns.length} schema columns to delete`
-        );
-
-        // Delete all schema columns
-        if (schemaColumns.length > 0) {
-          await tx.schemaColumn.deleteMany({
-            where: { globalSchemaId: schema.id },
-          });
-          console.log(
-            `[updateGlobalSchema] Deleted ${schemaColumns.length} schema columns`
-          );
-        }
-
-        // Create new schema columns
-        const newSchemaColumns = [];
-        for (const column of columnsWithIds) {
-          const schemaColumn = await tx.schemaColumn.create({
-            data: {
-              id: column.id,
-              globalSchemaId: schema.id,
-              name: column.name,
-              description: column.description || null,
-              dataType: column.type,
-              isRequired: column.isRequired || false,
-            },
-          });
-          newSchemaColumns.push({
-            id: column.id,
-            name: column.name,
-            type: column.type,
-            description: column.description,
-            isRequired: column.isRequired || false,
-            isPrimaryKey: column.isPrimaryKey || false,
-            defaultValue: column.defaultValue,
-            derivationFormula: column.derivationFormula,
-            isNewColumn: column.isNewColumn,
-          });
-        }
-
-        console.log(
-          `[updateGlobalSchema] Created ${newSchemaColumns.length} new schema columns`
-        );
-
-        return {
-          ...schema,
-          columns: newSchemaColumns,
-          updatedAt: updatedSchema.updatedAt,
-        };
-      });
+      // Convert the result back to the GlobalSchema interface format
+      return {
+        id: updatedSchema.id,
+        userId: schema.userId, // Preserve the original userId
+        projectId: updatedSchema.projectId,
+        name: updatedSchema.name,
+        description: updatedSchema.description || undefined,
+        columns: updatedSchema.columns.map((column) => ({
+          id: column.id,
+          name: column.name,
+          type: column.dataType,
+          description: column.description || undefined,
+          isRequired: column.isRequired,
+          isPrimaryKey: false, // Default value as it's not in the Prisma schema
+          defaultValue: undefined, // Default value as it's not in the Prisma schema
+          derivationFormula: undefined, // Default value as it's not in the Prisma schema
+          isNewColumn: false, // Default value as it's not in the Prisma schema
+        })),
+        createdAt: updatedSchema.createdAt,
+        updatedAt: updatedSchema.updatedAt,
+        isActive: true, // Default value as it's not in the Prisma schema
+        version: schema.version || 1, // Preserve the original version
+        previousVersionId: schema.previousVersionId, // Preserve the original previousVersionId
+      };
     } catch (error) {
       console.error(
         `[SchemaService] Error updating schema ${schema.id}:`,
@@ -676,56 +486,60 @@ export class SchemaService {
       console.log(`[deleteGlobalSchema] Deleting schema ${schemaId}`);
 
       // Use a transaction to ensure all related records are deleted
-      return await prisma.$transaction(async (tx) => {
-        // First, find all column mappings for this schema
-        const columnMappings = await tx.columnMapping.findMany({
-          where: { globalSchemaId: schemaId },
-        });
+      return await (prisma as any).useReplica(
+        async (replicaClient: PrismaClient) => {
+          return await replicaClient.$transaction(async (tx) => {
+            // First, find all column mappings for this schema
+            const columnMappings = await tx.columnMapping.findMany({
+              where: { globalSchemaId: schemaId },
+            });
 
-        console.log(
-          `[deleteGlobalSchema] Found ${columnMappings.length} column mappings to delete`
-        );
+            console.log(
+              `[deleteGlobalSchema] Found ${columnMappings.length} column mappings to delete`
+            );
 
-        // Delete all column mappings
-        if (columnMappings.length > 0) {
-          await tx.columnMapping.deleteMany({
-            where: { globalSchemaId: schemaId },
+            // Delete all column mappings
+            if (columnMappings.length > 0) {
+              await tx.columnMapping.deleteMany({
+                where: { globalSchemaId: schemaId },
+              });
+              console.log(
+                `[deleteGlobalSchema] Deleted ${columnMappings.length} column mappings`
+              );
+            }
+
+            // Find all schema columns
+            const schemaColumns = await tx.schemaColumn.findMany({
+              where: { globalSchemaId: schemaId },
+            });
+
+            console.log(
+              `[deleteGlobalSchema] Found ${schemaColumns.length} schema columns to delete`
+            );
+
+            // Delete all schema columns
+            if (schemaColumns.length > 0) {
+              await tx.schemaColumn.deleteMany({
+                where: { globalSchemaId: schemaId },
+              });
+              console.log(
+                `[deleteGlobalSchema] Deleted ${schemaColumns.length} schema columns`
+              );
+            }
+
+            // Finally, delete the schema itself
+            await tx.globalSchema.delete({
+              where: { id: schemaId },
+            });
+
+            console.log(
+              `[deleteGlobalSchema] Successfully deleted schema ${schemaId}`
+            );
+
+            return true;
           });
-          console.log(
-            `[deleteGlobalSchema] Deleted ${columnMappings.length} column mappings`
-          );
         }
-
-        // Find all schema columns
-        const schemaColumns = await tx.schemaColumn.findMany({
-          where: { globalSchemaId: schemaId },
-        });
-
-        console.log(
-          `[deleteGlobalSchema] Found ${schemaColumns.length} schema columns to delete`
-        );
-
-        // Delete all schema columns
-        if (schemaColumns.length > 0) {
-          await tx.schemaColumn.deleteMany({
-            where: { globalSchemaId: schemaId },
-          });
-          console.log(
-            `[deleteGlobalSchema] Deleted ${schemaColumns.length} schema columns`
-          );
-        }
-
-        // Finally, delete the schema itself
-        await tx.globalSchema.delete({
-          where: { id: schemaId },
-        });
-
-        console.log(
-          `[deleteGlobalSchema] Successfully deleted schema ${schemaId}`
-        );
-
-        return true;
-      });
+      );
     } catch (error) {
       console.error(
         `[SchemaService] Error deleting schema ${schemaId}:`,
@@ -748,9 +562,13 @@ export class SchemaService {
       );
 
       // Check if schema exists
-      const schema = await prisma.globalSchema.findUnique({
-        where: { id: schemaId },
-      });
+      const schema = await (prisma as any).useReplica(
+        async (replicaClient: PrismaClient) => {
+          return await replicaClient.globalSchema.findUnique({
+            where: { id: schemaId },
+          });
+        }
+      );
 
       if (!schema) {
         console.error(`[setActiveSchema] Schema ${schemaId} not found`);
@@ -760,34 +578,46 @@ export class SchemaService {
       // We'll use a custom query approach since the Prisma schema might not have the isActive field
       try {
         // Check if the is_active column exists
-        const columnExists = await prisma.$queryRaw`
-          SELECT EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_name = 'global_schemas' AND column_name = 'is_active'
-          ) as exists
-        `;
+        const columnExists = await (prisma as any).useReplica(
+          async (replicaClient: PrismaClient) => {
+            return await replicaClient.$queryRaw`
+            SELECT EXISTS (
+              SELECT 1 FROM information_schema.columns
+              WHERE table_name = 'global_schemas' AND column_name = 'is_active'
+            ) as exists
+          `;
+          }
+        );
 
         const isActiveColumnExists = (columnExists as any)[0]?.exists || false;
 
         if (isActiveColumnExists) {
           // First, set all schemas for this project to inactive using a raw query
-          await prisma.$executeRaw`
-            UPDATE global_schemas
-            SET is_active = false
-            WHERE project_id = ${projectId}
-            AND id != ${schemaId}
-          `;
+          await (prisma as any).useReplica(
+            async (replicaClient: PrismaClient) => {
+              return await replicaClient.$executeRaw`
+              UPDATE global_schemas
+              SET is_active = false
+              WHERE project_id = ${projectId}
+              AND id != ${schemaId}
+            `;
+            }
+          );
 
           console.log(
             `[setActiveSchema] Set all other schemas for project ${projectId} to inactive`
           );
 
           // Then set this schema to active
-          await prisma.$executeRaw`
-            UPDATE global_schemas
-            SET is_active = true
-            WHERE id = ${schemaId}
-          `;
+          await (prisma as any).useReplica(
+            async (replicaClient: PrismaClient) => {
+              return await replicaClient.$executeRaw`
+              UPDATE global_schemas
+              SET is_active = true
+              WHERE id = ${schemaId}
+            `;
+            }
+          );
 
           console.log(
             `[setActiveSchema] Successfully set schema ${schemaId} as active`

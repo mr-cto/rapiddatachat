@@ -108,11 +108,16 @@ const FileUpload: React.FC<FileUploadProps> = ({
   const handleChunkedUpload = async (file: File) => {
     const fileId = crypto.randomUUID();
     const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-    let currentChunk = 0;
     let uploadedChunks = 0;
 
+    // Set uploading state in parent component
+    onFilesSelected([file], projectId);
+
     // Function to upload a single chunk
-    const uploadChunk = async (chunk: Blob, chunkIndex: number) => {
+    const uploadChunk = async (
+      chunk: Blob,
+      chunkIndex: number
+    ): Promise<boolean> => {
       const formData = new FormData();
       formData.append("fileId", fileId);
       formData.append("originalFilename", file.name);
@@ -138,9 +143,19 @@ const FileUpload: React.FC<FileUploadProps> = ({
         const data = await response.json();
         uploadedChunks++;
 
-        // Update progress
+        // Calculate and dispatch progress event
         const uploadProgress = Math.round((uploadedChunks / totalChunks) * 100);
-        // TODO: Update progress state
+
+        // Create and dispatch a custom event for progress updates
+        const progressEvent = new CustomEvent("fileUploadProgress", {
+          detail: {
+            fileId,
+            progress: uploadProgress,
+            fileName: file.name,
+            completed: uploadedChunks === totalChunks,
+          },
+        });
+        window.dispatchEvent(progressEvent);
 
         // If all chunks are uploaded, handle the complete file
         if (data.file) {
@@ -153,23 +168,155 @@ const FileUpload: React.FC<FileUploadProps> = ({
             format: data.file.format,
           };
 
-          // TODO: Handle the complete file
+          // Dispatch completion event
+          const completionEvent = new CustomEvent("fileUploadComplete", {
+            detail: {
+              fileId: data.file.id,
+              file: fileObj,
+            },
+          });
+          window.dispatchEvent(completionEvent);
+
+          // Start polling for file status to detect processing errors
+          startFileStatusPolling(data.file.id, file.name);
+
+          return true;
         }
+
+        return false;
       } catch (error) {
         console.error("Error uploading chunk:", error);
-        // TODO: Handle error
+
+        // Dispatch error event
+        const errorEvent = new CustomEvent("fileUploadError", {
+          detail: {
+            fileId,
+            fileName: file.name,
+            error: error instanceof Error ? error.message : "Unknown error",
+          },
+        });
+        window.dispatchEvent(errorEvent);
+
+        return false;
       }
     };
 
-    // Start uploading chunks
-    while (currentChunk < totalChunks) {
-      const start = currentChunk * CHUNK_SIZE;
-      const end = Math.min(start + CHUNK_SIZE, file.size);
-      const chunk = file.slice(start, end);
+    // Function to poll for file status updates
+    const startFileStatusPolling = (fileId: string, fileName: string) => {
+      let pollCount = 0;
+      const maxPolls = 60; // Poll for up to 5 minutes (5s * 60 = 300s = 5min)
+      const pollInterval = 5000; // Poll every 5 seconds
 
-      await uploadChunk(chunk, currentChunk);
-      currentChunk++;
-    }
+      const pollFileStatus = async () => {
+        try {
+          const response = await fetch(`/api/files/${fileId}`);
+          if (!response.ok) {
+            throw new Error(
+              `Failed to fetch file status: ${response.statusText}`
+            );
+          }
+
+          const data = await response.json();
+
+          // Dispatch status update event
+          const statusEvent = new CustomEvent("fileStatusUpdate", {
+            detail: {
+              fileId,
+              fileName,
+              status: data.status,
+              error: data.activationError || null,
+            },
+          });
+          window.dispatchEvent(statusEvent);
+
+          // If file is in a terminal state (active or error), stop polling
+          if (data.status === "active" || data.status === "error") {
+            if (data.status === "error") {
+              // Dispatch specific error event for processing errors
+              const processingErrorEvent = new CustomEvent(
+                "fileProcessingError",
+                {
+                  detail: {
+                    fileId,
+                    fileName,
+                    error: data.activationError || "Error processing file",
+                  },
+                }
+              );
+              window.dispatchEvent(processingErrorEvent);
+            }
+            return;
+          }
+
+          // Continue polling if we haven't reached the maximum number of polls
+          pollCount++;
+          if (pollCount < maxPolls) {
+            setTimeout(pollFileStatus, pollInterval);
+          } else {
+            // If we've reached the maximum number of polls, assume something went wrong
+            const timeoutEvent = new CustomEvent("fileProcessingTimeout", {
+              detail: {
+                fileId,
+                fileName,
+                message: "File processing is taking longer than expected",
+              },
+            });
+            window.dispatchEvent(timeoutEvent);
+          }
+        } catch (error) {
+          console.error("Error polling file status:", error);
+          // Continue polling despite errors
+          pollCount++;
+          if (pollCount < maxPolls) {
+            setTimeout(pollFileStatus, pollInterval);
+          }
+        }
+      };
+
+      // Start polling after a short delay to allow the server to begin processing
+      setTimeout(pollFileStatus, 2000);
+    };
+
+    // Start uploading chunks in a non-blocking way
+    // Use Promise.all with a limited concurrency to avoid overwhelming the server
+    const uploadChunksWithConcurrency = async () => {
+      const concurrencyLimit = 3; // Upload 3 chunks at a time
+      let currentChunk = 0;
+
+      const uploadNextBatch = async () => {
+        const chunkPromises = [];
+
+        // Create a batch of chunk upload promises
+        for (
+          let i = 0;
+          i < concurrencyLimit && currentChunk < totalChunks;
+          i++
+        ) {
+          const start = currentChunk * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, file.size);
+          const chunk = file.slice(start, end);
+
+          chunkPromises.push(uploadChunk(chunk, currentChunk));
+          currentChunk++;
+        }
+
+        // Wait for the current batch to complete
+        await Promise.all(chunkPromises);
+
+        // If there are more chunks, upload the next batch
+        if (currentChunk < totalChunks) {
+          await uploadNextBatch();
+        }
+      };
+
+      // Start the upload process
+      await uploadNextBatch();
+    };
+
+    // Start the upload process without blocking the UI
+    uploadChunksWithConcurrency().catch((error) => {
+      console.error("Error in chunked upload:", error);
+    });
   };
 
   const handleDrag = (e: React.DragEvent<HTMLDivElement>) => {
