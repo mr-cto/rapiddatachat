@@ -104,7 +104,10 @@ class UserService {
    * @returns User or null if not found
    */
   async findUserByEmail(email: string) {
-    return this.users.find((user) => user.email === email) || null;
+    const normalizedEmail = email.toLowerCase().trim();
+    return (
+      this.users.find((user) => user.email === normalizedEmail) || null
+    );
   }
 
   /**
