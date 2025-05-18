@@ -10,6 +10,7 @@ import {
   ensureDirectoriesExist,
   UPLOADS_DIR,
   PROCESSED_DIR,
+  generateFilePath,
 } from "../../../lib/fileUtils";
 
 // Define chunk-related functions that are missing from fileUtils
@@ -18,11 +19,22 @@ interface ChunkMetadata {
   totalChunks: number;
   currentChunk: number;
   originalFilename: string;
+  userId?: string;
+  projectId?: string | null;
 }
 
 // Save a chunk to disk
-function saveChunk(fileId: string, chunkIndex: number, data: Buffer): void {
-  const chunkDir = path.join(UPLOADS_DIR, fileId);
+function saveChunk(
+  fileId: string,
+  chunkIndex: number,
+  data: Buffer,
+  userId: string = "unknown",
+  projectId: string | null = null
+): void {
+  // Generate the folder path
+  const folderPath = generateFilePath(userId, projectId, fileId, "chunks");
+  const chunkDir = path.join(UPLOADS_DIR, folderPath);
+
   if (!fs.existsSync(chunkDir)) {
     fs.mkdirSync(chunkDir, { recursive: true });
   }
@@ -30,8 +42,16 @@ function saveChunk(fileId: string, chunkIndex: number, data: Buffer): void {
 }
 
 // Check if all chunks have been uploaded
-function areAllChunksUploaded(fileId: string, totalChunks: number): boolean {
-  const chunkDir = path.join(UPLOADS_DIR, fileId);
+function areAllChunksUploaded(
+  fileId: string,
+  totalChunks: number,
+  userId: string = "unknown",
+  projectId: string | null = null
+): boolean {
+  // Generate the folder path
+  const folderPath = generateFilePath(userId, projectId, fileId, "chunks");
+  const chunkDir = path.join(UPLOADS_DIR, folderPath);
+
   if (!fs.existsSync(chunkDir)) {
     return false;
   }
@@ -49,11 +69,33 @@ function areAllChunksUploaded(fileId: string, totalChunks: number): boolean {
 function reassembleChunks(
   fileId: string,
   originalFilename: string,
-  totalChunks: number
+  totalChunks: number,
+  userId: string = "unknown",
+  projectId: string | null = null
 ): string {
-  const chunkDir = path.join(UPLOADS_DIR, fileId);
+  // Generate the folder paths
+  const chunkFolderPath = generateFilePath(userId, projectId, fileId, "chunks");
+  const chunkDir = path.join(UPLOADS_DIR, chunkFolderPath);
+
+  const outputFolderPath = generateFilePath(
+    userId,
+    projectId,
+    fileId,
+    originalFilename
+  );
+  const outputDir = path.join(PROCESSED_DIR, path.dirname(outputFolderPath));
+
+  // Create output directory if it doesn't exist
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
+
   const ext = path.extname(originalFilename);
-  const outputPath = path.join(PROCESSED_DIR, `${fileId}${ext}`);
+  const outputPath = path.join(
+    PROCESSED_DIR,
+    outputFolderPath,
+    `${fileId}${ext}`
+  );
 
   const outputStream = fs.createWriteStream(outputPath);
 
@@ -159,17 +201,28 @@ export default async function handler(
     const chunkBuffer = fs.readFileSync(chunk.filepath);
 
     // Save the chunk
-    saveChunk(fileId, currentChunk, chunkBuffer);
+    saveChunk(fileId, currentChunk, chunkBuffer, userId, projectId);
 
     // Clean up the temporary file
     fs.unlinkSync(chunk.filepath);
 
     // Check if all chunks have been uploaded
-    const isComplete = areAllChunksUploaded(fileId, totalChunks);
+    const isComplete = areAllChunksUploaded(
+      fileId,
+      totalChunks,
+      userId,
+      projectId
+    );
 
     if (isComplete) {
       // Reassemble the file
-      const filePath = reassembleChunks(fileId, originalFilename, totalChunks);
+      const filePath = reassembleChunks(
+        fileId,
+        originalFilename,
+        totalChunks,
+        userId,
+        projectId
+      );
       const fileSize = fs.statSync(filePath).size;
       const format = originalFilename.split(".").pop() || "";
 

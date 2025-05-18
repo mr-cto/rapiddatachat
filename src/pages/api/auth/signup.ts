@@ -1,8 +1,16 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { PrismaClient } from "@prisma/client";
 import { hash } from "bcryptjs";
+import { getPrismaClient } from "../../../../lib/prisma/replicaClient";
 
-const prisma = new PrismaClient();
+// Initialize Prisma client
+const prisma = getPrismaClient();
+
+// Log database connection info
+console.log("Database connection info:");
+console.log(
+  "- Connection string:",
+  process.env.DATABASE_URL?.replace(/api_key=([^&]+)/, "api_key=****")
+);
 
 export default async function handler(
   req: NextApiRequest,
@@ -14,6 +22,27 @@ export default async function handler(
   }
 
   try {
+    // Log database connection info (partial for security)
+    const dbUrl = process.env.DATABASE_URL || "";
+    const maskedDbUrl = dbUrl.includes("api_key=")
+      ? dbUrl.replace(
+          /api_key=([^&]+)/,
+          "api_key=****" +
+            dbUrl
+              .split("api_key=")[1]
+              .substring(dbUrl.split("api_key=")[1].length - 8)
+        )
+      : "DATABASE_URL not found or does not contain api_key";
+
+    console.log("Database connection info:");
+    console.log("- URL pattern:", maskedDbUrl);
+    console.log(
+      "- API key length:",
+      dbUrl.includes("api_key=")
+        ? dbUrl.split("api_key=")[1].split("&")[0].length
+        : "N/A"
+    );
+
     const { name, email, password } = req.body;
 
     // Validate required fields
@@ -59,8 +88,11 @@ export default async function handler(
     console.log(`Signup attempt for email: ${email.toLowerCase().trim()}`);
 
     // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email: email.toLowerCase().trim() },
+    // Use the replica client directly to ensure we're using the correct database
+    const existingUser = await prisma.useReplica(async (replicaClient) => {
+      return replicaClient.user.findUnique({
+        where: { email: email.toLowerCase().trim() },
+      });
     });
 
     if (existingUser) {
@@ -78,19 +110,24 @@ export default async function handler(
 
     console.log("Creating user in database...");
     // Create user in the database
-    const user = await prisma.user.create({
-      data: {
-        name: name.trim(),
-        email: email.toLowerCase().trim(),
-        password: hashedPassword,
-      },
+    // Use the replica client directly to ensure we're using the correct database
+    const user = await prisma.useReplica(async (replicaClient) => {
+      return replicaClient.user.create({
+        data: {
+          name: name.trim(),
+          email: email.toLowerCase().trim(),
+          password: hashedPassword,
+        },
+      });
     });
 
     console.log(`User created successfully with ID: ${user.id}`);
 
     // Log all users in the database for debugging
-    const allUsers = await prisma.user.findMany({
-      select: { id: true, email: true, name: true },
+    const allUsers = await prisma.useReplica(async (replicaClient) => {
+      return replicaClient.user.findMany({
+        select: { id: true, email: true, name: true },
+      });
     });
     console.log("All users in database:", JSON.stringify(allUsers, null, 2));
 

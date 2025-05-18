@@ -1,0 +1,151 @@
+# Product Requirements Document
+
+**Feature:** Smart Import v1.1 — Dual-URL Bulk Loader
+**Author:** ChatGPT o3 for Tom Wash
+**Updated:** 17 May 2025
+
+---
+
+## 1  Background
+
+Gym Force’s data-upload feature lets users drop CSV or single-sheet XLSX files and query the contents via Claude Sonnet in natural language.
+
+* Files over \~100 k rows currently hit Prisma Accelerate time-outs.
+* Source files are needed **only during ingestion** and must be deleted the moment the import succeeds.
+* **Hosting commitment:** *Every* service—Next.js app, Serverless Functions, queue workers, and scheduled jobs—runs **exclusively on Vercel (Pro plan)**.
+
+---
+
+## 2  Goals & Success Criteria
+
+| Goal                                    | Success Metric             |
+| --------------------------------------- | -------------------------- |
+| Import 100 k–1 M rows in ≤ 120 s (p95). | Vercel logs                |
+| Keep Prisma Accelerate stable.          | 0 proxy 5xx during imports |
+| Show progress with ≤ 5 s lag.           | UX test                    |
+| Delete blob immediately after READY.    | `blobDeletedAt` set        |
+| Maintain single Prisma API for devs.    | Dev survey                 |
+
+---
+
+## 3  Scope
+
+### In-Scope
+
+* Direct multipart upload to **Vercel Blob**.
+* BullMQ job queue backed by **Upstash Redis** (Vercel add-on).
+* Long-running **Vercel Serverless Function** (`maxDuration = 300 s`) as the import worker.
+* Prisma **read-replica extension** to route heavy queries over `RAW_DATABASE_DATABASE_URL`.
+* Schema-merge (`ALTER TABLE … ADD COLUMN IF NOT EXISTS`).
+* Immediate blob deletion on success; 2-hour retention on failure.
+
+### Out-of-Scope (v1.1)
+
+* Multi-sheet XLSX, vector search, usage-based billing.
+
+---
+
+## 4  Architecture Overview
+
+1. **Browser ▶ Vercel Blob** multipart upload; local progress bar.
+2. **/api/import/queue** creates `ImportJob` (QUEUED) ➜ enqueues BullMQ job in Upstash.
+3. **Import worker (Vercel FN, 300 s)**
+
+   * Streams file from Blob.
+   * Infers schema, runs `ALTER TABLE … ADD COLUMN IF NOT EXISTS`.
+   * Bulk-loads via `COPY` into staging, then merges to canonical table.
+   * Publishes progress every 5 000 rows.
+   * Marks job READY, calls `blob.delete()`, records `blobDeletedAt`.
+4. **Progress SSE API** front-end shows live counter.
+5. **Cleanup cron** (Vercel Cron) hourly delete error blobs > 2 h; drop staging tables > 30 d.
+
+---
+
+## 5  Functional Requirements
+
+| ID  | Requirement                                                                                                        |
+| --- | ------------------------------------------------------------------------------------------------------------------ |
+| F-1 | **Env vars:** `DATABASE_URL` (Accelerate), `RAW_DATABASE_DATABASE_URL` (direct PG), Upstash creds.                          |
+| F-2 | **Models:** `ImportJob`, `ProjectSchemaMeta`.                                                                      |
+| F-3 | **Queue API:** POST `/api/import/queue` (Zod) → Insert ImportJob → enqueue BullMQ job.                             |
+| F-4 | **Worker FN:** `maxDuration = 300 s`; stream parse; schema-merge; text-mode `COPY`; progress; READY → delete blob. |
+| F-5 | **Failure path:** state = ERROR, blob kept 2 h; cron cleans up.                                                    |
+| F-6 | **Progress API:** SSE endpoint with polling fallback.                                                              |
+| F-7 | **XLSX rule:** accept single sheet only; reject others with user-visible error.                                    |
+
+---
+
+## 6  Non-Functional Requirements
+
+| Area          | Requirement                                                   |
+| ------------- | ------------------------------------------------------------- |
+| Performance   | 100 k rows ≤ 120 s; worker ends ≤ 300 s.                      |
+| Scalability   | ≥ 5 concurrent imports/account without queue starvation.      |
+| Security      | Signed 1-h blob URLs; immediate deletion on success.          |
+| Observability | Sentry + Vercel logs; metrics: duration, rows, blob\_deleted. |
+| Compliance    | No source data at rest; staging tables purged after 30 d.     |
+
+---
+
+## 7  Environment Variables (sample)
+
+```
+DATABASE_URL="prisma+postgres://accelerate.prisma-data.net/?api_key=XXX"
+RAW_DATABASE_DATABASE_URL="postgres://user:pass@host:5432/app"
+UPSTASH_REDIS_REST_URL="https://us1-..."
+UPSTASH_REDIS_REST_TOKEN="..."
+```
+
+---
+
+## 8  Developer Task List (Claude + Cline Prompts)
+
+| Seq | Task                                                       | Prompt tag                                |
+| --- | ---------------------------------------------------------- | ----------------------------------------- |
+| 1   | Prisma migration for `ImportJob`, `ProjectSchemaMeta`.     | `#clr prisma migrate smart-import-vercel` |
+| 2   | Add Prisma read-replica extension.                         | `#clr add prisma replica routing`         |
+| 3   | Build `/api/import/queue` route.                           | `#clr create queue endpoint`              |
+| 4   | Scaffold import worker (300 s, dual-URL, delete blob).     | `#clr scaffold import-worker vercel`      |
+| 5   | React `ImportProgress` component + SSE hook.               | `#clr generate import progress ui`        |
+| 6   | Playwright test: 120 k-row file, READY, blob deleted.      | `#clr playwright upload-large-file`       |
+| 7   | Vercel Cron: purge error blobs > 2 h; drop staging > 30 d. | `#clr cron cleanup`                       |
+
+---
+
+## 9  Milestones
+
+| Date       | Deliverable                                |
+| ---------- | ------------------------------------------ |
+| **May 24** | Migration + env setup merged.              |
+| May 28     | Queue endpoint & Upstash live (flagged).   |
+| Jun 02     | Worker imports 100 k sample; blob deleted. |
+| Jun 06     | Progress UI shipped.                       |
+| Jun 10     | Scale test (5 × 250 k rows) passes.        |
+| Jun 13     | Feature flag removed → production rollout. |
+
+---
+
+## 10  Risks & Mitigations
+
+| Risk                           | Impact             | Mitigation                                                       |
+| ------------------------------ | ------------------ | ---------------------------------------------------------------- |
+| Worker > 300 s                 | Import fails       | Auto-chunk & resume.                                             |
+| Accelerate receives bulk query | Potential throttle | All `COPY` via RAW URL only.                                     |
+| Lost evidence after delete     | Debugging harder   | Keep blob 2 h on ERROR; log first 1 000 rows to incident bucket. |
+| Upstash rate limits            | Slow queue         | Upgrade tier or switch to QStash.                                |
+
+---
+
+## 11  Glossary
+
+* **Vercel Blob** – first-party object storage; supports multipart and delete.
+* **Prisma Accelerate** – connection-pooling & caching proxy.
+* **Read-replica extension** – Prisma feature to route selected queries to RAW URL.
+* **BullMQ** – Node job queue; runs inside serverless worker on demand.
+* **Upstash Redis** – serverless Redis, Vercel add-on.
+* **maxDuration** – Vercel config allowing a Function to run up to 300 s (Pro).
+* **SSE** – Server-Sent Events; lightweight progress stream.
+
+---
+
+**Hosting note:** *All compute, storage, queueing, and scheduled tasks specified in this document run entirely on Vercel’s managed infrastructure, requiring no additional servers or external runtimes.*

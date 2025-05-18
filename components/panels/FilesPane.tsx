@@ -6,11 +6,12 @@ import React, {
   memo,
   useRef,
 } from "react";
-import { useSession } from "next-auth/react";
 import { useRouter } from "next/router";
+import { useStableSession } from "../../lib/hooks/useStableSession";
 import { FaFile, FaTrash, FaEye, FaUpload } from "react-icons/fa";
 import SchemaColumnMapper from "../SchemaColumnMapper";
 import { Button, Card } from "../ui";
+import { v4 as uuidv4 } from "uuid";
 import { parseFileClient } from "../../utils/clientParse";
 
 interface FileData {
@@ -21,7 +22,21 @@ interface FileData {
   sizeBytes: number;
   format: string | null;
   status: string;
-  metadata: Record<string, unknown>;
+  metadata: {
+    ingestion_progress?:
+      | string
+      | {
+          processed: number;
+          total: number | null;
+          percentage: number | null;
+          rowsPerSecond: number;
+          elapsedSeconds: number;
+          eta: number | null;
+          lastUpdated: string;
+        };
+    columns?: string[];
+    [key: string]: unknown;
+  } | null;
   _count: {
     fileErrors: number;
   };
@@ -58,6 +73,10 @@ const FileItem = memo(
     cancelDelete,
     formatFileSize,
     getStatusBadgeColor,
+    retryFileIngestion,
+    retryingFiles,
+    retryErrors,
+    onViewFileDetails,
   }: {
     file: FileData;
     onSelectFile: (fileId: string) => void;
@@ -68,6 +87,10 @@ const FileItem = memo(
     cancelDelete: () => void;
     formatFileSize: (bytes: number) => string;
     getStatusBadgeColor: (status: string) => string;
+    retryFileIngestion: (fileId: string) => void;
+    retryingFiles: Record<string, boolean>;
+    retryErrors: Record<string, string>;
+    onViewFileDetails: (fileId: string) => void;
   }) => {
     return (
       <div
@@ -138,19 +161,114 @@ const FileItem = memo(
           {formatFileSize(file.sizeBytes)}
         </div>
 
-        {/* Display status badge */}
+        {/* Display status badge with ingestion progress */}
         <div className="mb-1">
           <span
             className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadgeColor(
               file.status
-            )}`}
+            )} cursor-pointer hover:opacity-80`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onViewFileDetails(file.id);
+            }}
+            title="Click for details"
           >
-            {file.status}
+            {file.status === "processing" ? (
+              <span className="flex items-center">
+                {file.status}
+                <span className="ml-1 inline-block h-2 w-2 rounded-full bg-blue-500 animate-pulse"></span>
+              </span>
+            ) : (
+              file.status
+            )}
           </span>
+
+          {/* Show ingestion progress if available */}
+          {file.status === "processing" &&
+            file.metadata?.ingestion_progress && (
+              <div className="mt-1 text-xs text-gray-400">
+                {(() => {
+                  try {
+                    // Parse the progress data
+                    const progress =
+                      typeof file.metadata.ingestion_progress === "string"
+                        ? JSON.parse(file.metadata.ingestion_progress)
+                        : file.metadata.ingestion_progress;
+
+                    if (progress.processed) {
+                      return (
+                        <div>
+                          <div className="flex justify-between mb-1">
+                            <span>
+                              Processing: {progress.processed.toLocaleString()}{" "}
+                              rows
+                            </span>
+                            {progress.percentage && (
+                              <span>{progress.percentage}%</span>
+                            )}
+                          </div>
+                          <div className="w-full bg-ui-tertiary rounded-full h-1.5">
+                            <div
+                              className="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
+                              style={{ width: `${progress.percentage || 50}%` }}
+                            ></div>
+                          </div>
+                          <div className="flex justify-between mt-1 text-xs text-gray-500">
+                            <span>{progress.rowsPerSecond} rows/sec</span>
+                            {progress.eta && (
+                              <span>
+                                ETA:{" "}
+                                {progress.eta > 60
+                                  ? `${Math.floor(progress.eta / 60)}m ${
+                                      progress.eta % 60
+                                    }s`
+                                  : `${progress.eta}s`}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  } catch (e) {
+                    return null;
+                  }
+                })()}
+              </div>
+            )}
           {file._count.fileErrors > 0 && (
-            <span className="text-xs text-red-500 ml-2">
+            <span
+              className="text-xs text-red-500 ml-2 cursor-pointer hover:underline"
+              onClick={(e) => {
+                e.stopPropagation();
+                onViewFileDetails(file.id);
+              }}
+            >
               {file._count.fileErrors} error(s)
             </span>
+          )}
+
+          {/* Add retry button for files in error state */}
+          {file.status === "error" && (
+            <div className="mt-1">
+              <Button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  retryFileIngestion(file.id);
+                }}
+                variant="primary"
+                size="sm"
+                className="text-xs"
+                isLoading={retryingFiles[file.id]}
+              >
+                Retry Ingestion
+              </Button>
+              {retryErrors[file.id] && (
+                <div className="text-xs text-red-400 mt-1">
+                  {retryErrors[file.id]}
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -166,7 +284,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
   projectId,
   onPreviewParsed,
 }) => {
-  const { data: session } = useSession();
+  const { data: session, userId, isAuthenticated } = useStableSession();
   const [files, setFiles] = useState<FileData[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -185,6 +303,21 @@ const FilesPane: React.FC<FilesPaneProps> = ({
   );
   const [fileColumns, setFileColumns] = useState<Record<string, string[]>>({});
   const [dragActive, setDragActive] = useState(false);
+  const [retryingFiles, setRetryingFiles] = useState<Record<string, boolean>>(
+    {}
+  );
+  const [retryErrors, setRetryErrors] = useState<Record<string, string>>({});
+  const [fileDetailsModalOpen, setFileDetailsModalOpen] =
+    useState<boolean>(false);
+  const [selectedFileDetails, setSelectedFileDetails] = useState<string | null>(
+    null
+  );
+  const [fileDetailsData, setFileDetailsData] = useState<any>(null);
+  const [loadingFileDetails, setLoadingFileDetails] = useState<boolean>(false);
+  const [updatingLargeFiles, setUpdatingLargeFiles] = useState<boolean>(false);
+  const [uploadingFiles, setUploadingFiles] = useState<
+    Record<string, { progress: number; fileName: string }>
+  >({});
   const router = useRouter();
   const inputRef = React.useRef<HTMLInputElement>(null);
 
@@ -211,7 +344,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
 
   // Check if there's an active schema - only used during file upload, not in fetchFiles
   const checkActiveSchema = useCallback(async () => {
-    if (!session?.user) return false;
+    if (!isAuthenticated) return false;
 
     try {
       // Use project-specific endpoint if projectId is provided
@@ -245,11 +378,37 @@ const FilesPane: React.FC<FilesPaneProps> = ({
       // Don't let schema check errors block the upload flow
       return false;
     }
-  }, [session, projectId]);
+  }, [isAuthenticated, projectId]);
+
+  // Track last fetch time to prevent too frequent fetches
+  const lastFetchTimeRef = useRef<number>(0);
+  const fetchInProgressRef = useRef<boolean>(false);
+  const fetchQueuedRef = useRef<boolean>(false);
 
   // Fetch files - memoized with useCallback to prevent unnecessary re-renders
   const fetchFiles = useCallback(async () => {
-    if (!session?.user) return;
+    // Don't fetch if not authenticated
+    if (!isAuthenticated) return;
+
+    // Prevent fetching too frequently (minimum 500ms between fetches)
+    const now = Date.now();
+    const timeSinceLastFetch = now - lastFetchTimeRef.current;
+
+    if (timeSinceLastFetch < 500) {
+      // If a fetch is already in progress, queue another one
+      if (fetchInProgressRef.current && !fetchQueuedRef.current) {
+        fetchQueuedRef.current = true;
+        setTimeout(() => {
+          fetchQueuedRef.current = false;
+          fetchFiles();
+        }, 500 - timeSinceLastFetch);
+      }
+      return;
+    }
+
+    // Set fetch in progress
+    fetchInProgressRef.current = true;
+    lastFetchTimeRef.current = now;
 
     try {
       setLoading(true);
@@ -304,26 +463,230 @@ const FilesPane: React.FC<FilesPaneProps> = ({
       console.error("Error fetching files:", err);
     } finally {
       setLoading(false);
+      fetchInProgressRef.current = false;
+
+      // If another fetch was queued while this one was in progress, execute it now
+      if (fetchQueuedRef.current) {
+        fetchQueuedRef.current = false;
+        setTimeout(fetchFiles, 100);
+      }
     }
-  }, [session, pagination.page, pagination.pageSize, sorting, projectId]);
+  }, [
+    isAuthenticated,
+    pagination.page,
+    pagination.pageSize,
+    sorting,
+    projectId,
+  ]);
 
   // Track if this is the initial mount
   const initialMountRef = useRef(true);
 
-  // Initial fetch on mount only
+  // Initial fetch on mount only and set up event listeners for file upload progress
   useEffect(() => {
     fetchFiles();
 
-    // Add event listener to prevent unnecessary fetches on window focus
+    // Add event listeners for file upload progress
+    const handleFileUploadProgress = (event: CustomEvent) => {
+      const { fileId, progress, fileName, completed } = event.detail;
+
+      setUploadingFiles((prev) => ({
+        ...prev,
+        [fileId]: { progress, fileName },
+      }));
+
+      // If the upload is complete, update the progress indicator
+      if (completed) {
+        setUploadProgress(100);
+        setUploadStatus("Processing file...");
+      }
+    };
+
+    const handleFileUploadComplete = (event: CustomEvent) => {
+      const { fileId, file } = event.detail;
+
+      // Don't remove from uploading files yet - we'll keep showing progress
+      // until processing is complete
+
+      // Update the uploading files state to show processing status
+      setUploadingFiles((prev) => ({
+        ...prev,
+        [fileId]: {
+          ...prev[fileId],
+          progress: 100,
+          status: "processing",
+        },
+      }));
+
+      // Reset upload state
+      setUploading(false);
+      setUploadProgress(0);
+
+      // Update status to show processing
+      setUploadStatus(`File "${file.name}" uploaded, now processing...`);
+
+      // Refresh the file list
+      fetchFiles();
+    };
+
+    const handleFileUploadError = (event: CustomEvent) => {
+      const { fileId, fileName, error } = event.detail;
+
+      // Remove from uploading files
+      setUploadingFiles((prev) => {
+        const newState = { ...prev };
+        delete newState[fileId];
+        return newState;
+      });
+
+      // Reset upload state
+      setUploading(false);
+      setUploadProgress(0);
+      setUploadStatus("");
+
+      // Show error message
+      setError(`Error uploading "${fileName}": ${error}`);
+    };
+
+    // Handle file status updates during processing
+    const handleFileStatusUpdate = (event: CustomEvent) => {
+      const { fileId, fileName, status, error } = event.detail;
+
+      // Update the uploading files state to show processing status
+      if (status) {
+        setUploadingFiles((prev) => {
+          // Only update if the file is still in our tracking state
+          if (prev[fileId]) {
+            return {
+              ...prev,
+              [fileId]: {
+                ...prev[fileId],
+                progress: status === "active" ? 100 : prev[fileId].progress,
+                status: status,
+              },
+            };
+          }
+          return prev;
+        });
+
+        // If file is now active, show success message and remove from uploading files
+        if (status === "active") {
+          setSuccessMessage(`File "${fileName}" processed successfully!`);
+
+          // Remove from uploading files
+          setUploadingFiles((prev) => {
+            const newState = { ...prev };
+            delete newState[fileId];
+            return newState;
+          });
+
+          // File is now active, refresh the file list
+          fetchFiles();
+        }
+      }
+    };
+
+    // Handle file processing errors
+    const handleFileProcessingError = (event: CustomEvent) => {
+      const { fileId, fileName, error } = event.detail;
+
+      // Remove from uploading files
+      setUploadingFiles((prev) => {
+        const newState = { ...prev };
+        delete newState[fileId];
+        return newState;
+      });
+
+      // Show error message
+      setError(`Error processing "${fileName}": ${error}`);
+
+      // Refresh the file list to show the error status
+      // This is important to show the updated error state
+      fetchFiles();
+    };
+
+    // Handle file processing timeout
+    const handleFileProcessingTimeout = (event: CustomEvent) => {
+      const { fileId, fileName, message } = event.detail;
+
+      // Update the uploading files state to show timeout
+      setUploadingFiles((prev) => {
+        if (prev[fileId]) {
+          return {
+            ...prev,
+            [fileId]: {
+              ...prev[fileId],
+              status: "timeout",
+            },
+          };
+        }
+        return prev;
+      });
+
+      // Show warning message
+      setSuccessMessage(
+        `${message} for "${fileName}". The file may still be processing in the background.`
+      );
+    };
+
+    // Add event listeners
+    window.addEventListener(
+      "fileUploadProgress",
+      handleFileUploadProgress as EventListener
+    );
+    window.addEventListener(
+      "fileUploadComplete",
+      handleFileUploadComplete as EventListener
+    );
+    window.addEventListener(
+      "fileUploadError",
+      handleFileUploadError as EventListener
+    );
+    window.addEventListener(
+      "fileStatusUpdate",
+      handleFileStatusUpdate as EventListener
+    );
+    window.addEventListener(
+      "fileProcessingError",
+      handleFileProcessingError as EventListener
+    );
+    window.addEventListener(
+      "fileProcessingTimeout",
+      handleFileProcessingTimeout as EventListener
+    );
+
+    // Add visibility change listener to prevent unnecessary fetches on window focus
     const handleVisibilityChange = () => {
       // Do nothing - we'll handle fetches manually
     };
-
-    // Add visibility change listener
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     // Cleanup
     return () => {
+      window.removeEventListener(
+        "fileUploadProgress",
+        handleFileUploadProgress as EventListener
+      );
+      window.removeEventListener(
+        "fileUploadComplete",
+        handleFileUploadComplete as EventListener
+      );
+      window.removeEventListener(
+        "fileUploadError",
+        handleFileUploadError as EventListener
+      );
+      window.removeEventListener(
+        "fileStatusUpdate",
+        handleFileStatusUpdate as EventListener
+      );
+      window.removeEventListener(
+        "fileProcessingError",
+        handleFileProcessingError as EventListener
+      );
+      window.removeEventListener(
+        "fileProcessingTimeout",
+        handleFileProcessingTimeout as EventListener
+      );
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -337,10 +700,16 @@ const FilesPane: React.FC<FilesPaneProps> = ({
       return;
     }
 
-    if (session) {
+    if (isAuthenticated) {
       fetchFiles();
     }
-  }, [pagination.page, pagination.pageSize, sorting, fetchFiles, session]);
+  }, [
+    pagination.page,
+    pagination.pageSize,
+    sorting,
+    fetchFiles,
+    isAuthenticated,
+  ]);
 
   // Validate files
   const validateFiles = (
@@ -504,14 +873,26 @@ const FilesPane: React.FC<FilesPaneProps> = ({
             let retries = 0;
             const maxRetries = 10;
 
-            while (fileStatus !== "active" && retries < maxRetries) {
+            while (
+              fileStatus !== "active" &&
+              fileStatus !== "headers_extracted" &&
+              retries < maxRetries
+            ) {
               await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait 1 second
 
               const fileStatusResponse = await fetch(`/api/files/${fileId}`);
               if (fileStatusResponse.ok) {
                 const fileData = await fileStatusResponse.json();
-                fileStatus = "working"; // fileData.status;
+                fileStatus = fileData.status || "working";
                 setUploadStatus(`File processing: ${fileStatus}...`);
+
+                // If we have headers_extracted status, we can proceed with column mapping
+                if (fileStatus === "headers_extracted") {
+                  console.log(
+                    "Headers extracted, proceeding with column mapping"
+                  );
+                  break;
+                }
               }
 
               retries++;
@@ -525,6 +906,32 @@ const FilesPane: React.FC<FilesPaneProps> = ({
             if (parsedDataResponse.ok) {
               const parsedData = await parsedDataResponse.json();
               console.log("Parsed data response:", parsedData);
+
+              // Also fetch the file metadata directly to check for columns
+              const fileResponse = await fetch(`/api/files/${fileId}`);
+              if (fileResponse.ok) {
+                const fileData = await fileResponse.json();
+                console.log("File metadata:", fileData);
+                console.log(
+                  "File metadata columns:",
+                  fileData.metadata?.columns
+                );
+
+                // If we have columns in the metadata, use those directly
+                if (
+                  fileData.metadata?.columns &&
+                  Array.isArray(fileData.metadata.columns)
+                ) {
+                  console.log(
+                    "Using columns from file metadata:",
+                    fileData.metadata.columns
+                  );
+                  let extractedColumns: string[] = fileData.metadata.columns;
+                  setUploadedFileColumns(extractedColumns);
+                  // Skip the rest of the column extraction logic by returning early
+                  return;
+                }
+              }
 
               // Extract columns from the parsed data response
               let extractedColumns: string[] = [];
@@ -667,122 +1074,527 @@ const FilesPane: React.FC<FilesPaneProps> = ({
               }
             }
 
-            // For first upload or no active schema, redirect to schema creation page
-            // Also check isFirstUpload as a fallback in case schema check failed
-            // Decide whether to show schema mapper or create schema
+            // New simplified flow: automatically use all columns
+            setUploadStatus("Automatically including all columns...");
 
-            if (!hasSchema) {
-              setUploadStatus("Redirecting to schema creation...");
+            // Create a mapping that includes all columns
+            const columnsToInclude =
+              uploadedFileColumns.length > 0
+                ? uploadedFileColumns
+                : Array.from({ length: 10 }, (_, i) => `Column ${i + 1}`);
 
-              // Store columns in localStorage for the schema creation page
-              const columnsToStore =
-                uploadedFileColumns.length > 0
-                  ? uploadedFileColumns
-                  : Array.from({ length: 10 }, (_, i) => `Column ${i + 1}`);
+            // Automatically create schema or add columns to existing schema
+            try {
+              // For first upload, create schema with all columns
+              if (!hasSchema) {
+                setUploadStatus("Creating schema with all columns...");
 
-              localStorage.setItem(
-                "extractedColumns",
-                JSON.stringify(columnsToStore)
+                // Create schema with all columns
+                const createSchemaResponse = await fetch(
+                  "/api/schema-management",
+                  {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                      action: "create_with_columns",
+                      name: "Auto-generated Schema",
+                      description: "Automatically created from file upload",
+                      columns: columnsToInclude.map((col) => ({
+                        id: uuidv4(),
+                        name: col,
+                        type: "text",
+                        description: `Auto-generated from column: ${col}`,
+                        isRequired: false,
+                      })),
+                      userId: session?.user?.email || session?.user?.id || "",
+                      projectId: projectId,
+                    }),
+                  }
+                );
+
+                if (!createSchemaResponse.ok) {
+                  throw new Error("Failed to create schema automatically");
+                }
+
+                const schemaData = await createSchemaResponse.json();
+                console.log("Auto-created schema:", schemaData);
+
+                // Activate the file
+                const activateResponse = await fetch(
+                  `/api/activate-file/${fileId}`,
+                  {
+                    method: "POST",
+                  }
+                );
+
+                if (!activateResponse.ok) {
+                  console.warn("Failed to activate file, but continuing");
+                }
+
+                setSuccessMessage(
+                  "File uploaded and schema created automatically with all columns!"
+                );
+                // We need to fetch files here to ensure proper state before column mapping
+                fetchFiles();
+              } else {
+                // For subsequent uploads, check if there are new columns that don't match existing ones
+                setUploadStatus("Checking for new columns...");
+
+                // Get current schema
+                const schemaResponse = await fetch(
+                  `/api/schema-management?projectId=${projectId}`
+                );
+                if (!schemaResponse.ok) {
+                  throw new Error("Failed to fetch current schema");
+                }
+
+                const schemaData = await schemaResponse.json();
+                const currentSchema =
+                  schemaData.schemas.find((s: any) => s.isActive) ||
+                  schemaData.schemas[0];
+
+                if (!currentSchema) {
+                  throw new Error("No schema found for project");
+                }
+
+                // Find new columns that don't exist in the current schema
+                const existingColumnNames = currentSchema.columns.map(
+                  (c: any) => c.name
+                );
+                const newColumns = columnsToInclude.filter(
+                  (col) => !existingColumnNames.includes(col)
+                );
+
+                if (newColumns.length > 0) {
+                  console.log(
+                    `Found ${newColumns.length} new columns that don't match existing schema:`,
+                    newColumns
+                  );
+
+                  // Show the column mapper for manual mapping when new columns are found
+                  setUploadStatus(
+                    "New columns found. Opening column mapper..."
+                  );
+                  setUploadedFileColumns(columnsToInclude);
+
+                  // Show the schema mapper modal
+                  setTimeout(() => {
+                    setShowSchemaMapper(true);
+                  }, 1000);
+
+                  return;
+                } else {
+                  // If no new columns, proceed with automatic mapping
+                  console.log(
+                    "No new columns found. Proceeding with automatic mapping."
+                  );
+
+                  // Create automatic mapping for all columns
+                  const mappingRecord: Record<string, string> = {};
+                  columnsToInclude.forEach((col) => {
+                    // Map each column to itself since they all exist in the schema
+                    mappingRecord[col] = col;
+                  });
+
+                  // Save the mapping
+                  const mappingResponse = await fetch("/api/column-mappings", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                      fileId,
+                      schemaId: currentSchema.id,
+                      mappings: mappingRecord,
+                      newColumnsAdded: 0,
+                    }),
+                  });
+
+                  if (!mappingResponse.ok) {
+                    throw new Error("Failed to save column mapping");
+                  }
+
+                  // Activate the file
+                  const activateResponse = await fetch(
+                    `/api/activate-file/${fileId}`,
+                    {
+                      method: "POST",
+                    }
+                  );
+
+                  if (!activateResponse.ok) {
+                    console.warn("Failed to activate file, but continuing");
+                  }
+
+                  setSuccessMessage(
+                    "File uploaded and automatically mapped to existing schema!"
+                  );
+                  // We need to fetch files here to ensure proper state before column mapping
+                  fetchFiles();
+                }
+              }
+
+              setUploading(false);
+              setUploadProgress(0);
+              setUploadStatus("");
+            } catch (err) {
+              console.error("Error in automatic schema management:", err);
+              setError(
+                err instanceof Error
+                  ? err.message
+                  : "Failed to process file automatically"
               );
-              localStorage.setItem("uploadedFileId", fileId);
-
-              // Redirect to schema creation page
-              router.push({
-                pathname: "/project/[id]/schema/create",
-                query: {
-                  id: projectId,
-                  firstUpload: "true",
-                  fileId: fileId,
-                  schemaCreated: "false",
-                },
-              });
-            } else {
-              // For subsequent uploads, show schema mapping modal
-              setTimeout(() => {
-                setUploadStatus("Mapping columns...");
-                setShowSchemaMapper(true);
-              }, 1000);
+              setUploading(false);
+              setUploadProgress(0);
+              setUploadStatus("");
             }
           } catch (err) {
             console.error("Error during column extraction:", err);
 
             // Even if column extraction fails, we can still proceed with the upload
-            // For first upload, redirect to schema creation with default columns
-            if (!hasSchema || isFirstUpload) {
-              setUploadStatus("Redirecting to schema creation...");
+            // Use default columns and continue with automatic schema management
+            setUploadStatus("Using default columns due to extraction error...");
 
-              // Store default columns in localStorage
-              localStorage.setItem(
-                "extractedColumns",
-                JSON.stringify(
-                  Array.from({ length: 10 }, (_, i) => `Column ${i + 1}`)
-                )
+            // Create default columns
+            const defaultColumns = Array.from(
+              { length: 10 },
+              (_, i) => `Column ${i + 1}`
+            );
+
+            setUploadedFileColumns(defaultColumns);
+
+            // Continue with automatic schema management using default columns
+            try {
+              // For first upload, create schema with default columns
+              if (!hasSchema) {
+                setUploadStatus("Creating schema with default columns...");
+
+                // Create schema with default columns
+                const createSchemaResponse = await fetch(
+                  "/api/schema-management",
+                  {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                      action: "create_with_columns",
+                      name: "Auto-generated Schema",
+                      description:
+                        "Automatically created from file upload with default columns",
+                      columns: defaultColumns.map((col) => ({
+                        id: uuidv4(),
+                        name: col,
+                        type: "text",
+                        description: `Auto-generated default column: ${col}`,
+                        isRequired: false,
+                      })),
+                      userId: userId || "",
+                      projectId: projectId,
+                    }),
+                  }
+                );
+
+                if (!createSchemaResponse.ok) {
+                  throw new Error("Failed to create schema automatically");
+                }
+
+                const schemaData = await createSchemaResponse.json();
+                console.log(
+                  "Auto-created schema with default columns:",
+                  schemaData
+                );
+
+                // Activate the file
+                const activateResponse = await fetch(
+                  `/api/activate-file/${fileId}`,
+                  {
+                    method: "POST",
+                  }
+                );
+
+                if (!activateResponse.ok) {
+                  console.warn("Failed to activate file, but continuing");
+                }
+
+                setSuccessMessage(
+                  "File uploaded and schema created automatically with default columns!"
+                );
+                // We need to fetch files here to ensure proper state before column mapping
+                fetchFiles();
+              } else {
+                // For subsequent uploads, use default columns
+                setUploadStatus("Using default columns for mapping...");
+
+                // Get current schema
+                const schemaResponse = await fetch(
+                  `/api/schema-management?projectId=${projectId}`
+                );
+                if (!schemaResponse.ok) {
+                  throw new Error("Failed to fetch current schema");
+                }
+
+                const schemaData = await schemaResponse.json();
+                const currentSchema =
+                  schemaData.schemas.find((s: any) => s.isActive) ||
+                  schemaData.schemas[0];
+
+                if (!currentSchema) {
+                  throw new Error("No schema found for project");
+                }
+
+                // Create automatic mapping for default columns
+                const mappingRecord: Record<string, string> = {};
+                defaultColumns.forEach((col) => {
+                  mappingRecord[col] = col;
+                });
+
+                // Save the mapping
+                const mappingResponse = await fetch("/api/column-mappings", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    fileId,
+                    schemaId: currentSchema.id,
+                    mappings: mappingRecord,
+                    newColumnsAdded: 0,
+                  }),
+                });
+
+                if (!mappingResponse.ok) {
+                  throw new Error("Failed to save column mapping");
+                }
+
+                // Activate the file
+                const activateResponse = await fetch(
+                  `/api/activate-file/${fileId}`,
+                  {
+                    method: "POST",
+                  }
+                );
+
+                if (!activateResponse.ok) {
+                  console.warn("Failed to activate file, but continuing");
+                }
+
+                setSuccessMessage(
+                  "File uploaded and automatically mapped with default columns!"
+                );
+                // We need to fetch files here to ensure proper state before column mapping
+                fetchFiles();
+              }
+
+              setUploading(false);
+              setUploadProgress(0);
+              setUploadStatus("");
+            } catch (innerErr) {
+              console.error(
+                "Error in automatic schema management with default columns:",
+                innerErr
               );
-              localStorage.setItem("uploadedFileId", fileId);
-
-              // Redirect to schema creation page
-              router.push({
-                pathname: "/project/[id]/schema/create",
-                query: {
-                  id: projectId,
-                  firstUpload: "true",
-                  fileId: fileId,
-                  schemaCreated: "false",
-                },
-              });
-            } else {
-              // For subsequent uploads, show schema mapping modal with empty columns
-              setTimeout(() => {
-                setUploadStatus("Mapping columns...");
-                setShowSchemaMapper(true);
-              }, 1000);
+              setError(
+                innerErr instanceof Error
+                  ? innerErr.message
+                  : "Failed to process file automatically"
+              );
+              setUploading(false);
+              setUploadProgress(0);
+              setUploadStatus("");
             }
           }
         } catch (columnErr) {
           console.error("Error in outer column extraction block:", columnErr);
           setUploadStatus("Error extracting columns, using defaults");
 
-          // Use default columns and continue with the flow
+          // Use default columns and continue with automatic schema management
           const defaultColumns = Array.from(
             { length: 10 },
             (_, i) => `Column ${i + 1}`
           );
           setUploadedFileColumns(defaultColumns);
 
-          // For first upload, redirect to schema creation with default columns
-          if (!hasSchema || isFirstUpload) {
-            setUploadStatus("Redirecting to schema creation...");
+          // Continue with automatic schema management using default columns
+          try {
+            // For first upload, create schema with default columns
+            if (!hasSchema) {
+              setUploadStatus("Creating schema with default columns...");
 
-            // Store default columns in localStorage
-            localStorage.setItem(
-              "extractedColumns",
-              JSON.stringify(defaultColumns)
+              // Create schema with default columns
+              const createSchemaResponse = await fetch(
+                "/api/schema-management",
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    action: "create_with_columns",
+                    name: "Auto-generated Schema",
+                    description:
+                      "Automatically created from file upload with default columns",
+                    columns: defaultColumns.map((col) => ({
+                      id: uuidv4(),
+                      name: col,
+                      type: "text",
+                      description: `Auto-generated default column: ${col}`,
+                      isRequired: false,
+                    })),
+                    userId: userId || "",
+                    projectId: projectId,
+                  }),
+                }
+              );
+
+              if (!createSchemaResponse.ok) {
+                throw new Error("Failed to create schema automatically");
+              }
+
+              const schemaData = await createSchemaResponse.json();
+              console.log(
+                "Auto-created schema with default columns:",
+                schemaData
+              );
+
+              // Activate the file
+              const activateResponse = await fetch(
+                `/api/activate-file/${fileId}`,
+                {
+                  method: "POST",
+                }
+              );
+
+              if (!activateResponse.ok) {
+                console.warn("Failed to activate file, but continuing");
+              }
+
+              setSuccessMessage(
+                "File uploaded and schema created automatically with default columns!"
+              );
+              // We need to fetch files here to ensure proper state before column mapping
+              fetchFiles();
+            } else {
+              // For subsequent uploads, check if there are new columns that don't match existing ones
+              setUploadStatus("Checking for new columns...");
+
+              // Get current schema
+              const schemaResponse = await fetch(
+                `/api/schema-management?projectId=${projectId}`
+              );
+              if (!schemaResponse.ok) {
+                throw new Error("Failed to fetch current schema");
+              }
+
+              const schemaData = await schemaResponse.json();
+              const currentSchema =
+                schemaData.schemas.find((s: any) => s.isActive) ||
+                schemaData.schemas[0];
+
+              if (!currentSchema) {
+                throw new Error("No schema found for project");
+              }
+
+              // Find new columns that don't exist in the current schema
+              const existingColumnNames = currentSchema.columns.map(
+                (c: any) => c.name
+              );
+              const newColumns = defaultColumns.filter(
+                (col) => !existingColumnNames.includes(col)
+              );
+
+              if (newColumns.length > 0) {
+                console.log(
+                  `Found ${newColumns.length} new default columns that don't match existing schema:`,
+                  newColumns
+                );
+
+                // Show the column mapper for manual mapping when new columns are found
+                setUploadStatus("New columns found. Opening column mapper...");
+                setUploadedFileColumns(defaultColumns);
+
+                // Show the schema mapper modal
+                setTimeout(() => {
+                  setShowSchemaMapper(true);
+                }, 1000);
+
+                return;
+              } else {
+                // If no new columns, proceed with automatic mapping
+                console.log(
+                  "No new columns found. Proceeding with automatic mapping."
+                );
+
+                // Create automatic mapping for default columns
+                const mappingRecord: Record<string, string> = {};
+                defaultColumns.forEach((col) => {
+                  // Map each column to itself since they all exist in the schema
+                  mappingRecord[col] = col;
+                });
+
+                // Save the mapping
+                const mappingResponse = await fetch("/api/column-mappings", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    fileId,
+                    schemaId: currentSchema.id,
+                    mappings: mappingRecord,
+                    newColumnsAdded: 0,
+                  }),
+                });
+
+                if (!mappingResponse.ok) {
+                  throw new Error("Failed to save column mapping");
+                }
+
+                // Activate the file
+                const activateResponse = await fetch(
+                  `/api/activate-file/${fileId}`,
+                  {
+                    method: "POST",
+                  }
+                );
+
+                if (!activateResponse.ok) {
+                  console.warn("Failed to activate file, but continuing");
+                }
+
+                setSuccessMessage(
+                  "File uploaded and automatically mapped with default columns!"
+                );
+                // We need to fetch files here to ensure proper state before column mapping
+                fetchFiles();
+              }
+            }
+
+            setUploading(false);
+            setUploadProgress(0);
+            setUploadStatus("");
+          } catch (innerErr) {
+            console.error(
+              "Error in automatic schema management with default columns:",
+              innerErr
             );
-            localStorage.setItem("uploadedFileId", fileId);
-
-            // Redirect to schema creation page
-            router.push({
-              pathname: "/project/[id]/schema/create",
-              query: {
-                id: projectId,
-                firstUpload: "true",
-                fileId: fileId,
-                schemaCreated: "false",
-              },
-            });
-          } else {
-            // For subsequent uploads, show schema mapping modal with default columns
-            setTimeout(() => {
-              setUploadStatus("Mapping columns...");
-              setShowSchemaMapper(true);
-            }, 1000);
+            setError(
+              innerErr instanceof Error
+                ? innerErr.message
+                : "Failed to process file automatically"
+            );
+            setUploading(false);
+            setUploadProgress(0);
+            setUploadStatus("");
           }
         }
       } else {
         throw new Error("No files were uploaded successfully");
       }
 
-      // Refresh the file list
+      // Refresh the file list to ensure proper state
       fetchFiles();
 
       // Reset the upload form after successful upload if we're not redirecting
@@ -838,9 +1650,19 @@ const FilesPane: React.FC<FilesPaneProps> = ({
         throw new Error("Failed to delete file");
       }
 
-      // Refresh the file list
+      // If the deleted file is the currently selected file, reset the selection
+      if (selectedFileId === fileId) {
+        // Call onSelectFile with null or empty string to reset the datatable
+        onSelectFile("");
+      }
+
+      // Refresh the file list after deletion
+      // This is necessary to update the UI after a file is deleted
       fetchFiles();
       setDeleteConfirmation(null);
+
+      // Show success message
+      setSuccessMessage("File successfully deleted");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
     }
@@ -854,6 +1676,140 @@ const FilesPane: React.FC<FilesPaneProps> = ({
   // Cancel delete
   const cancelDelete = () => {
     setDeleteConfirmation(null);
+  };
+
+  // View file details
+  const onViewFileDetails = async (fileId: string) => {
+    try {
+      setSelectedFileDetails(fileId);
+      setLoadingFileDetails(true);
+      setFileDetailsModalOpen(true);
+
+      // Fetch file details including errors
+      const response = await fetch(`/api/files/${fileId}`);
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch file details: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      // Extract the file data from the response (it's nested under 'file')
+      const fileData = data.file;
+
+      if (!fileData) {
+        throw new Error("File data not found in response");
+      }
+
+      console.log("File data:", fileData);
+
+      // Fetch file errors if any
+      const errorsResponse = await fetch(`/api/files/${fileId}/errors`);
+      let errorsData = [];
+
+      if (errorsResponse.ok) {
+        const errorsResult = await errorsResponse.json();
+        errorsData = errorsResult.errors || [];
+      }
+
+      setFileDetailsData({
+        ...fileData,
+        errors: errorsData,
+      });
+    } catch (error) {
+      console.error("Error fetching file details:", error);
+      setFileDetailsData({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to load file details",
+      });
+    } finally {
+      setLoadingFileDetails(false);
+    }
+  };
+
+  // Retry file ingestion
+  const retryFileIngestion = async (fileId: string) => {
+    try {
+      setRetryingFiles((prev) => ({ ...prev, [fileId]: true }));
+      setRetryErrors((prev) => {
+        const newErrors = { ...prev };
+        delete newErrors[fileId];
+        return newErrors;
+      });
+      setSuccessMessage(null);
+
+      const response = await fetch("/api/retry-file-ingestion", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ fileId }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          errorData.error ||
+            errorData.details ||
+            "Failed to retry file ingestion"
+        );
+      }
+
+      const data = await response.json();
+      setSuccessMessage(data.message || "File ingestion retried successfully!");
+
+      // Refresh the file list after successful retry
+      // This is necessary to show the updated file status
+      fetchFiles();
+    } catch (error) {
+      console.error(`Error retrying file ingestion for ${fileId}:`, error);
+      setRetryErrors((prev) => ({
+        ...prev,
+        [fileId]: error instanceof Error ? error.message : "Unknown error",
+      }));
+    } finally {
+      setRetryingFiles((prev) => ({ ...prev, [fileId]: false }));
+    }
+  };
+
+  // Update large files status
+  const updateLargeFilesStatus = async () => {
+    try {
+      setUpdatingLargeFiles(true);
+      setSuccessMessage(null);
+      setError(null);
+
+      const response = await fetch("/api/update-large-files-status", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          errorData.error ||
+            errorData.details ||
+            "Failed to update large files status"
+        );
+      }
+
+      const data = await response.json();
+      setSuccessMessage(
+        data.message || "Large files status updated successfully!"
+      );
+
+      // Refresh the file list after successful update
+      // This is necessary to show the updated file statuses
+      fetchFiles();
+    } catch (error) {
+      console.error("Error updating large files status:", error);
+      setError(error instanceof Error ? error.message : "Unknown error");
+    } finally {
+      setUpdatingLargeFiles(false);
+    }
   };
 
   // View file synopsis
@@ -882,8 +1838,14 @@ const FilesPane: React.FC<FilesPaneProps> = ({
         return "bg-yellow-100 text-yellow-800";
       case "processing":
         return "bg-blue-100 text-blue-800";
+      case "headers_extracted":
+        return "bg-purple-100 text-purple-800";
       case "error":
         return "bg-red-100 text-red-800";
+      case "timeout":
+        return "bg-orange-100 text-orange-800";
+      case "too_large":
+        return "bg-orange-100 text-orange-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
@@ -1077,6 +2039,10 @@ const FilesPane: React.FC<FilesPaneProps> = ({
               cancelDelete={cancelDelete}
               formatFileSize={formatFileSize}
               getStatusBadgeColor={getStatusBadgeColor}
+              retryFileIngestion={retryFileIngestion}
+              retryingFiles={retryingFiles}
+              retryErrors={retryErrors}
+              onViewFileDetails={onViewFileDetails}
             />
           ))}
         </div>
@@ -1105,6 +2071,23 @@ const FilesPane: React.FC<FilesPaneProps> = ({
             >
               {!loading && "↻"}
             </Button>
+
+            {/* Add button to update large files status */}
+            {files.some(
+              (file) =>
+                file.status === "error" && file.sizeBytes > 100 * 1024 * 1024
+            ) && (
+              <Button
+                onClick={updateLargeFilesStatus}
+                variant="secondary"
+                size="sm"
+                className="ml-2 text-xs"
+                title="Update large files status"
+                isLoading={updatingLargeFiles}
+              >
+                Fix Large Files
+              </Button>
+            )}
           </div>
           <div className="flex items-center">
             {projectId && (
@@ -1145,17 +2128,61 @@ const FilesPane: React.FC<FilesPaneProps> = ({
           </div>
         )}
 
+        {/* Display uploading files with progress */}
+        {Object.keys(uploadingFiles).length > 0 && (
+          <div className="mt-2 p-3 bg-blue-900/30 border border-blue-800 rounded-md">
+            <h4 className="text-blue-400 text-sm font-medium mb-2">
+              Files Uploading
+            </h4>
+            {Object.entries(uploadingFiles).map(
+              ([fileId, { fileName, progress }]) => (
+                <div key={fileId} className="mb-2 last:mb-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-blue-300 truncate max-w-xs">
+                      {fileName}
+                    </span>
+                    <span className="text-xs text-blue-300">
+                      {Math.round(progress)}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-ui-tertiary rounded-full h-1.5">
+                    <div
+                      className="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
+                      style={{ width: `${progress}%` }}
+                    ></div>
+                  </div>
+                </div>
+              )
+            )}
+          </div>
+        )}
+
         {!successMessage && files.length > 0 && (
           <div className="mt-2 mb-2 p-3 border border-ui-border rounded-md bg-ui-secondary">
             {fileUploadElement}
           </div>
         )}
 
-        {/* {error && (
-          <div className="mb-2 p-2 bg-red-50 border border-red-200 rounded-md">
-            <p className="text-red-700 text-xs">{error}</p>
+        {error && (
+          <div className="mt-2 p-3 bg-red-900/30 border border-red-800 rounded-md">
+            <p className="text-red-400 text-sm flex items-center">
+              <svg
+                className="w-5 h-5 mr-2"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
+              </svg>
+              {error}
+            </p>
           </div>
-        )} */}
+        )}
       </div>
 
       <div className="overflow-y-auto flex-1 p-1">{renderFileList()}</div>
@@ -1170,7 +2197,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
           }}
           fileId={uploadedFileId}
           fileColumns={uploadedFileColumns}
-          userId={session?.user?.email || session?.user?.id || ""}
+          userId={userId || ""}
           projectId={projectId}
           onMappingComplete={(mapping) => {
             setShowSchemaMapper(false);
@@ -1186,9 +2213,222 @@ const FilesPane: React.FC<FilesPaneProps> = ({
             setSuccessMessage(message);
 
             // Refresh the file list after mapping is complete
+            // This is necessary to show the updated file with mapping
             fetchFiles();
           }}
         />
+      )}
+
+      {/* File Details Modal */}
+      {fileDetailsModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-ui-primary border border-ui-border rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-medium text-gray-300">
+                File Details
+              </h3>
+              <Button
+                onClick={() => setFileDetailsModalOpen(false)}
+                variant="ghost"
+                size="sm"
+                className="text-gray-400 hover:text-gray-300"
+              >
+                ✕
+              </Button>
+            </div>
+
+            {loadingFileDetails ? (
+              <div className="flex justify-center items-center h-40">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent-primary"></div>
+              </div>
+            ) : fileDetailsData?.error ? (
+              <div className="p-4 bg-red-900/30 border border-red-800 rounded-md">
+                <p className="text-red-400">{fileDetailsData.error}</p>
+              </div>
+            ) : (
+              <div>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <p className="text-sm text-gray-400">Filename</p>
+                    <p className="text-sm text-gray-300">
+                      {fileDetailsData?.filename || "N/A"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-400">Status</p>
+                    <p className="text-sm text-gray-300">
+                      <span
+                        className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadgeColor(
+                          fileDetailsData?.status || "unknown"
+                        )}`}
+                      >
+                        {fileDetailsData?.status || "Unknown"}
+                      </span>
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-400">Size</p>
+                    <p className="text-sm text-gray-300">
+                      {fileDetailsData?.sizeBytes
+                        ? formatFileSize(fileDetailsData.sizeBytes)
+                        : "N/A"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-400">Format</p>
+                    <p className="text-sm text-gray-300">
+                      {fileDetailsData?.format?.toUpperCase() || "N/A"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-400">Uploaded At</p>
+                    <p className="text-sm text-gray-300">
+                      {fileDetailsData?.uploadedAt
+                        ? new Date(fileDetailsData.uploadedAt).toLocaleString()
+                        : "N/A"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-400">Ingested At</p>
+                    <p className="text-sm text-gray-300">
+                      {fileDetailsData?.ingestedAt
+                        ? new Date(fileDetailsData.ingestedAt).toLocaleString()
+                        : "N/A"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Display errors if any */}
+                {fileDetailsData?.status === "error" && (
+                  <div className="mt-4">
+                    <h4 className="text-md font-medium text-gray-300 mb-2">
+                      Error Details
+                    </h4>
+                    {fileDetailsData.activationError && (
+                      <div className="p-3 bg-red-900/30 border border-red-800 rounded-md mb-3">
+                        <p className="text-sm text-red-400">
+                          {fileDetailsData.activationError}
+                        </p>
+                      </div>
+                    )}
+
+                    {fileDetailsData.errors &&
+                    fileDetailsData.errors.length > 0 ? (
+                      <div className="border border-ui-border rounded-md overflow-hidden">
+                        <table className="min-w-full divide-y divide-ui-border">
+                          <thead className="bg-ui-secondary">
+                            <tr>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-400">
+                                Type
+                              </th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-400">
+                                Severity
+                              </th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-400">
+                                Message
+                              </th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-400">
+                                Timestamp
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-ui-border">
+                            {fileDetailsData.errors.map(
+                              (error: any, index: number) => (
+                                <tr
+                                  key={index}
+                                  className={
+                                    index % 2 === 0
+                                      ? "bg-ui-primary"
+                                      : "bg-ui-secondary"
+                                  }
+                                >
+                                  <td className="px-3 py-2 text-xs text-gray-300">
+                                    {error.errorType || error.type}
+                                  </td>
+                                  <td className="px-3 py-2 text-xs text-gray-300">
+                                    {error.severity}
+                                  </td>
+                                  <td className="px-3 py-2 text-xs text-gray-300">
+                                    {error.message}
+                                  </td>
+                                  <td className="px-3 py-2 text-xs text-gray-300">
+                                    {error.timestamp
+                                      ? new Date(
+                                          error.timestamp
+                                        ).toLocaleString()
+                                      : "N/A"}
+                                  </td>
+                                </tr>
+                              )
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="text-sm text-gray-400 mb-3">
+                          No detailed error records found.
+                        </p>
+
+                        {/* Display message for large files */}
+                        {fileDetailsData.status === "too_large" ? (
+                          <div className="p-3 bg-orange-900/30 border border-orange-800 rounded-md">
+                            <p className="text-sm text-orange-400 font-medium mb-1">
+                              Large File Detected
+                            </p>
+                            <p className="text-sm text-orange-400">
+                              This file is{" "}
+                              {formatFileSize(fileDetailsData.sizeBytes)} which
+                              is too large for the default batch size. Click the
+                              "Retry Ingestion" button below to process it with
+                              optimized settings for large files.
+                            </p>
+                          </div>
+                        ) : (
+                          fileDetailsData.sizeBytes &&
+                          fileDetailsData.sizeBytes > 50 * 1024 * 1024 && (
+                            <div className="p-3 bg-yellow-900/30 border border-yellow-800 rounded-md">
+                              <p className="text-sm text-yellow-400 font-medium mb-1">
+                                Large File Detected
+                              </p>
+                              <p className="text-sm text-yellow-400">
+                                This file is{" "}
+                                {formatFileSize(fileDetailsData.sizeBytes)}{" "}
+                                which may be too large for the default batch
+                                size. Click the "Retry Ingestion" button below
+                                to process it with optimized settings for large
+                                files.
+                              </p>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Display retry button for error or too_large files */}
+                {(fileDetailsData?.status === "error" ||
+                  fileDetailsData?.status === "too_large") && (
+                  <div className="mt-4 flex justify-end">
+                    <Button
+                      onClick={() => {
+                        setFileDetailsModalOpen(false);
+                        retryFileIngestion(selectedFileDetails!);
+                      }}
+                      variant="primary"
+                      size="sm"
+                      isLoading={retryingFiles[selectedFileDetails!]}
+                    >
+                      Retry Ingestion
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

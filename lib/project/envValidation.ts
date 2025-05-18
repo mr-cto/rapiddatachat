@@ -11,7 +11,7 @@ export function validateProjectEnvVars(): {
   missingVars: string[];
   invalidVars: { name: string; reason: string }[];
 } {
-  const requiredVars = ["PRISMA_STORAGE_DATABASE_URL", "STORAGE_PROVIDER"];
+  const requiredVars = ["STORAGE_PROVIDER"];
 
   const projectVars = [
     "PROJECT_STORAGE_PATH",
