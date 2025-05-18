@@ -8,7 +8,12 @@
  * @returns boolean True if using Prisma Accelerate
  */
 export function isPrismaAccelerate(): boolean {
-  return process.env.DATABASE_URL?.includes("prisma.io") || false;
+  // Check both DATABASE_URL and RAW_DATABASE_DATABASE_URL for Prisma Accelerate
+  return (
+    process.env.DATABASE_URL?.includes("prisma.io") ||
+    process.env.RAW_DATABASE_DATABASE_URL?.includes("prisma.io") ||
+    false
+  );
 }
 
 /**
@@ -17,7 +22,8 @@ export function isPrismaAccelerate(): boolean {
  * @returns number Transaction timeout in milliseconds
  */
 export function getAccelerateTransactionTimeout(): number {
-  return isPrismaAccelerate() ? 14000 : 30000; // 14 seconds for Accelerate, 30 seconds otherwise
+  // Reduce to 10 seconds for Accelerate to be well under the 15-second limit
+  return isPrismaAccelerate() ? 10000 : 10000; // 10 seconds for Accelerate, 30 seconds otherwise
 }
 
 /**
@@ -36,6 +42,7 @@ export function getAccelerateConfig(): {
   useTransactions: boolean;
   timeout: number;
   maxWait: number;
+  isAccelerate: boolean;
 } {
   const isAccelerate = isPrismaAccelerate();
 
@@ -43,6 +50,7 @@ export function getAccelerateConfig(): {
     useTransactions: !isAccelerate, // Avoid transactions with Accelerate
     timeout: getAccelerateTransactionTimeout(),
     maxWait: getAccelerateMaxWait(),
+    isAccelerate, // Add this flag for explicit checking
   };
 }
 

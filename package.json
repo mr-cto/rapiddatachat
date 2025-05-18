@@ -38,6 +38,7 @@
     "next-auth": "^4.24.11",
     "node-cache": "^5.1.2",
     "openai": "^4.97.0",
+    "papaparse": "^5.5.2",
     "parquetjs": "^0.11.2",
     "pg": "^8.16.0",
     "prisma": "^6.7.0",
@@ -50,8 +51,7 @@
     "uuid": "^11.1.0",
     "winston": "^3.17.0",
     "winston-daily-rotate-file": "^5.0.0",
-    "xlsx": "^0.18.5",
-    "papaparse": "^5.4.1"
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
@@ -63,6 +63,7 @@
     "@types/jest": "^29.5.14",
     "@types/node": "^20",
     "@types/node-fetch": "^2.6.12",
+    "@types/papaparse": "^5.3.16",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/react-window": "^1.8.8",

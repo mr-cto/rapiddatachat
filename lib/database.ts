@@ -1,14 +1,10 @@
 import { PrismaClient } from "@prisma/client";
 import { getPrismaClient as getReplicaPrismaClient } from "./prisma/replicaClient";
+import { getConnectionManager } from "./database/connectionManager";
 
-// Initialize Prisma client (singleton)
-let prismaInstance: PrismaClient | null = null;
-
+// Use the connection manager to get a client
 function getPrismaClient(): PrismaClient {
-  if (!prismaInstance) {
-    prismaInstance = new PrismaClient();
-  }
-  return prismaInstance;
+  return getConnectionManager().getPrimaryClient();
 }
 
 /**
@@ -139,8 +135,25 @@ export class Database {
                   );
                 } catch (viewError) {
                   console.error("Error creating view:", viewError);
-                  // If the view already exists, try to drop it first
+
+                  // Check for permission errors
                   if (
+                    viewError instanceof Error &&
+                    (viewError.message.includes("permission denied") ||
+                      viewError.message.includes("ERROR: permission denied"))
+                  ) {
+                    console.warn(
+                      "Permission denied for CREATE VIEW operation. Using fallback approach."
+                    );
+                    // Return a special error object that indicates permission issues
+                    return {
+                      error: "permission_denied",
+                      message: "Permission denied for CREATE VIEW operation",
+                      originalError: viewError,
+                    };
+                  }
+                  // If the view already exists, try to drop it first
+                  else if (
                     viewError instanceof Error &&
                     (viewError.message.includes("already exists") ||
                       viewError.message.includes("relation already exists"))
@@ -361,10 +374,9 @@ export class Database {
    * Close database connections
    */
   static async close(): Promise<void> {
-    if (prismaInstance) {
-      await prismaInstance.$disconnect();
-      prismaInstance = null;
-    }
+    // No need to manually disconnect when using connection manager
+    // The connection manager handles connection pooling
+    console.log("Database connections are managed by the connection pool");
   }
 
   /**

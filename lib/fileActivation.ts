@@ -308,10 +308,40 @@ export async function attachFileToUserWorkspace(
         );
 
         // For PostgreSQL, create a view that selects from file_data
-        await executeQuery(`
+        const viewResult = await executeQuery(`
           CREATE OR REPLACE VIEW ${viewName} AS
           SELECT data FROM file_data WHERE file_id = '${fileId}'
         `);
+
+        // Check if we got a permission error
+        if (
+          viewResult &&
+          typeof viewResult === "object" &&
+          "error" in viewResult &&
+          viewResult.error === "permission_denied"
+        ) {
+          console.log(
+            `[FileActivation] Permission denied for CREATE VIEW. Using alternative approach without views.`
+          );
+
+          // Update file metadata to indicate we're using a viewless approach
+          await executeQuery(`
+            UPDATE files
+            SET metadata = jsonb_set(
+              COALESCE(metadata, '{}'::jsonb),
+              '{viewless}',
+              'true'::jsonb
+            )
+            WHERE id = '${fileId}'
+          `).catch((err) => {
+            console.warn(
+              `[FileActivation] Failed to update file metadata, but continuing: ${err}`
+            );
+          });
+
+          // Return true to allow the operation to continue without views
+          return true;
+        }
       } else {
         // Use the existing view_metadata table
         console.log(
@@ -350,10 +380,40 @@ export async function attachFileToUserWorkspace(
       // Try an alternative approach with a simpler view name
       const simpleViewName = `data_file_${fileId.replace(/-/g, "_")}`;
 
-      await executeQuery(`
+      const simpleViewResult = await executeQuery(`
         CREATE OR REPLACE VIEW ${simpleViewName} AS
         SELECT data FROM file_data WHERE file_id = '${fileId}'
       `);
+
+      // Check if we got a permission error
+      if (
+        simpleViewResult &&
+        typeof simpleViewResult === "object" &&
+        "error" in simpleViewResult &&
+        simpleViewResult.error === "permission_denied"
+      ) {
+        console.log(
+          `[FileActivation] Permission denied for CREATE VIEW with simple name. Using alternative approach without views.`
+        );
+
+        // Update file metadata to indicate we're using a viewless approach
+        await executeQuery(`
+          UPDATE files
+          SET metadata = jsonb_set(
+            COALESCE(metadata, '{}'::jsonb),
+            '{viewless}',
+            'true'::jsonb
+          )
+          WHERE id = '${fileId}'
+        `).catch((err) => {
+          console.warn(
+            `[FileActivation] Failed to update file metadata, but continuing: ${err}`
+          );
+        });
+
+        // Return true to allow the operation to continue without views
+        return true;
+      }
 
       // Also update the metadata for this view
       await executeQuery(`
@@ -513,12 +573,21 @@ export async function activateFile(
     }
 
     // Attach file to user workspace
-    if (!(await attachFileToUserWorkspace(fileId, userId))) {
+    const attachResult = await attachFileToUserWorkspace(fileId, userId);
+    if (!attachResult) {
       return {
         success: false,
         message: "Failed to attach file to user workspace",
         dbOperationsSkipped,
       };
+    }
+
+    // If we're using the viewless approach, log this information
+    if (attachResult === true) {
+      console.log(
+        `[FileActivation] File ${fileId} activated using viewless approach due to permission restrictions`
+      );
+      dbOperationsSkipped = true;
     }
 
     // Update file status to active

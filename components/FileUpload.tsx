@@ -31,6 +31,7 @@ interface FileError {
 
 const FileUpload: React.FC<FileUploadProps> = ({
   onFilesSelected,
+  onPreviewParsed,
   accept = ".csv,.xlsx",
   multiple = false,
   maxSize = MAX_FILE_SIZE,
@@ -90,7 +91,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
             const preview = await parseFileClient(valid[0]);
             onPreviewParsed(preview);
           } catch (err) {
-            console.warn('Preview parsing failed', err);
+            console.warn("Preview parsing failed", err);
           }
         }
 

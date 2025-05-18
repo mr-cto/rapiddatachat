@@ -1187,22 +1187,52 @@ const FilesPane: React.FC<FilesPaneProps> = ({
                     mappingRecord[col] = col;
                   });
 
-                  // Save the mapping
-                  const mappingResponse = await fetch("/api/column-mappings", {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                      fileId,
-                      schemaId: currentSchema.id,
-                      mappings: mappingRecord,
-                      newColumnsAdded: 0,
-                    }),
-                  });
+                  // Save the mapping with better error handling
+                  try {
+                    console.log(
+                      "Attempting to save column mapping with data:",
+                      {
+                        fileId,
+                        schemaId: currentSchema.id,
+                        mappingsCount: Object.keys(mappingRecord).length,
+                      }
+                    );
 
-                  if (!mappingResponse.ok) {
-                    throw new Error("Failed to save column mapping");
+                    const mappingResponse = await fetch(
+                      "/api/column-mappings",
+                      {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({
+                          fileId,
+                          schemaId: currentSchema.id,
+                          mappings: mappingRecord,
+                          newColumnsAdded: 0,
+                        }),
+                      }
+                    );
+
+                    if (!mappingResponse.ok) {
+                      const errorData = await mappingResponse
+                        .json()
+                        .catch(() => ({}));
+                      console.error("Column mapping save failed:", errorData);
+                      throw new Error(
+                        `Failed to save column mapping: ${
+                          errorData.error || mappingResponse.statusText
+                        }`
+                      );
+                    }
+
+                    console.log("Column mapping saved successfully");
+                  } catch (mappingError) {
+                    console.error("Error saving column mapping:", mappingError);
+                    // Continue with file activation even if mapping fails
+                    console.warn(
+                      "Continuing with file activation despite mapping error"
+                    );
                   }
 
                   // Activate the file
@@ -1523,22 +1553,46 @@ const FilesPane: React.FC<FilesPaneProps> = ({
                   mappingRecord[col] = col;
                 });
 
-                // Save the mapping
-                const mappingResponse = await fetch("/api/column-mappings", {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({
+                // Save the mapping with better error handling
+                try {
+                  console.log("Attempting to save column mapping with data:", {
                     fileId,
                     schemaId: currentSchema.id,
-                    mappings: mappingRecord,
-                    newColumnsAdded: 0,
-                  }),
-                });
+                    mappingsCount: Object.keys(mappingRecord).length,
+                  });
 
-                if (!mappingResponse.ok) {
-                  throw new Error("Failed to save column mapping");
+                  const mappingResponse = await fetch("/api/column-mappings", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                      fileId,
+                      schemaId: currentSchema.id,
+                      mappings: mappingRecord,
+                      newColumnsAdded: 0,
+                    }),
+                  });
+
+                  if (!mappingResponse.ok) {
+                    const errorData = await mappingResponse
+                      .json()
+                      .catch(() => ({}));
+                    console.error("Column mapping save failed:", errorData);
+                    throw new Error(
+                      `Failed to save column mapping: ${
+                        errorData.error || mappingResponse.statusText
+                      }`
+                    );
+                  }
+
+                  console.log("Column mapping saved successfully");
+                } catch (mappingError) {
+                  console.error("Error saving column mapping:", mappingError);
+                  // Continue with file activation even if mapping fails
+                  console.warn(
+                    "Continuing with file activation despite mapping error"
+                  );
                 }
 
                 // Activate the file

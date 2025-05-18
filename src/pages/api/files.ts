@@ -2,16 +2,8 @@ import { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../../../lib/authOptions";
 import { PrismaClient } from "@prisma/client";
-
-// Initialize Prisma client (singleton)
-let prismaInstance: PrismaClient | null = null;
-
-function getPrismaClient(): PrismaClient {
-  if (!prismaInstance) {
-    prismaInstance = new PrismaClient();
-  }
-  return prismaInstance;
-}
+import { getConnectionManager } from "../../../lib/database/connectionManager";
+import { getPrismaClient } from "../../../lib/prisma/replicaClient";
 
 export default async function handler(
   req: NextApiRequest,
@@ -71,46 +63,52 @@ export default async function handler(
       where.status = status;
     }
 
-    // Get Prisma client
-    const prisma = getPrismaClient();
+    // Get connection manager and replica client
+    const connectionManager = getConnectionManager();
+    const replicaClient = connectionManager.getReplicaClient();
 
-    // Get total count for pagination
-    const totalCount = await prisma.file.count({ where });
+    try {
+      // Get total count for pagination
+      const totalCount = await replicaClient.file.count({ where });
 
-    // Get files with pagination, sorting, and filtering
-    const files = await prisma.file.findMany({
-      where,
-      orderBy: {
-        [String(sortColumn)]: sortDirection === "asc" ? "asc" : "desc",
-      },
-      skip,
-      take: pageSizeNum,
-      include: {
-        _count: {
-          select: {
-            fileErrors: true,
+      // Get files with pagination, sorting, and filtering
+      const files = await replicaClient.file.findMany({
+        where,
+        orderBy: {
+          [String(sortColumn)]: sortDirection === "asc" ? "asc" : "desc",
+        },
+        skip,
+        take: pageSizeNum,
+        include: {
+          _count: {
+            select: {
+              fileErrors: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    // Calculate total pages
-    const totalPages = Math.ceil(totalCount / pageSizeNum);
+      // Calculate total pages
+      const totalPages = Math.ceil(totalCount / pageSizeNum);
 
-    // Return the files with pagination info
-    return res.status(200).json({
-      files,
-      pagination: {
-        page: pageNum,
-        pageSize: pageSizeNum,
-        totalCount,
-        totalPages,
-      },
-      sorting: {
-        column: sortColumn,
-        direction: sortDirection,
-      },
-    });
+      // Return the files with pagination info
+      return res.status(200).json({
+        files,
+        pagination: {
+          page: pageNum,
+          pageSize: pageSizeNum,
+          totalCount,
+          totalPages,
+        },
+        sorting: {
+          column: sortColumn,
+          direction: sortDirection,
+        },
+      });
+    } finally {
+      // Release the client back to the pool
+      connectionManager.releaseReplicaClient(replicaClient);
+    }
   } catch (error) {
     console.error("Error fetching files:", error);
     return res.status(500).json({
