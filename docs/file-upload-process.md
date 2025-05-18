@@ -123,11 +123,11 @@ sequenceDiagram
 
 ### 2. File Processing
 
-1. Backend processes the uploaded file asynchronously
-2. File is parsed to extract headers and data
-3. Data is stored in a database table
-4. File status is updated to "processing" then "active" when complete
-5. Frontend periodically checks file status or receives updates
+1. Backend processes the uploaded file asynchronously.
+2. The file is parsed to extract headers and data.
+3. Data is stored in a database table.
+4. The file status is updated to "processing" and then "active" when complete.
+5. The frontend periodically checks file status or receives updates.
 
 ### 3. Column Extraction
 
