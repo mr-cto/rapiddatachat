@@ -29,10 +29,20 @@ export class ColumnMappingService {
         // Get Prisma Accelerate configuration
         const accelerateConfig = getAccelerateConfig();
 
-        if (!accelerateConfig.useTransactions) {
+        // Log the Accelerate detection status for debugging
+        console.log(
+          `[ColumnMappingService] Prisma Accelerate detected: ${
+            accelerateConfig.isAccelerate ? "Yes" : "No"
+          }`
+        );
+
+        if (
+          accelerateConfig.isAccelerate ||
+          !accelerateConfig.useTransactions
+        ) {
           // For Prisma Accelerate, avoid transactions due to timeout limitations
           console.log(
-            `[ColumnMappingService] Using non-transactional approach (Prisma Accelerate detected)`
+            `[ColumnMappingService] Using non-transactional approach (Prisma Accelerate detected or transactions disabled)`
           );
 
           // Get schema columns in a single query
@@ -77,9 +87,28 @@ export class ColumnMappingService {
           const mappingsToCreate: any[] = [];
           const newColumnsToCreate: any[] = [];
 
-          // For each file column to schema column mapping
-          for (const [fileColumn, schemaColumnName] of Object.entries(
-            mapping.mappings
+          // Get mapping entries
+          const mappingEntries = Object.entries(mapping.mappings);
+
+          // Log the number of mappings for debugging
+          console.log(
+            `[ColumnMappingService] Processing ${mappingEntries.length} column mappings (non-transactional)`
+          );
+
+          // Set a reasonable batch size limit to prevent timeouts
+          const BATCH_SIZE_LIMIT = accelerateConfig.isAccelerate ? 100 : 500;
+
+          // If we have too many mappings, log a warning
+          if (mappingEntries.length > BATCH_SIZE_LIMIT) {
+            console.warn(
+              `[ColumnMappingService] Large mapping operation detected (${mappingEntries.length} mappings). Processing first ${BATCH_SIZE_LIMIT} to prevent timeout.`
+            );
+          }
+
+          // For each file column to schema column mapping (with batch size limit)
+          for (const [fileColumn, schemaColumnName] of mappingEntries.slice(
+            0,
+            BATCH_SIZE_LIMIT
           )) {
             const normalizedSchemaColumnName =
               normalizeColumnName(schemaColumnName);
@@ -192,9 +221,30 @@ export class ColumnMappingService {
               const mappingsToCreate: any[] = [];
               const newColumnsToCreate: any[] = [];
 
-              // For each file column to schema column mapping
-              for (const [fileColumn, schemaColumnName] of Object.entries(
-                mapping.mappings
+              // Get mapping entries
+              const mappingEntries = Object.entries(mapping.mappings);
+
+              // Log the number of mappings for debugging
+              console.log(
+                `[ColumnMappingService] Processing ${mappingEntries.length} column mappings`
+              );
+
+              // Set a reasonable batch size limit to prevent timeouts
+              const BATCH_SIZE_LIMIT = accelerateConfig.isAccelerate
+                ? 100
+                : 500;
+
+              // If we have too many mappings, log a warning
+              if (mappingEntries.length > BATCH_SIZE_LIMIT) {
+                console.warn(
+                  `[ColumnMappingService] Large mapping operation detected (${mappingEntries.length} mappings). Processing first ${BATCH_SIZE_LIMIT} to prevent timeout.`
+                );
+              }
+
+              // For each file column to schema column mapping (with batch size limit)
+              for (const [fileColumn, schemaColumnName] of mappingEntries.slice(
+                0,
+                BATCH_SIZE_LIMIT
               )) {
                 const normalizedSchemaColumnName =
                   normalizeColumnName(schemaColumnName);
@@ -268,11 +318,31 @@ export class ColumnMappingService {
               isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
             }
           );
+
+          // Log transaction configuration for debugging
+          console.log(
+            `[ColumnMappingService] Transaction completed with timeout: ${accelerateConfig.timeout}ms, maxWait: ${accelerateConfig.maxWait}ms`
+          );
         }
       } catch (error) {
         console.error(
-          `[ColumnMappingService] Transaction error saving column mapping:`,
+          `[ColumnMappingService] Transaction error saving column mapping for file ${mapping.fileId} and schema ${mapping.schemaId}:`,
           error
+        );
+        // Log additional details about the mapping
+        console.error(
+          `[ColumnMappingService] Mapping details: ${
+            Object.keys(mapping.mappings).length
+          } mappings`,
+          {
+            fileId: mapping.fileId,
+            schemaId: mapping.schemaId,
+            sampleMappings: Object.entries(mapping.mappings).slice(0, 3),
+            errorName: error instanceof Error ? error.name : "Unknown",
+            errorMessage:
+              error instanceof Error ? error.message : String(error),
+            errorStack: error instanceof Error ? error.stack : "No stack trace",
+          }
         );
         throw error;
       } finally {
@@ -283,6 +353,20 @@ export class ColumnMappingService {
       console.error(
         `[ColumnMappingService] Error saving column mapping for file ${mapping.fileId} and schema ${mapping.schemaId}:`,
         error
+      );
+      // Log additional details about the mapping
+      console.error(
+        `[ColumnMappingService] Mapping details: ${
+          Object.keys(mapping.mappings).length
+        } mappings`,
+        {
+          fileId: mapping.fileId,
+          schemaId: mapping.schemaId,
+          sampleMappings: Object.entries(mapping.mappings).slice(0, 3),
+          errorName: error instanceof Error ? error.name : "Unknown",
+          errorMessage: error instanceof Error ? error.message : String(error),
+          errorStack: error instanceof Error ? error.stack : "No stack trace",
+        }
       );
       return false;
     }

@@ -1,4 +1,5 @@
 import React, { useRef, useState } from "react";
+import { parseFileClient } from "../utils/clientParse";
 
 // Maximum file size: 500MB in bytes
 const MAX_FILE_SIZE = 500 * 1024 * 1024;
@@ -13,6 +14,7 @@ const CHUNK_SIZE = 5 * 1024 * 1024;
 
 interface FileUploadProps {
   onFilesSelected: (files: File[], projectId?: string) => void;
+  onPreviewParsed?: (preview: Record<string, unknown>[]) => void;
   accept?: string;
   multiple?: boolean;
   maxSize?: number;
@@ -29,6 +31,7 @@ interface FileError {
 
 const FileUpload: React.FC<FileUploadProps> = ({
   onFilesSelected,
+  onPreviewParsed,
   accept = ".csv,.xlsx",
   multiple = false,
   maxSize = MAX_FILE_SIZE,
@@ -76,12 +79,21 @@ const FileUpload: React.FC<FileUploadProps> = ({
     return { valid: validFiles, errors: fileErrors };
   };
 
-  const handleFiles = (files: FileList | null) => {
+  const handleFiles = async (files: FileList | null) => {
     if (files && files.length > 0) {
       const { valid, errors } = validateFiles(files);
 
       if (valid.length > 0) {
         setSelectedFiles(valid);
+
+        if (onPreviewParsed) {
+          try {
+            const preview = await parseFileClient(valid[0]);
+            onPreviewParsed(preview);
+          } catch (err) {
+            console.warn("Preview parsing failed", err);
+          }
+        }
 
         if (useChunkedUpload) {
           handleChunkedUpload(valid[0]);

@@ -44,12 +44,20 @@ export class DatabaseConnectionManager {
       this.poolCreationTimestamps.set(client, Date.now());
     }
 
+    // Check if RAW_DATABASE_DATABASE_URL is set
+    if (!process.env.RAW_DATABASE_DATABASE_URL) {
+      console.warn(
+        "[DatabaseConnectionManager] RAW_DATABASE_DATABASE_URL is not set. Using primary database URL for replica pool."
+      );
+    }
+
     // Initialize replica pool
     for (let i = 0; i < this.minPoolSize; i++) {
       const client = new PrismaClient({
         datasources: {
           db: {
-            url: process.env.RAW_DATABASE_DATABASE_URL,
+            url:
+              process.env.RAW_DATABASE_DATABASE_URL || process.env.DATABASE_URL,
           },
         },
       });
@@ -117,7 +125,9 @@ export class DatabaseConnectionManager {
         const newClient = new PrismaClient({
           datasources: {
             db: {
-              url: process.env.RAW_DATABASE_DATABASE_URL,
+              url:
+                process.env.RAW_DATABASE_DATABASE_URL ||
+                process.env.DATABASE_URL,
             },
           },
         });
@@ -132,7 +142,8 @@ export class DatabaseConnectionManager {
     const client = new PrismaClient({
       datasources: {
         db: {
-          url: process.env.RAW_DATABASE_DATABASE_URL,
+          url:
+            process.env.RAW_DATABASE_DATABASE_URL || process.env.DATABASE_URL,
         },
       },
     });
