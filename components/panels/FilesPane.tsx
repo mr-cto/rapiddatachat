@@ -377,9 +377,35 @@ const FilesPane: React.FC<FilesPaneProps> = ({
     }
   }, [isAuthenticated, projectId]);
 
+  // Track last fetch time to prevent too frequent fetches
+  const lastFetchTimeRef = useRef<number>(0);
+  const fetchInProgressRef = useRef<boolean>(false);
+  const fetchQueuedRef = useRef<boolean>(false);
+
   // Fetch files - memoized with useCallback to prevent unnecessary re-renders
   const fetchFiles = useCallback(async () => {
+    // Don't fetch if not authenticated
     if (!isAuthenticated) return;
+
+    // Prevent fetching too frequently (minimum 500ms between fetches)
+    const now = Date.now();
+    const timeSinceLastFetch = now - lastFetchTimeRef.current;
+
+    if (timeSinceLastFetch < 500) {
+      // If a fetch is already in progress, queue another one
+      if (fetchInProgressRef.current && !fetchQueuedRef.current) {
+        fetchQueuedRef.current = true;
+        setTimeout(() => {
+          fetchQueuedRef.current = false;
+          fetchFiles();
+        }, 500 - timeSinceLastFetch);
+      }
+      return;
+    }
+
+    // Set fetch in progress
+    fetchInProgressRef.current = true;
+    lastFetchTimeRef.current = now;
 
     try {
       setLoading(true);
@@ -434,6 +460,13 @@ const FilesPane: React.FC<FilesPaneProps> = ({
       console.error("Error fetching files:", err);
     } finally {
       setLoading(false);
+      fetchInProgressRef.current = false;
+
+      // If another fetch was queued while this one was in progress, execute it now
+      if (fetchQueuedRef.current) {
+        fetchQueuedRef.current = false;
+        setTimeout(fetchFiles, 100);
+      }
     }
   }, [
     isAuthenticated,
@@ -544,7 +577,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
             return newState;
           });
 
-          // Refresh the file list
+          // File is now active, refresh the file list
           fetchFiles();
         }
       }
@@ -565,6 +598,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
       setError(`Error processing "${fileName}": ${error}`);
 
       // Refresh the file list to show the error status
+      // This is important to show the updated error state
       fetchFiles();
     };
 
@@ -1091,6 +1125,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
                 setSuccessMessage(
                   "File uploaded and schema created automatically with all columns!"
                 );
+                // We need to fetch files here to ensure proper state before column mapping
                 fetchFiles();
               } else {
                 // For subsequent uploads, check if there are new columns that don't match existing ones
@@ -1185,6 +1220,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
                   setSuccessMessage(
                     "File uploaded and automatically mapped to existing schema!"
                   );
+                  // We need to fetch files here to ensure proper state before column mapping
                   fetchFiles();
                 }
               }
@@ -1275,6 +1311,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
                 setSuccessMessage(
                   "File uploaded and schema created automatically with default columns!"
                 );
+                // We need to fetch files here to ensure proper state before column mapping
                 fetchFiles();
               } else {
                 // For subsequent uploads, use default columns
@@ -1336,6 +1373,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
                 setSuccessMessage(
                   "File uploaded and automatically mapped with default columns!"
                 );
+                // We need to fetch files here to ensure proper state before column mapping
                 fetchFiles();
               }
 
@@ -1425,6 +1463,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
               setSuccessMessage(
                 "File uploaded and schema created automatically with default columns!"
               );
+              // We need to fetch files here to ensure proper state before column mapping
               fetchFiles();
             } else {
               // For subsequent uploads, check if there are new columns that don't match existing ones
@@ -1517,6 +1556,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
                 setSuccessMessage(
                   "File uploaded and automatically mapped with default columns!"
                 );
+                // We need to fetch files here to ensure proper state before column mapping
                 fetchFiles();
               }
             }
@@ -1543,7 +1583,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
         throw new Error("No files were uploaded successfully");
       }
 
-      // Refresh the file list
+      // Refresh the file list to ensure proper state
       fetchFiles();
 
       // Reset the upload form after successful upload if we're not redirecting
@@ -1605,7 +1645,8 @@ const FilesPane: React.FC<FilesPaneProps> = ({
         onSelectFile("");
       }
 
-      // Refresh the file list
+      // Refresh the file list after deletion
+      // This is necessary to update the UI after a file is deleted
       fetchFiles();
       setDeleteConfirmation(null);
 
@@ -1708,6 +1749,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
       setSuccessMessage(data.message || "File ingestion retried successfully!");
 
       // Refresh the file list after successful retry
+      // This is necessary to show the updated file status
       fetchFiles();
     } catch (error) {
       console.error(`Error retrying file ingestion for ${fileId}:`, error);
@@ -1749,6 +1791,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
       );
 
       // Refresh the file list after successful update
+      // This is necessary to show the updated file statuses
       fetchFiles();
     } catch (error) {
       console.error("Error updating large files status:", error);
@@ -2159,6 +2202,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
             setSuccessMessage(message);
 
             // Refresh the file list after mapping is complete
+            // This is necessary to show the updated file with mapping
             fetchFiles();
           }}
         />
