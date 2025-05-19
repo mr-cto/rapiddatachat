@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Tooltip } from "react-tooltip";
+import { ColumnMapping } from "../../lib/columnMappingService";
 
 /**
  * Interface for column metadata
@@ -35,6 +36,8 @@ interface SchemaColumnMetadata extends ColumnMetadata {
 interface ColumnMappingDisplayProps {
   fileColumns: FileColumnMetadata[];
   schemaColumns: SchemaColumnMetadata[];
+  /** Current mappings so we can determine which columns are mapped */
+  mappings?: ColumnMapping[];
   isLoading?: boolean;
   onSelectFileColumn?: (column: FileColumnMetadata) => void;
   onSelectSchemaColumn?: (column: SchemaColumnMetadata) => void;
@@ -49,6 +52,7 @@ interface ColumnMappingDisplayProps {
 const ColumnMappingDisplay: React.FC<ColumnMappingDisplayProps> = ({
   fileColumns,
   schemaColumns,
+  mappings,
   isLoading = false,
   onSelectFileColumn,
   onSelectSchemaColumn,
@@ -64,15 +68,21 @@ const ColumnMappingDisplay: React.FC<ColumnMappingDisplayProps> = ({
   const [filteredSchemaColumns, setFilteredSchemaColumns] = useState<
     SchemaColumnMetadata[]
   >([]);
+  const [showUnmappedOnly, setShowUnmappedOnly] = useState(false);
 
-  // Filter columns based on search
+  // Filter columns based on search and unmapped toggle
   useEffect(() => {
     if (fileColumns) {
-      setFilteredFileColumns(
-        fileColumns.filter((column) =>
-          column.name.toLowerCase().includes(searchFileColumns.toLowerCase())
-        )
+      let cols = fileColumns.filter((column) =>
+        column.name.toLowerCase().includes(searchFileColumns.toLowerCase())
       );
+
+      if (showUnmappedOnly && mappings) {
+        const mapped = new Set(mappings.map((m) => m.fileColumnName));
+        cols = cols.filter((col) => !mapped.has(col.name));
+      }
+
+      setFilteredFileColumns(cols);
     }
 
     if (schemaColumns) {
@@ -82,7 +92,14 @@ const ColumnMappingDisplay: React.FC<ColumnMappingDisplayProps> = ({
         )
       );
     }
-  }, [fileColumns, schemaColumns, searchFileColumns, searchSchemaColumns]);
+  }, [
+    fileColumns,
+    schemaColumns,
+    searchFileColumns,
+    searchSchemaColumns,
+    showUnmappedOnly,
+    mappings,
+  ]);
 
   /**
    * Get CSS class for file column
@@ -171,7 +188,7 @@ const ColumnMappingDisplay: React.FC<ColumnMappingDisplayProps> = ({
       <div>
         <div className="mb-4">
           <h3 className="text-lg font-semibold mb-2">File Columns</h3>
-          <div className="relative">
+          <div className="relative mb-2">
             <input
               type="text"
               placeholder="Search file columns..."
@@ -195,6 +212,18 @@ const ColumnMappingDisplay: React.FC<ColumnMappingDisplayProps> = ({
                 />
               </svg>
             </div>
+          </div>
+          <div className="flex items-center space-x-2 mt-2">
+            <input
+              id="unmapped-toggle"
+              type="checkbox"
+              className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+              checked={showUnmappedOnly}
+              onChange={() => setShowUnmappedOnly(!showUnmappedOnly)}
+            />
+            <label htmlFor="unmapped-toggle" className="text-sm text-gray-600">
+              Show unmapped only
+            </label>
           </div>
         </div>
 
