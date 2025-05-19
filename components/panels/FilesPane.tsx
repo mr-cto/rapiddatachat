@@ -390,18 +390,18 @@ const FilesPane: React.FC<FilesPaneProps> = ({
     // Don't fetch if not authenticated
     if (!isAuthenticated) return;
 
-    // Prevent fetching too frequently (minimum 500ms between fetches)
+    // Prevent fetching too frequently (minimum 2000ms between fetches)
     const now = Date.now();
     const timeSinceLastFetch = now - lastFetchTimeRef.current;
 
-    if (timeSinceLastFetch < 500) {
+    if (timeSinceLastFetch < 2000) {
       // If a fetch is already in progress, queue another one
       if (fetchInProgressRef.current && !fetchQueuedRef.current) {
         fetchQueuedRef.current = true;
         setTimeout(() => {
           fetchQueuedRef.current = false;
           fetchFiles();
-        }, 500 - timeSinceLastFetch);
+        }, 2000 - timeSinceLastFetch);
       }
       return;
     }
@@ -409,6 +409,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
     // Set fetch in progress
     fetchInProgressRef.current = true;
     lastFetchTimeRef.current = now;
+    console.log("Fetching files...");
 
     try {
       setLoading(true);
@@ -484,7 +485,25 @@ const FilesPane: React.FC<FilesPaneProps> = ({
 
   // Initial fetch on mount only and set up event listeners for file upload progress
   useEffect(() => {
+    // Initial fetch
     fetchFiles();
+
+    // Set up polling interval for file status updates
+    const pollingInterval = setInterval(() => {
+      // Only poll if there are files in processing state
+      const hasProcessingFiles = files.some(
+        (file) =>
+          file.status === "processing" ||
+          file.status === "pending" ||
+          file.status === "headers_extracted"
+      );
+
+      // Only poll if there are processing files or files being uploaded
+      if (hasProcessingFiles || Object.keys(uploadingFiles).length > 0) {
+        console.log("Polling for file status updates...");
+        fetchFiles();
+      }
+    }, 5000); // Poll every 5 seconds instead of constant polling
 
     // Add event listeners for file upload progress
     const handleFileUploadProgress = (event: CustomEvent) => {
@@ -663,6 +682,10 @@ const FilesPane: React.FC<FilesPaneProps> = ({
 
     // Cleanup
     return () => {
+      // Clear polling interval
+      clearInterval(pollingInterval);
+
+      // Remove event listeners
       window.removeEventListener(
         "fileUploadProgress",
         handleFileUploadProgress as EventListener
@@ -883,7 +906,8 @@ const FilesPane: React.FC<FilesPaneProps> = ({
               const fileStatusResponse = await fetch(`/api/files/${fileId}`);
               if (fileStatusResponse.ok) {
                 const fileData = await fileStatusResponse.json();
-                fileStatus = fileData.status || "working";
+                // The file data is nested in a 'file' property
+                fileStatus = fileData.file?.status || "working";
                 setUploadStatus(`File processing: ${fileStatus}...`);
 
                 // If we have headers_extracted status, we can proceed with column mapping

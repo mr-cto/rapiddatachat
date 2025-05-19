@@ -49,7 +49,10 @@ export class DatabaseConnectionManager {
       const client = new PrismaClient({
         datasources: {
           db: {
-            url: process.env.RAW_DATABASE_DATABASE_URL,
+            // Add search_path parameter to the connection URL if schema is specified
+            url: process.env.DATABASE_SCHEMA
+              ? `${process.env.RAW_DATABASE_DATABASE_URL}?options=--search_path=${process.env.DATABASE_SCHEMA}`
+              : process.env.RAW_DATABASE_DATABASE_URL,
           },
         },
       });
@@ -117,7 +120,10 @@ export class DatabaseConnectionManager {
         const newClient = new PrismaClient({
           datasources: {
             db: {
-              url: process.env.RAW_DATABASE_DATABASE_URL,
+              // Add search_path parameter to the connection URL if schema is specified
+              url: process.env.DATABASE_SCHEMA
+                ? `${process.env.RAW_DATABASE_DATABASE_URL}?options=--search_path=${process.env.DATABASE_SCHEMA}`
+                : process.env.RAW_DATABASE_DATABASE_URL,
             },
           },
         });
@@ -132,7 +138,10 @@ export class DatabaseConnectionManager {
     const client = new PrismaClient({
       datasources: {
         db: {
-          url: process.env.RAW_DATABASE_DATABASE_URL,
+          // Add search_path parameter to the connection URL if schema is specified
+          url: process.env.DATABASE_SCHEMA
+            ? `${process.env.RAW_DATABASE_DATABASE_URL}?options=--search_path=${process.env.DATABASE_SCHEMA}`
+            : process.env.RAW_DATABASE_DATABASE_URL,
         },
       },
     });

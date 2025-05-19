@@ -4,6 +4,7 @@ import { authOptions } from "../../../lib/authOptions";
 import { v4 as uuidv4 } from "uuid";
 import { executeQuery } from "../../../lib/database";
 import { PrismaClient } from "@prisma/client";
+import { getConnectionManager } from "../../../lib/database/connectionManager";
 import formidable, { File as FormidableFile } from "formidable";
 import fs from "fs";
 import {
@@ -272,12 +273,20 @@ export default async function handler(
           if (projectId) {
             console.log(`Associating file ${fileId} with project ${projectId}`);
 
-            // Update the file's projectId field directly
-            const prismaClient = new PrismaClient();
-            await prismaClient.file.update({
-              where: { id: fileId },
-              data: { projectId },
-            });
+            // Update the file's projectId field using connection manager
+            const connectionManager = getConnectionManager();
+            const replicaClient = connectionManager.getReplicaClient();
+
+            try {
+              await replicaClient.file.update({
+                where: { id: fileId },
+                data: { projectId },
+              });
+              console.log(`Updated file's projectId field to ${projectId}`);
+            } finally {
+              // Release the client back to the pool
+              connectionManager.releaseReplicaClient(replicaClient);
+            }
             console.log(`Updated file's projectId field to ${projectId}`);
 
             // Also add to the project_files join table
@@ -497,12 +506,22 @@ async function processFilesAsync(
       console.log(`Attempting to auto-activate file ${file.id}`);
 
       try {
-        // Auto-activate the file directly
-        const activationQuery = `UPDATE files SET status = 'active' WHERE id = '${file.id}'`;
-        console.log(`Executing activation query: ${activationQuery}`);
+        // Auto-activate the file using connection manager
+        console.log(`Auto-activating file ${file.id} using connection manager`);
 
-        await executeQuery(activationQuery);
-        console.log(`Successfully auto-activated file ${file.id}`);
+        const connectionManager = getConnectionManager();
+        const replicaClient = connectionManager.getReplicaClient();
+
+        try {
+          await replicaClient.file.update({
+            where: { id: file.id },
+            data: { status: "active" },
+          });
+          console.log(`Successfully auto-activated file ${file.id}`);
+        } finally {
+          // Release the client back to the pool
+          connectionManager.releaseReplicaClient(replicaClient);
+        }
       } catch (activationError) {
         console.error(
           `Error auto-activating file ${file.id}:`,

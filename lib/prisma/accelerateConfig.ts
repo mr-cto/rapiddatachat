@@ -8,7 +8,14 @@
  * @returns boolean True if using Prisma Accelerate
  */
 export function isPrismaAccelerate(): boolean {
-  return process.env.DATABASE_URL?.includes("prisma.io") || false;
+  // Check both DATABASE_URL and RAW_DATABASE_URL for Prisma Accelerate
+  return (
+    process.env.DATABASE_URL?.includes("prisma.io") ||
+    process.env.DATABASE_URL?.includes("prisma-data.io") ||
+    process.env.RAW_DATABASE_URL?.includes("prisma.io") ||
+    process.env.RAW_DATABASE_URL?.includes("prisma-data.io") ||
+    false
+  );
 }
 
 /**
@@ -17,7 +24,7 @@ export function isPrismaAccelerate(): boolean {
  * @returns number Transaction timeout in milliseconds
  */
 export function getAccelerateTransactionTimeout(): number {
-  return isPrismaAccelerate() ? 14000 : 30000; // 14 seconds for Accelerate, 30 seconds otherwise
+  return 10000; // Always use 10 seconds timeout regardless of client
 }
 
 /**
@@ -25,7 +32,7 @@ export function getAccelerateTransactionTimeout(): number {
  * @returns number Max wait time in milliseconds
  */
 export function getAccelerateMaxWait(): number {
-  return isPrismaAccelerate() ? 2000 : 5000; // 2 seconds for Accelerate, 5 seconds otherwise
+  return 2000; // Always use 2 seconds max wait regardless of client
 }
 
 /**
@@ -36,6 +43,7 @@ export function getAccelerateConfig(): {
   useTransactions: boolean;
   timeout: number;
   maxWait: number;
+  isAccelerate: boolean;
 } {
   const isAccelerate = isPrismaAccelerate();
 
@@ -43,6 +51,7 @@ export function getAccelerateConfig(): {
     useTransactions: !isAccelerate, // Avoid transactions with Accelerate
     timeout: getAccelerateTransactionTimeout(),
     maxWait: getAccelerateMaxWait(),
+    isAccelerate: isAccelerate, // Add isAccelerate flag for explicit checking
   };
 }
 
@@ -56,15 +65,12 @@ export function logAccelerateStatus(): void {
     `[PrismaAccelerate] Status: ${isAccelerate ? "Enabled" : "Disabled"}`
   );
 
-  if (isAccelerate) {
-    console.log(
-      `[PrismaAccelerate] Transaction timeout: ${getAccelerateTransactionTimeout()}ms`
-    );
-    console.log(`[PrismaAccelerate] Max wait: ${getAccelerateMaxWait()}ms`);
-    console.log(
-      `[PrismaAccelerate] Using transactions: No (using non-transactional approach)`
-    );
-  }
+  // Log configuration regardless of Accelerate status
+  console.log(
+    `[PrismaAccelerate] Transaction timeout: ${getAccelerateTransactionTimeout()}ms`
+  );
+  console.log(`[PrismaAccelerate] Max wait: ${getAccelerateMaxWait()}ms`);
+  console.log(`[PrismaAccelerate] Using transactions: ${!isAccelerate}`);
 }
 
 /**

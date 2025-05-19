@@ -41,10 +41,20 @@ export class SchemaUpdateService {
       const replicaClient = connectionManager.getReplicaClient();
 
       try {
-        // Get Prisma Accelerate configuration
+        // Get Prisma Accelerate configuration and log it
         const accelerateConfig = getAccelerateConfig();
+        console.log(`[SchemaUpdateService] Accelerate config:`, {
+          useTransactions: accelerateConfig.useTransactions,
+          timeout: accelerateConfig.timeout,
+          maxWait: accelerateConfig.maxWait,
+          isAccelerate: accelerateConfig.isAccelerate,
+        });
 
-        if (!accelerateConfig.useTransactions) {
+        // Always use non-transactional approach for Prisma Accelerate
+        if (
+          accelerateConfig.isAccelerate ||
+          !accelerateConfig.useTransactions
+        ) {
           // For Prisma Accelerate, avoid transactions due to timeout limitations
           console.log(
             `[SchemaUpdateService] Using non-transactional approach for schema update (Prisma Accelerate detected)`
@@ -399,13 +409,23 @@ export class SchemaUpdateService {
       const replicaClient = connectionManager.getReplicaClient();
 
       try {
-        // Get Prisma Accelerate configuration
+        // Get Prisma Accelerate configuration and log it
         const accelerateConfig = getAccelerateConfig();
+        console.log(`[SchemaUpdateService] Accelerate config:`, {
+          useTransactions: accelerateConfig.useTransactions,
+          timeout: accelerateConfig.timeout,
+          maxWait: accelerateConfig.maxWait,
+          isAccelerate: accelerateConfig.isAccelerate,
+        });
 
         // Generate a UUID for the schema
         const schemaId = `schema_${uuidv4()}`;
 
-        if (!accelerateConfig.useTransactions) {
+        // Always use non-transactional approach for Prisma Accelerate
+        if (
+          accelerateConfig.isAccelerate ||
+          !accelerateConfig.useTransactions
+        ) {
           // For Prisma Accelerate, avoid transactions due to timeout limitations
           console.log(
             `[SchemaUpdateService] Using non-transactional approach (Prisma Accelerate detected)`

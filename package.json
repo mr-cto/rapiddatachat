@@ -15,7 +15,8 @@
     "test:generate-data": "node scripts/generate-test-data.js",
     "test:lighthouse": "lighthouse http://localhost:3000 --output-path=./test-results/lighthouse-report.html --view",
     "test:performance": "node scripts/performance-test.js",
-    "update-large-files": "node scripts/update-large-files-status.js"
+    "update-large-files": "node scripts/update-large-files-status.js",
+    "db:permissions": "prisma db execute --file ./prisma/grant_permissions.sql --schema ./prisma/schema.prisma"
   },
   "dependencies": {
     "@duckdb/duckdb-wasm": "^1.29.1-dev132.0",

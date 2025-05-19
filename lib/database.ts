@@ -131,9 +131,14 @@ export class Database {
                 sql.includes("CREATE VIEW") ||
                 sql.includes("CREATE OR REPLACE VIEW")
               ) {
-                console.log("Executing CREATE VIEW statement");
+                console.log(
+                  "Executing CREATE VIEW statement using primary client for proper permissions"
+                );
                 try {
-                  return await replicaClient.$executeRawUnsafe(
+                  // Use primary client instead of replica client for CREATE VIEW operations
+                  // This ensures we have proper permissions for schema modifications
+                  const prisma = getPrismaClient();
+                  return await prisma.$executeRawUnsafe(
                     finalSql,
                     ...(params || [])
                   );

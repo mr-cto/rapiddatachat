@@ -26,10 +26,20 @@ export class ColumnMappingService {
       const replicaClient = connectionManager.getReplicaClient();
 
       try {
-        // Get Prisma Accelerate configuration
+        // Get Prisma Accelerate configuration and log it
         const accelerateConfig = getAccelerateConfig();
+        console.log(`[ColumnMappingService] Accelerate config:`, {
+          useTransactions: accelerateConfig.useTransactions,
+          timeout: accelerateConfig.timeout,
+          maxWait: accelerateConfig.maxWait,
+          isAccelerate: accelerateConfig.isAccelerate,
+        });
 
-        if (!accelerateConfig.useTransactions) {
+        // Always use non-transactional approach for Prisma Accelerate
+        if (
+          accelerateConfig.isAccelerate ||
+          !accelerateConfig.useTransactions
+        ) {
           // For Prisma Accelerate, avoid transactions due to timeout limitations
           console.log(
             `[ColumnMappingService] Using non-transactional approach (Prisma Accelerate detected)`
@@ -133,15 +143,41 @@ export class ColumnMappingService {
             );
           }
 
-          // Create new mappings in batch
+          // Create new mappings in batch with size limits
           if (mappingsToCreate.length > 0) {
-            await replicaClient.columnMapping.createMany({
-              data: mappingsToCreate,
-              skipDuplicates: true,
-            });
+            // Check if we need to split into smaller batches
+            const batchSize = accelerateConfig.isAccelerate ? 100 : 500;
+
+            if (mappingsToCreate.length > batchSize) {
+              console.log(
+                `[ColumnMappingService] Large mapping detected (${mappingsToCreate.length} mappings), using batched approach with batch size ${batchSize}`
+              );
+
+              // Process in smaller batches
+              for (let i = 0; i < mappingsToCreate.length; i += batchSize) {
+                const batch = mappingsToCreate.slice(i, i + batchSize);
+                await replicaClient.columnMapping.createMany({
+                  data: batch,
+                  skipDuplicates: true,
+                });
+                console.log(
+                  `[ColumnMappingService] Created batch ${
+                    Math.floor(i / batchSize) + 1
+                  }/${Math.ceil(mappingsToCreate.length / batchSize)} (${
+                    batch.length
+                  } mappings)`
+                );
+              }
+            } else {
+              // Process in a single batch
+              await replicaClient.columnMapping.createMany({
+                data: mappingsToCreate,
+                skipDuplicates: true,
+              });
+            }
 
             console.log(
-              `[ColumnMappingService] Created ${mappingsToCreate.length} column mappings`
+              `[ColumnMappingService] Created ${mappingsToCreate.length} column mappings total`
             );
           }
 
@@ -248,15 +284,41 @@ export class ColumnMappingService {
                 );
               }
 
-              // Create new mappings in batch
+              // Create new mappings in batch with size limits
               if (mappingsToCreate.length > 0) {
-                await tx.columnMapping.createMany({
-                  data: mappingsToCreate,
-                  skipDuplicates: true,
-                });
+                // Check if we need to split into smaller batches
+                const batchSize = accelerateConfig.isAccelerate ? 100 : 500;
+
+                if (mappingsToCreate.length > batchSize) {
+                  console.log(
+                    `[ColumnMappingService] Large mapping detected (${mappingsToCreate.length} mappings), using batched approach with batch size ${batchSize}`
+                  );
+
+                  // Process in smaller batches
+                  for (let i = 0; i < mappingsToCreate.length; i += batchSize) {
+                    const batch = mappingsToCreate.slice(i, i + batchSize);
+                    await tx.columnMapping.createMany({
+                      data: batch,
+                      skipDuplicates: true,
+                    });
+                    console.log(
+                      `[ColumnMappingService] Created batch ${
+                        Math.floor(i / batchSize) + 1
+                      }/${Math.ceil(mappingsToCreate.length / batchSize)} (${
+                        batch.length
+                      } mappings)`
+                    );
+                  }
+                } else {
+                  // Process in a single batch
+                  await tx.columnMapping.createMany({
+                    data: mappingsToCreate,
+                    skipDuplicates: true,
+                  });
+                }
 
                 console.log(
-                  `[ColumnMappingService] Created ${mappingsToCreate.length} column mappings`
+                  `[ColumnMappingService] Created ${mappingsToCreate.length} column mappings total`
                 );
               }
 
