@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
-import { PrismaClient } from "@prisma/client";
+import { getPrismaClient } from "../../../../lib/prisma/replicaClient";
 import { executeQuery } from "../../../../lib/database";
 import {
   handleFileError,
@@ -9,15 +9,6 @@ import {
 } from "../../../../lib/errorHandling";
 import { authOptions } from "../../../../lib/authOptions";
 
-// Initialize Prisma client (singleton)
-let prismaInstance: PrismaClient | null = null;
-
-function getPrismaClient(): PrismaClient {
-  if (!prismaInstance) {
-    prismaInstance = new PrismaClient();
-  }
-  return prismaInstance;
-}
 
 // Cache for file synopsis data (fileId -> synopsis data)
 const synopsisCache = new Map<
