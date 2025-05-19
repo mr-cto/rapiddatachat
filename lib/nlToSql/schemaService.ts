@@ -497,20 +497,33 @@ export class SchemaService {
         );
       }
 
-      // Create the table schema
+      // Create the table schema using the real column names from the data JSON
       console.log(`[SchemaService] Creating table schema for file ${fileId}`);
-      const columns: Column[] = Object.keys(firstRecord).map((key) => {
-        const value = firstRecord[key];
-        const type = this.determineColumnType(value);
+      let columns: Column[] = [];
 
-        return {
+      if (firstRecord.data && typeof firstRecord.data === "object") {
+        const dataObj = firstRecord.data as Record<string, unknown>;
+        columns = Object.entries(dataObj).map(([key, value]) => ({
           name: key,
-          type,
-          nullable: true, // Assume all columns are nullable
-          isPrimaryKey: false, // Assume no primary keys
-          isForeignKey: false, // Assume no foreign keys
-        };
-      });
+          type: this.determineColumnType(value),
+          nullable: true,
+          isPrimaryKey: false,
+          isForeignKey: false,
+        }));
+      }
+
+      // Fallback: if we couldn't parse JSON fields, use the top-level keys
+      if (columns.length === 0) {
+        columns = Object.entries(firstRecord)
+          .filter(([key]) => key !== "data")
+          .map(([key, value]) => ({
+            name: key,
+            type: this.determineColumnType(value),
+            nullable: true,
+            isPrimaryKey: false,
+            isForeignKey: false,
+          }));
+      }
       console.log(
         `[SchemaService] Created ${columns.length} columns for table schema`
       );
