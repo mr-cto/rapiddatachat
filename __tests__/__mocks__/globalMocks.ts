@@ -45,37 +45,6 @@ jest.mock("../../lib/database", () => ({
 }));
 
 // Mock components
-jest.mock("../../components/FileUpload", () => {
-  const MockFileUpload = (props: any) => {
-    return React.createElement(
-      "div",
-      {
-        "data-testid": "file-upload",
-        "data-project-id": props.projectId || "",
-      },
-      [
-        "Mock FileUpload Component",
-        React.createElement(
-          "button",
-          {
-            "data-testid": "upload-button",
-            onClick: () =>
-              props.onFilesSelected &&
-              props.onFilesSelected([new File(["test"], "test.csv")]),
-          },
-          "Upload Files"
-        ),
-      ]
-    );
-  };
-  return MockFileUpload;
-});
-
-jest.mock("../../components/SchemaManager", () => {
-  return function MockSchemaManager() {
-    return React.createElement("div", {}, "Mock SchemaManager");
-  };
-});
 
 jest.mock("../../components/SchemaColumnMapper", () => {
   return function MockSchemaColumnMapper() {
