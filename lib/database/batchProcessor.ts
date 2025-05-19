@@ -20,7 +20,8 @@ export class BatchProcessor {
   static async insertFileData(
     fileId: string,
     rows: Record<string, unknown>[],
-    batchSize?: number
+    batchSize?: number,
+    concurrency = 1
   ): Promise<void> {
     if (rows.length === 0) {
       console.log(`No data to insert for file ${fileId}`);
@@ -66,28 +67,41 @@ export class BatchProcessor {
       `Using batch size of ${batchSize} for file ${fileId} with ${rows.length} rows`
     );
 
-    // Process in batches to reduce memory usage
+    const batches: Record<string, unknown>[][] = [];
     for (let i = 0; i < rows.length; i += batchSize) {
-      const batch = rows.slice(i, i + batchSize);
-      const currentBatchNumber = Math.floor(i / batchSize) + 1;
-      const totalBatches = Math.ceil(rows.length / batchSize);
+      batches.push(rows.slice(i, i + batchSize));
+    }
 
-      await BatchProcessor.processBatch(
-        fileId,
-        batch,
-        currentBatchNumber,
-        totalBatches
-      );
+    const totalBatches = batches.length;
+    let nextIndex = 0;
 
-      // Force garbage collection between batches if available
-      if (typeof global.gc === "function") {
-        try {
-          global.gc();
-        } catch (gcError) {
-          console.warn("Failed to trigger garbage collection:", gcError);
+    async function worker() {
+      while (true) {
+        const batchIndex = nextIndex++;
+        if (batchIndex >= totalBatches) break;
+        const batch = batches[batchIndex];
+        await BatchProcessor.processBatch(
+          fileId,
+          batch,
+          batchIndex + 1,
+          totalBatches
+        );
+
+        if (typeof global.gc === "function") {
+          try {
+            global.gc();
+          } catch (gcError) {
+            console.warn("Failed to trigger garbage collection:", gcError);
+          }
         }
       }
     }
+
+    const workers = [];
+    for (let i = 0; i < Math.min(concurrency, totalBatches); i++) {
+      workers.push(worker());
+    }
+    await Promise.all(workers);
   }
 
   /**
