@@ -1,13 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { useSession } from "next-auth/react";
+import React, { useEffect } from "react";
 import { useRouter } from "next/router";
-import DashboardLayout from "../../components/layouts/DashboardLayout";
-import HistoryPane from "../../components/panels/HistoryPane";
-import ChatPane from "../../components/panels/ChatPane";
-import FilesPane from "../../components/panels/FilesPane";
-import SchemaManagementPane from "../../components/panels/SchemaManagementPane";
-import QueryResultsPane from "../../components/panels/QueryResultsPane";
-import ChatInputPane from "../../components/panels/ChatInputPane";
 
 interface Query {
   id: string;
@@ -17,7 +9,6 @@ interface Query {
 }
 
 const IndexPage: React.FC = () => {
-  const { status } = useSession();
   const router = useRouter();
 
   // Redirect all users to project page
