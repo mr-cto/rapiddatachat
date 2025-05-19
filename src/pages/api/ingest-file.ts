@@ -1,6 +1,4 @@
 import { NextApiRequest, NextApiResponse } from "next";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "../../../lib/authOptions";
 import fs from "fs";
 import path from "path";
 import {
@@ -8,12 +6,11 @@ import {
   createFileTable,
   insertFileData,
 } from "../../../lib/database";
+import { FileStatus, processFileStreaming } from "../../../lib/fileIngestion";
 import {
+  processLargeCSV,
   updateFileStatus,
-  FileStatus,
-  processFileStreaming,
-} from "../../../lib/fileIngestion";
-// Remove parquet conversion import as we're not using it anymore
+} from "../../../lib/fastFileIngestion";
 import {
   UPLOADS_DIR,
   isVercelEnvironment,
@@ -26,36 +23,21 @@ import {
   retryWithBackoff,
   addToDeadLetterQueue,
 } from "../../../lib/errorHandling";
+import { withAuth } from "../../../lib/middleware/authMiddleware";
+import logger from "../../../lib/logging/logger";
 
-// Enable debug logging
-const DEBUG = process.env.DEBUG === "true";
+// Create a logger for file ingestion
+const log = logger.createLogger("FileIngestion");
 
-// Log debug message if debug mode is enabled
-function logDebug(message: string, data?: unknown): void {
-  if (DEBUG) {
-    console.log(`[DEBUG] ${message}`);
-    if (data) {
-      console.log("[DEBUG] Data:", data);
-    }
-  }
-}
-
-export default async function handler(
+// Handler with authentication middleware
+export default withAuth(async function handler(
   req: NextApiRequest,
-  res: NextApiResponse
+  res: NextApiResponse,
+  userId: string
 ) {
   // Only allow POST requests
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
-  }
-
-  // Check authentication
-  const session = await getServerSession(req, res, authOptions);
-
-  // In development, allow requests without authentication for testing
-  const isDevelopment = process.env.NODE_ENV === "development";
-  if ((!session || !session.user) && !isDevelopment) {
-    return res.status(401).json({ error: "Unauthorized" });
   }
 
   let fileId: string = "";
@@ -69,7 +51,7 @@ export default async function handler(
       return res.status(400).json({ error: "File ID is required" });
     }
 
-    logDebug(`Starting ingestion process for file ${fileId}`);
+    log.info(`Starting ingestion process for file ${fileId}`);
 
     // Get file information from database
     let file: Record<string, unknown> | null = null;
@@ -155,18 +137,22 @@ export default async function handler(
 
     // Update file status to processing
     await updateFileStatus(fileId, FileStatus.PROCESSING);
-    logDebug(`Updated file status to ${FileStatus.PROCESSING}`);
+    log.info(`Updated file status to ${FileStatus.PROCESSING}`);
 
-    // Process the file with streaming and batch processing
-    logDebug(`Starting file processing for ${fileId} using streaming approach`);
+    // Process the file with optimized streaming for large files
+    log.info(`Starting file processing for ${fileId} using optimized approach`);
 
     // Store for extracted headers
     let extractedHeaders: string[] = [];
 
-    // Create file table (this is now a no-op in the database.ts implementation)
+    // Create file table with the extracted headers
     try {
-      await createFileTable(fileId, []);
-      logDebug(`Created database table for file ${fileId}`);
+      // Pass the headers to createFileTable to ensure the table is created properly
+      await createFileTable(
+        fileId,
+        extractedHeaders.length > 0 ? extractedHeaders : []
+      );
+      log.info(`Created or verified database table for file ${fileId}`);
     } catch (error) {
       await handleFileError(
         fileId,
@@ -195,53 +181,22 @@ export default async function handler(
           // Rough estimation: 1MB ~ 10,000 rows for CSV files
           // Adjust batch size based on file size - automatically optimize for all file sizes
           // For files with millions of records, we need extremely small batches
-          if (fileSizeBytes > 500 * 1024 * 1024) {
-            // > 500MB - Massive files (likely millions of records)
-            batchSize = 50; // Extremely small batches for massive files
-            logDebug(
-              `Massive file detected (${Math.round(
-                fileSizeBytes / (1024 * 1024)
-              )}MB), using highly optimized batch size: ${batchSize}`
-            );
-          } else if (fileSizeBytes > 200 * 1024 * 1024) {
-            // > 200MB - Extremely large files
-            batchSize = 75; // Very small batches for extremely large files
-            logDebug(
-              `Extremely large file detected (${Math.round(
-                fileSizeBytes / (1024 * 1024)
-              )}MB), using highly optimized batch size: ${batchSize}`
-            );
-          } else if (fileSizeBytes > 150 * 1024 * 1024) {
-            // > 150MB - Very large files
-            batchSize = 100; // Very small batches for very large files
-            logDebug(
-              `Very large file detected (${Math.round(
-                fileSizeBytes / (1024 * 1024)
-              )}MB), using optimized batch size: ${batchSize}`
-            );
-          } else if (fileSizeBytes > 100 * 1024 * 1024) {
+          // Simplify batch size determination
+          if (fileSizeBytes > 100 * 1024 * 1024) {
             // > 100MB - Large files
-            batchSize = 200; // Small batches for large files
-            logDebug(
+            batchSize = 500;
+            log.info(
               `Large file detected (${Math.round(
                 fileSizeBytes / (1024 * 1024)
-              )}MB), using optimized batch size: ${batchSize}`
+              )}MB), using batch size: ${batchSize}`
             );
-          } else if (fileSizeBytes > 50 * 1024 * 1024) {
-            // > 50MB - Medium-large files
-            batchSize = 500; // Medium batches for medium-large files
-            logDebug(
-              `Medium-large file detected (${Math.round(
+          } else {
+            // Default for most files
+            batchSize = 1000;
+            log.info(
+              `Standard file detected (${Math.round(
                 fileSizeBytes / (1024 * 1024)
-              )}MB), using optimized batch size: ${batchSize}`
-            );
-          } else if (fileSizeBytes > 10 * 1024 * 1024) {
-            // > 10MB - Medium files
-            batchSize = 1000; // Adjusted batch size for medium files
-            logDebug(
-              `Medium file detected (${Math.round(
-                fileSizeBytes / (1024 * 1024)
-              )}MB), using optimized batch size: ${batchSize}`
+              )}MB), using batch size: ${batchSize}`
             );
           }
         }
@@ -334,7 +289,13 @@ export default async function handler(
         const onProgress = (processed: number) => {
           // Update progress at regular intervals
           if (processed - lastProgressUpdate >= updateProgressInterval) {
-            logDebug(`Processed ${processed} rows from ${fileId}`);
+            // Only log at significant milestones to reduce noise
+            if (
+              processed % 5000 === 0 ||
+              processed === lastProgressUpdate + updateProgressInterval
+            ) {
+              log.info(`Processed ${processed} rows from ${fileId}`);
+            }
 
             // Calculate processing rate
             const currentTime = Date.now();
@@ -342,7 +303,7 @@ export default async function handler(
             const rowsSinceLastUpdate = processed - lastProgressUpdate;
             const currentRate = rowsSinceLastUpdate / timeSinceLastUpdate;
 
-            logDebug(
+            log.debug(
               `Current processing rate: ${Math.round(currentRate)} rows/second`
             );
 
@@ -366,8 +327,8 @@ export default async function handler(
 
         // Callback for when headers are extracted
         const onHeadersExtracted = async (headers: string[]): Promise<void> => {
-          logDebug(`Extracted ${headers.length} columns from file ${fileId}`);
-          console.log("EXTRACTED HEADERS:", headers);
+          log.info(`Extracted ${headers.length} columns from file ${fileId}`);
+          log.debug("Extracted headers", headers);
           extractedHeaders = headers;
 
           // Store headers in file metadata for schema management
@@ -392,12 +353,12 @@ export default async function handler(
                 END
               WHERE id = '${fileId}'
             `);
-            logDebug(`Stored column headers in file metadata for ${fileId}`);
+            log.info(`Stored column headers in file metadata for ${fileId}`);
 
             // Update file status to indicate headers are available
             // This allows the UI to show the columns before ingestion is complete
             await updateFileStatus(fileId, FileStatus.HEADERS_EXTRACTED);
-            logDebug(`Updated file status to indicate headers are available`);
+            log.info(`Updated file status to indicate headers are available`);
           } catch (metadataError) {
             console.warn(
               `Failed to store column headers in metadata: ${metadataError}`
@@ -406,15 +367,34 @@ export default async function handler(
           }
         };
 
-        return await processFileStreaming(
-          filePath,
-          fileId,
-          sourceId,
-          format,
-          batchSize,
-          onProgress,
-          onHeadersExtracted
-        );
+        // Use the optimized large file processor for CSV files
+        if (format.toLowerCase() === "csv") {
+          // Use the optimized implementation for CSV files
+          log.info(
+            `Using optimized large file processor for CSV file ${fileId}`
+          );
+          return await processLargeCSV(
+            filePath,
+            fileId,
+            sourceId,
+            onProgress,
+            onHeadersExtracted
+          );
+        } else {
+          // Fall back to the standard implementation for other file types
+          log.info(
+            `Using standard file processor for ${format} file ${fileId}`
+          );
+          return await processFileStreaming(
+            filePath,
+            fileId,
+            sourceId,
+            format,
+            batchSize,
+            onProgress,
+            onHeadersExtracted
+          );
+        }
       } catch (error) {
         await handleFileError(
           fileId!,
@@ -429,13 +409,13 @@ export default async function handler(
       }
     });
 
-    logDebug(
+    log.info(
       `Successfully processed ${processResult.rowCount} rows from ${fileId}`
     );
 
     // Update file status to active
     await updateFileStatus(fileId, FileStatus.ACTIVE);
-    logDebug(`Updated file status to ${FileStatus.ACTIVE}`);
+    log.info(`Updated file status to ${FileStatus.ACTIVE}`);
 
     // Update ingested_at timestamp
     try {
@@ -466,9 +446,9 @@ export default async function handler(
     // Clean up the file from Blob storage if it's a URL (Vercel environment)
     if (isVercelEnvironment && filePath.startsWith("http")) {
       try {
-        logDebug(`Cleaning up file from Blob storage: ${filePath}`);
+        log.info(`Cleaning up file from Blob storage: ${filePath}`);
         await cleanupTempFiles([filePath]);
-        logDebug(`Successfully cleaned up file from Blob storage`);
+        log.info(`Successfully cleaned up file from Blob storage`);
       } catch (cleanupError) {
         console.warn(
           `Warning: Failed to clean up file from Blob storage: ${cleanupError}`
@@ -477,7 +457,7 @@ export default async function handler(
       }
     }
 
-    logDebug(`Completed ingestion for file ${fileId}`);
+    log.info(`Completed ingestion for file ${fileId}`);
 
     return res.status(200).json({
       success: true,
@@ -499,9 +479,9 @@ export default async function handler(
       filePath.startsWith("http")
     ) {
       try {
-        logDebug(`Cleaning up file from Blob storage after error: ${filePath}`);
+        log.info(`Cleaning up file from Blob storage after error: ${filePath}`);
         await cleanupTempFiles([filePath]);
-        logDebug(`Successfully cleaned up file from Blob storage after error`);
+        log.info(`Successfully cleaned up file from Blob storage after error`);
       } catch (cleanupError) {
         console.warn(
           `Warning: Failed to clean up file from Blob storage after error: ${cleanupError}`
@@ -535,4 +515,4 @@ export default async function handler(
       details: error instanceof Error ? error.message : "Unknown error",
     });
   }
-}
+});

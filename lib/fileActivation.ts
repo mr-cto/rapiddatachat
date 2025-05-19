@@ -1,4 +1,4 @@
-import { executeQuery } from "./database";
+import { executeQuery, checkIfTableExists } from "./database";
 import { handleFileError, ErrorType, ErrorSeverity } from "./errorHandling";
 
 /**
@@ -33,37 +33,7 @@ async function checkIfViewExists(viewName: string): Promise<boolean> {
   }
 }
 
-/**
- * Check if a table exists
- * @param tableName Table name
- * @returns Promise<boolean> True if the table exists
- */
-async function checkIfTableExists(tableName: string): Promise<boolean> {
-  try {
-    console.log(`[FileActivation] Checking if table ${tableName} exists`);
-
-    const result = (await executeQuery(`
-      SELECT EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_name = '${tableName}'
-      ) as exists
-    `)) as Array<{ exists: boolean }>;
-
-    const exists = result && result.length > 0 && result[0].exists;
-    console.log(`[FileActivation] Table ${tableName} exists: ${exists}`);
-
-    return exists;
-  } catch (error) {
-    console.error(
-      `[FileActivation] Error checking if table ${tableName} exists:`,
-      error
-    );
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    console.error(`[FileActivation] Error details: ${errorMessage}`);
-    return false;
-  }
-}
+// Using imported checkIfTableExists from database.ts
 
 // Define file status enum
 export enum FileStatus {
@@ -231,6 +201,16 @@ export async function fileExistsForUser(
  */
 export async function fileTableExists(fileId: string): Promise<boolean> {
   try {
+    // First check if the file_data table exists
+    const tableExists = await checkIfTableExists("file_data");
+
+    if (!tableExists) {
+      console.log(
+        `[FileActivation] file_data table does not exist, assuming file table doesn't exist`
+      );
+      return false;
+    }
+
     // For PostgreSQL, check if there are any FileData entries for this file
     const result = (await executeQuery(`
       SELECT COUNT(*) as count FROM file_data WHERE file_id = '${fileId}'
@@ -308,12 +288,55 @@ export async function attachFileToUserWorkspace(
         );
 
         // For PostgreSQL, create a view that selects from file_data
-        // Use schema prefix to avoid permission issues with public schema
-        const schema = process.env.DATABASE_SCHEMA || "public";
-        await executeQuery(`
-          CREATE OR REPLACE VIEW "${schema}"."${viewName}" AS
-          SELECT data FROM "${schema}"."file_data" WHERE file_id = '${fileId}'
-        `);
+        // Always use "public" schema
+        try {
+          // First check if file_data table exists
+          const tableExists = await executeQuery(`
+            SELECT EXISTS (
+              SELECT FROM information_schema.tables
+              WHERE table_name = 'file_data'
+            ) as exists
+          `);
+
+          const fileDataTableExists =
+            Array.isArray(tableExists) &&
+            tableExists.length > 0 &&
+            tableExists[0].exists === true;
+
+          if (!fileDataTableExists) {
+            console.log(
+              `[FileActivation] file_data table does not exist, creating it`
+            );
+            // Create the file_data table
+            await executeQuery(`
+              CREATE TABLE IF NOT EXISTS "file_data" (
+                "id" TEXT NOT NULL,
+                "file_id" TEXT NOT NULL,
+                "ingested_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                "data" JSONB NOT NULL,
+                CONSTRAINT "file_data_pkey" PRIMARY KEY ("id")
+              );
+              
+              CREATE INDEX IF NOT EXISTS "idx_file_data_file" ON "file_data"("file_id");
+            `);
+            console.log(`[FileActivation] Created file_data table`);
+          }
+
+          // Now create the view
+          await executeQuery(`
+            CREATE OR REPLACE VIEW "${viewName}" AS
+            SELECT data FROM "file_data" WHERE file_id = '${fileId}'
+          `);
+        } catch (tableError) {
+          console.error(
+            `[FileActivation] Error checking or creating file_data table: ${tableError}`
+          );
+          // Continue with view creation attempt anyway
+          await executeQuery(`
+            CREATE OR REPLACE VIEW "${viewName}" AS
+            SELECT data FROM "file_data" WHERE file_id = '${fileId}'
+          `);
+        }
       } else {
         // Use the existing view_metadata table
         console.log(
@@ -334,10 +357,9 @@ export async function attachFileToUserWorkspace(
 
         // Create the view
         try {
-          const schema = process.env.DATABASE_SCHEMA || "public";
           await executeQuery(`
-            CREATE OR REPLACE VIEW "${schema}"."${viewName}" AS
-            SELECT data FROM "${schema}"."file_data" WHERE file_id = '${fileId}'
+            CREATE OR REPLACE VIEW "${viewName}" AS
+            SELECT data FROM "file_data" WHERE file_id = '${fileId}'
           `);
           console.log(
             `[FileActivation] Successfully created view ${viewName} for file ${fileId}`
@@ -355,10 +377,9 @@ export async function attachFileToUserWorkspace(
             );
 
             // Try creating a materialized view instead which might have different permission requirements
-            const schema = process.env.DATABASE_SCHEMA || "public";
             await executeQuery(`
-              CREATE MATERIALIZED VIEW IF NOT EXISTS "${schema}"."${viewName}_mat" AS
-              SELECT data FROM "${schema}"."file_data" WHERE file_id = '${fileId}'
+              CREATE MATERIALIZED VIEW IF NOT EXISTS "${viewName}_mat" AS
+              SELECT data FROM "file_data" WHERE file_id = '${fileId}'
             `);
             console.log(
               `[FileActivation] Successfully created materialized view ${viewName}_mat for file ${fileId}`
@@ -384,10 +405,9 @@ export async function attachFileToUserWorkspace(
 
       try {
         // Try to create a view first
-        const schema = process.env.DATABASE_SCHEMA || "public";
         await executeQuery(`
-          CREATE OR REPLACE VIEW "${schema}"."${simpleViewName}" AS
-          SELECT data FROM "${schema}"."file_data" WHERE file_id = '${fileId}'
+          CREATE OR REPLACE VIEW "${simpleViewName}" AS
+          SELECT data FROM "file_data" WHERE file_id = '${fileId}'
         `);
 
         // Also update the metadata for this view
@@ -419,10 +439,9 @@ export async function attachFileToUserWorkspace(
 
           try {
             // As a last resort, try creating a temporary table with the data
-            const schema = process.env.DATABASE_SCHEMA || "public";
             await executeQuery(`
               CREATE TEMPORARY TABLE IF NOT EXISTS "${simpleViewName}_temp" AS
-              SELECT data FROM "${schema}"."file_data" WHERE file_id = '${fileId}'
+              SELECT data FROM "file_data" WHERE file_id = '${fileId}'
             `);
             console.log(
               `[FileActivation] Successfully created temporary table ${simpleViewName}_temp for file ${fileId}`

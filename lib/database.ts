@@ -268,13 +268,38 @@ export class Database {
    */
   static async createFileTable(
     fileId: string,
-    // Headers parameter is unused but kept for API compatibility
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _: string[]
+    headers: string[]
   ): Promise<void> {
-    // Instead of creating a dynamic table, we'll use the FileData model
-    // No action needed here as the table is already defined in the schema
-    console.log(`Using FileData table for file ${fileId}`);
+    try {
+      // Check if the file_data table exists
+      const tableExists = await Database.checkIfTableExists("file_data");
+
+      if (!tableExists) {
+        console.log(
+          `FileData table does not exist, creating it for file ${fileId}`
+        );
+
+        // Create the file_data table
+        await Database.executeQuery(`
+          CREATE TABLE IF NOT EXISTS "file_data" (
+            "id" TEXT NOT NULL,
+            "file_id" TEXT NOT NULL,
+            "ingested_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "data" JSONB NOT NULL,
+            CONSTRAINT "file_data_pkey" PRIMARY KEY ("id")
+          );
+          
+          CREATE INDEX IF NOT EXISTS "idx_file_data_file" ON "file_data"("file_id");
+        `);
+
+        console.log(`Created FileData table for file ${fileId}`);
+      } else {
+        console.log(`Using FileData table for file ${fileId}`);
+      }
+    } catch (error) {
+      console.error(`Error creating FileData table: ${error}`);
+      throw error;
+    }
   }
 
   /**
@@ -408,11 +433,11 @@ export class Database {
    * @param tableName Table name
    * @returns True if the table exists
    */
-  private static async checkIfTableExists(tableName: string): Promise<boolean> {
+  static async checkIfTableExists(tableName: string): Promise<boolean> {
     try {
       const result = await Database.executeQuery(`
         SELECT EXISTS (
-          SELECT FROM information_schema.tables 
+          SELECT FROM information_schema.tables
           WHERE table_name = '${tableName}'
         ) as exists
       `);
@@ -436,3 +461,4 @@ export const createFileTable = Database.createFileTable;
 export const insertFileData = Database.insertFileData;
 export const getFileData = Database.getFileData;
 export const fileTableExists = Database.fileTableExists;
+export const checkIfTableExists = Database.checkIfTableExists;

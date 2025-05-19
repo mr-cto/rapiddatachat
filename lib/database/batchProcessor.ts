@@ -34,53 +34,65 @@ export class BatchProcessor {
     const accelerateConfig = getAccelerateConfig();
     const isAccelerate = isPrismaAccelerate();
 
-    // Dynamically adjust batch size based on total row count and Prisma Accelerate status
+    // Determine optimal batch size based on total rows
     if (!batchSize) {
-      if (isAccelerate) {
-        // For Prisma Accelerate, use smaller non-transactional batches to avoid timeouts
-        if (rows.length > 500000) {
-          batchSize = 200; // Very small batches for extremely large files
-        } else if (rows.length > 100000) {
-          batchSize = 500; // Small batches for large files
-        } else if (rows.length > 10000) {
-          batchSize = 1000; // Medium batches for medium files
-        } else {
-          batchSize = 2000; // Default batch size for small files
-        }
-        console.log(
-          `[BatchProcessor] Using Prisma Accelerate optimized batch size: ${batchSize}`
-        );
+      // Scale batch size based on total rows for better performance
+      if (rows.length > 500000) {
+        // For extremely large files (500k+ rows)
+        batchSize = 10000;
+      } else if (rows.length > 100000) {
+        // For very large files (100k-500k rows)
+        batchSize = 5000;
+      } else if (rows.length > 5000) {
+        // For large files (10k-100k rows)
+        batchSize = 2500;
       } else {
-        // For direct database connections, use larger transaction-based batches
-        if (rows.length > 500000) {
-          batchSize = 500; // Very small batches for extremely large files
-        } else if (rows.length > 100000) {
-          batchSize = 1000; // Small batches for large files
-        } else {
-          batchSize = 2000; // Default batch size for normal files
-        }
+        // For smaller files
+        batchSize = 1000;
       }
     }
 
+    // Only log once at the beginning of the process
     console.log(
-      `Using batch size of ${batchSize} for file ${fileId} with ${rows.length} rows`
+      `Processing ${rows.length} rows for file ${fileId} with batch size ${batchSize}`
     );
 
     // Process in batches to reduce memory usage
+    const totalBatches = Math.ceil(rows.length / batchSize);
+
+    // Log only at the start
+    console.log(`Starting batch processing: ${totalBatches} batches total`);
+
+    // Process batches with minimal logging
     for (let i = 0; i < rows.length; i += batchSize) {
       const batch = rows.slice(i, i + batchSize);
       const currentBatchNumber = Math.floor(i / batchSize) + 1;
-      const totalBatches = Math.ceil(rows.length / batchSize);
+
+      // Only log at significant milestones (start, every 10%, end)
+      const isSignificantBatch =
+        currentBatchNumber === 1 ||
+        currentBatchNumber === totalBatches ||
+        currentBatchNumber % Math.max(1, Math.floor(totalBatches / 10)) === 0;
+
+      if (isSignificantBatch) {
+        const percentComplete = Math.round(
+          (currentBatchNumber / totalBatches) * 100
+        );
+        console.log(
+          `Processing batch ${currentBatchNumber}/${totalBatches} (${percentComplete}% complete)`
+        );
+      }
 
       await BatchProcessor.processBatch(
         fileId,
         batch,
         currentBatchNumber,
-        totalBatches
+        totalBatches,
+        isSignificantBatch
       );
 
       // Force garbage collection between batches if available
-      if (typeof global.gc === "function") {
+      if (typeof global.gc === "function" && isSignificantBatch) {
         try {
           global.gc();
         } catch (gcError) {
@@ -88,6 +100,11 @@ export class BatchProcessor {
         }
       }
     }
+
+    // Log completion
+    console.log(
+      `Completed processing ${rows.length} rows in ${totalBatches} batches`
+    );
   }
 
   /**
@@ -101,7 +118,8 @@ export class BatchProcessor {
     fileId: string,
     batch: Record<string, unknown>[],
     batchNumber: number,
-    totalBatches: number
+    totalBatches: number,
+    shouldLog: boolean = false
   ): Promise<void> {
     // Get connection manager
     const connectionManager = getConnectionManager();
@@ -134,41 +152,11 @@ export class BatchProcessor {
 
           // For Prisma Accelerate or small batches, always use non-transactional approach
           if (isAccelerate || dataToInsert.length <= 100) {
-            // For Prisma Accelerate, avoid transactions due to timeout limitations
-            console.log(
-              `[BatchProcessor] Using non-transactional batch insert (${
-                isAccelerate ? "Prisma Accelerate detected" : "Small batch"
-              }, ${dataToInsert.length} rows)`
-            );
-
-            // For very large batches, split into smaller chunks to avoid memory issues
-            if (dataToInsert.length > 500) {
-              const chunkSize = 200;
-              console.log(
-                `[BatchProcessor] Splitting large non-transactional batch into chunks of ${chunkSize}`
-              );
-
-              for (let i = 0; i < dataToInsert.length; i += chunkSize) {
-                const chunk = dataToInsert.slice(i, i + chunkSize);
-                await replicaClient.fileData.createMany({
-                  data: chunk,
-                  skipDuplicates: true,
-                });
-                console.log(
-                  `[BatchProcessor] Inserted chunk ${
-                    Math.floor(i / chunkSize) + 1
-                  }/${Math.ceil(dataToInsert.length / chunkSize)} (${
-                    chunk.length
-                  } rows)`
-                );
-              }
-            } else {
-              // For smaller batches, insert all at once
-              await replicaClient.fileData.createMany({
-                data: dataToInsert,
-                skipDuplicates: true,
-              });
-            }
+            // Use a simpler approach for all batch sizes
+            await replicaClient.fileData.createMany({
+              data: dataToInsert,
+              skipDuplicates: true,
+            });
           } else {
             // For direct database connections, use transactions with appropriate timeouts
             await replicaClient.$transaction(
@@ -186,9 +174,12 @@ export class BatchProcessor {
             );
           }
 
-          console.log(
-            `Inserted batch ${batchNumber}/${totalBatches} (${dataToInsert.length} rows) for file ${fileId}`
-          );
+          // Only log if this is a significant batch
+          if (shouldLog) {
+            console.log(
+              `Inserted batch ${batchNumber}/${totalBatches} (${dataToInsert.length} rows)`
+            );
+          }
           success = true;
         } catch (txError) {
           // Handle transaction errors
@@ -308,7 +299,12 @@ export class BatchProcessor {
     fileId: string,
     batch: Record<string, unknown>[]
   ): Promise<void> {
-    console.log(`Splitting batch of ${batch.length} rows into smaller chunks`);
+    // Only log for large batches
+    if (batch.length > 5000) {
+      console.log(
+        `Splitting large batch of ${batch.length} rows into smaller chunks`
+      );
+    }
 
     // Get Prisma Accelerate configuration
     const isAccelerate = isPrismaAccelerate();
@@ -332,9 +328,6 @@ export class BatchProcessor {
         }
       } else {
         // For small batches, skip transaction entirely and use direct inserts
-        console.log(
-          `[BatchProcessor] Small batch (${batch.length} rows) with Prisma Accelerate - using direct inserts`
-        );
         const replicaClient = getConnectionManager().getReplicaClient();
         try {
           await BatchProcessor.insertIndividually(fileId, batch, replicaClient);
@@ -358,11 +351,14 @@ export class BatchProcessor {
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
       if (chunk.length > 0) {
-        console.log(
-          `Processing split chunk ${i + 1}/${chunks.length} (${
-            chunk.length
-          } rows)`
-        );
+        // Only log for the first and last chunks of large batches
+        if ((i === 0 || i === chunks.length - 1) && chunks.length > 4) {
+          console.log(
+            `Processing split chunk ${i + 1}/${chunks.length} (${
+              chunk.length
+            } rows)`
+          );
+        }
         await BatchProcessor.insertFileData(
           fileId,
           chunk,
@@ -383,9 +379,12 @@ export class BatchProcessor {
     rows: Record<string, unknown>[],
     client: PrismaClient
   ): Promise<void> {
-    console.log(
-      `[BatchProcessor] Optimized individual inserts for ${rows.length} rows`
-    );
+    // Only log for significant individual inserts
+    if (rows.length > 500) {
+      console.log(
+        `[BatchProcessor] Processing ${rows.length} rows individually`
+      );
+    }
 
     let successCount = 0;
     let errorCount = 0;
@@ -419,14 +418,20 @@ export class BatchProcessor {
           // If successful, count all rows as successful
           successCount += miniBatch.length;
 
-          // Log progress
-          console.log(
-            `[BatchProcessor] Inserted mini-batch ${currentBatch}/${totalMiniBatches} (${miniBatch.length} rows)`
-          );
+          // Only log for significant milestones
+          if (
+            currentBatch === 1 ||
+            currentBatch === totalMiniBatches ||
+            currentBatch % 20 === 0
+          ) {
+            console.log(
+              `[BatchProcessor] Inserted mini-batch ${currentBatch}/${totalMiniBatches}`
+            );
+          }
         } catch (batchError) {
           // If mini-batch fails, fall back to truly individual inserts
-          console.log(
-            `[BatchProcessor] Mini-batch ${currentBatch} failed, falling back to truly individual inserts`
+          console.warn(
+            `[BatchProcessor] Mini-batch ${currentBatch} failed, using individual inserts`
           );
 
           for (const row of miniBatch) {
@@ -465,18 +470,19 @@ export class BatchProcessor {
         );
       }
 
-      // Log overall progress periodically
-      if (currentBatch % 5 === 0 || currentBatch === totalMiniBatches) {
+      // Only log at the end
+      if (currentBatch === totalMiniBatches) {
         console.log(
-          `[BatchProcessor] Progress: ${successCount} succeeded, ${errorCount} failed (${Math.round(
-            ((successCount + errorCount) / rows.length) * 100
-          )}%)`
+          `[BatchProcessor] Progress: 100% complete (${successCount} succeeded, ${errorCount} failed)`
         );
       }
     }
 
-    console.log(
-      `[BatchProcessor] Individual inserts complete: ${successCount} succeeded, ${errorCount} failed`
-    );
+    // Only log if there were errors
+    if (errorCount > 0) {
+      console.log(
+        `[BatchProcessor] Individual inserts complete: ${successCount} succeeded, ${errorCount} failed`
+      );
+    }
   }
 }

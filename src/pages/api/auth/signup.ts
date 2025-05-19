@@ -7,10 +7,6 @@ const prisma = getPrismaClient();
 
 // Log database connection info
 console.log("Database connection info:");
-console.log(
-  "- Connection string:",
-  process.env.DATABASE_URL?.replace(/api_key=([^&]+)/, "api_key=****")
-);
 
 export default async function handler(
   req: NextApiRequest,
@@ -22,27 +18,6 @@ export default async function handler(
   }
 
   try {
-    // Log database connection info (partial for security)
-    const dbUrl = process.env.DATABASE_URL || "";
-    const maskedDbUrl = dbUrl.includes("api_key=")
-      ? dbUrl.replace(
-          /api_key=([^&]+)/,
-          "api_key=****" +
-            dbUrl
-              .split("api_key=")[1]
-              .substring(dbUrl.split("api_key=")[1].length - 8)
-        )
-      : "DATABASE_URL not found or does not contain api_key";
-
-    console.log("Database connection info:");
-    console.log("- URL pattern:", maskedDbUrl);
-    console.log(
-      "- API key length:",
-      dbUrl.includes("api_key=")
-        ? dbUrl.split("api_key=")[1].split("&")[0].length
-        : "N/A"
-    );
-
     const { name, email, password } = req.body;
 
     // Validate required fields

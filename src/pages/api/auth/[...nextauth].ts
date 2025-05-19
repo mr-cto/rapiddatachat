@@ -37,7 +37,6 @@ console.log(
   process.env.GOOGLE_CLIENT_SECRET ? "Set" : "Not set"
 );
 console.log("- NODE_ENV:", process.env.NODE_ENV);
-console.log("- DATABASE_URL:", process.env.DATABASE_URL ? "Set" : "Not set");
 
 // Create handler with error logging
 const authHandler = NextAuth(authOptions);

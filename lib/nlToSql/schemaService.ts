@@ -162,8 +162,13 @@ export class SchemaService {
 
             // Try to recreate the view by reactivating the file
             try {
-              const { activateFile } = require("../fileActivation");
-              const result = await activateFile(file.id, userId);
+              // Import the fileActivationCompat module which provides compatibility functions
+              const fileActivationCompat = require("../fileActivationCompat");
+              // Use the activateFile function from the compatibility layer
+              const result = await fileActivationCompat.activateFile(
+                file.id,
+                userId
+              );
 
               if (result.success) {
                 console.log(
@@ -233,8 +238,9 @@ export class SchemaService {
       // Add fileId filter if provided
       const fileFilter = fileId ? ` AND id = '${fileId}'` : "";
 
+      const schema = "public";
       const result = (await executeQuery(`
-        SELECT id, filename FROM files
+        SELECT id, filename FROM "${schema}"."files"
         WHERE user_id = '${userId}' AND status = 'active'${fileFilter}
       `)) as Array<{ id: string; filename: string }>;
 
@@ -613,8 +619,9 @@ export class SchemaService {
               `[SchemaService] Extracted file ID ${fileId} from view name, querying file_data directly`
             );
 
+            const schema = "public";
             const directResult = (await executeQuery(`
-              SELECT data FROM file_data WHERE file_id = '${fileId}' LIMIT 1
+              SELECT data FROM "${schema}"."file_data" WHERE file_id = '${fileId}' LIMIT 1
             `)) as Array<Record<string, unknown>>;
 
             return directResult && directResult.length > 0
@@ -634,8 +641,9 @@ export class SchemaService {
                 `[SchemaService] Found file ID ${fileId} in metadata for view ${viewName}, querying file_data directly`
               );
 
+              const schema = "public";
               const directResult = (await executeQuery(`
-                SELECT data FROM file_data WHERE file_id = '${fileId}' LIMIT 1
+                SELECT data FROM "${schema}"."file_data" WHERE file_id = '${fileId}' LIMIT 1
               `)) as Array<Record<string, unknown>>;
 
               return directResult && directResult.length > 0
@@ -656,8 +664,9 @@ export class SchemaService {
             );
 
             // Get the first file_data record for any file
+            const schema = "public";
             const anyFileData = (await executeQuery(`
-              SELECT data FROM file_data LIMIT 1
+              SELECT data FROM "${schema}"."file_data" LIMIT 1
             `)) as Array<Record<string, unknown>>;
 
             if (anyFileData && anyFileData.length > 0) {
@@ -736,8 +745,9 @@ export class SchemaService {
               `[SchemaService] Extracted file ID ${fileId} from view name, querying file_data directly`
             );
 
+            const schema = "public";
             const directResult = (await executeQuery(`
-              SELECT COUNT(*) as count FROM file_data WHERE file_id = '${fileId}'
+              SELECT COUNT(*) as count FROM "${schema}"."file_data" WHERE file_id = '${fileId}'
             `)) as Array<{ count: number }>;
 
             return directResult && directResult.length > 0
@@ -757,8 +767,9 @@ export class SchemaService {
                 `[SchemaService] Found file ID ${fileId} in metadata for view ${viewName}, querying file_data directly`
               );
 
+              const schema = "public";
               const directResult = (await executeQuery(`
-                SELECT COUNT(*) as count FROM file_data WHERE file_id = '${fileId}'
+                SELECT COUNT(*) as count FROM "${schema}"."file_data" WHERE file_id = '${fileId}'
               `)) as Array<{ count: number }>;
 
               return directResult && directResult.length > 0
@@ -779,8 +790,9 @@ export class SchemaService {
             );
 
             // Get the count of all file_data records
+            const schema = "public";
             const anyFileDataCount = (await executeQuery(`
-              SELECT COUNT(*) as count FROM file_data
+              SELECT COUNT(*) as count FROM "${schema}"."file_data"
             `)) as Array<{ count: number }>;
 
             if (anyFileDataCount && anyFileDataCount.length > 0) {
@@ -821,8 +833,9 @@ export class SchemaService {
     fileId: string
   ): Promise<{ filename: string } | null> {
     try {
+      const schema = "public";
       const result = (await executeQuery(`
-        SELECT filename FROM files WHERE id = '${fileId}'
+        SELECT filename FROM "${schema}"."files" WHERE id = '${fileId}'
       `)) as Array<{ filename: string }>;
 
       return result && result.length > 0 ? result[0] : null;
@@ -1111,8 +1124,9 @@ export class SchemaService {
           );
 
           // Try querying the file_data table directly
+          const schema = "public";
           const directResult = (await executeQuery(`
-            SELECT data FROM file_data WHERE file_id = '${fileId}' LIMIT ${limit}
+            SELECT data FROM "${schema}"."file_data" WHERE file_id = '${fileId}' LIMIT ${limit}
           `)) as Array<Record<string, unknown>>;
 
           if (directResult && directResult.length > 0) {
@@ -1129,11 +1143,12 @@ export class SchemaService {
         );
         try {
           // Try to get the actual data structure by examining the file_data table
+          const schema = "public";
           const fileDataQuery = `
             SELECT data
-            FROM file_data
+            FROM "${schema}"."file_data"
             WHERE file_id IN (
-              SELECT id FROM files WHERE filename LIKE '%xlsx%' OR filename LIKE '%csv%'
+              SELECT id FROM "${schema}"."files" WHERE filename LIKE '%xlsx%' OR filename LIKE '%csv%'
             )
             LIMIT 1
           `;

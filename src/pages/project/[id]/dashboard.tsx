@@ -2,21 +2,12 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { useSession } from "next-auth/react";
 import ImprovedDashboardLayout from "../../../../components/layouts/ImprovedDashboardLayout";
-import HistoryPane from "../../../../components/panels/HistoryPane";
 import FilesPane from "../../../../components/panels/FilesPane";
-import ColumnManagementPane from "../../../../components/panels/ColumnManagementPane";
 import ImprovedQueryResultsPane from "../../../../components/panels/ImprovedQueryResultsPane";
 import ImprovedChatInputPane from "../../../../components/panels/ImprovedChatInputPane";
 import { Button } from "../../../../components/ui";
 import ErrorBoundary from "../../../../components/ErrorBoundary";
 import UploadPreviewPane from "../../../../components/panels/UploadPreviewPane";
-
-interface Query {
-  id: string;
-  text: string;
-  createdAt: string;
-  userId: string;
-}
 
 interface Project {
   id: string;
@@ -58,9 +49,6 @@ function ProjectDashboard(): React.ReactElement {
     fileMapped,
   });
   const [project, setProject] = useState<Project | null>(null);
-  const [selectedQuery, setSelectedQuery] = useState<Query | undefined>(
-    undefined
-  );
   const [selectedFileId, setSelectedFileId] = useState<string | undefined>(
     undefined
   );
@@ -78,12 +66,6 @@ function ProjectDashboard(): React.ReactElement {
     totalRows?: number;
     totalPages?: number;
     currentPage?: number;
-    columnMerges?: {
-      id: string;
-      mergeName: string;
-      columnList: string[];
-      delimiter: string;
-    }[];
   } | null>(null);
   const [currentQuery, setCurrentQuery] = useState<string>("");
 
@@ -234,11 +216,6 @@ function ProjectDashboard(): React.ReactElement {
     }
   }, [error, projectId, router.isReady]);
 
-  // Handle query selection
-  const handleQuerySelect = (query: Query) => {
-    setSelectedQuery(query);
-  };
-
   // Handle file selection
   const handleFileSelect = (fileId: string) => {
     setSelectedFileId(fileId);
@@ -291,7 +268,6 @@ function ProjectDashboard(): React.ReactElement {
           totalRows: data.totalRows,
           totalPages: data.totalPages,
           currentPage: data.currentPage,
-          columnMerges: data.columnMerges || [],
         });
       }
     } catch (err) {
@@ -346,7 +322,6 @@ function ProjectDashboard(): React.ReactElement {
             totalRows: data.totalRows,
             totalPages: data.totalPages,
             currentPage: data.currentPage,
-            columnMerges: data.columnMerges || result?.columnMerges || [],
           });
         }
       } catch (err) {
@@ -404,7 +379,6 @@ function ProjectDashboard(): React.ReactElement {
             totalRows: data.totalRows,
             totalPages: data.totalPages,
             currentPage: data.currentPage || 1,
-            columnMerges: data.columnMerges || result?.columnMerges || [],
           });
         }
       } catch (err) {
@@ -461,7 +435,6 @@ function ProjectDashboard(): React.ReactElement {
             totalRows: data.totalRows,
             totalPages: data.totalPages,
             currentPage: data.currentPage || 1,
-            columnMerges: data.columnMerges || result?.columnMerges || [],
           });
         }
       } catch (err) {
@@ -473,38 +446,6 @@ function ProjectDashboard(): React.ReactElement {
       }
     })();
   };
-
-  // Handle column merges change
-  const handleColumnMergesChange = (
-    columnMerges: {
-      id: string;
-      mergeName: string;
-      columnList: string[];
-      delimiter: string;
-    }[]
-  ) => {
-    if (result) {
-      setResult({
-        ...result,
-        columnMerges,
-      });
-    }
-  };
-
-  // Use the selected query if provided
-  React.useEffect(() => {
-    if (
-      selectedQuery &&
-      selectedQuery.text &&
-      selectedQuery.text !== currentQuery
-    ) {
-      setCurrentQuery(selectedQuery.text);
-      // Only submit if we have a valid query text
-      if (selectedQuery.text.trim()) {
-        handleSubmit(selectedQuery.text);
-      }
-    }
-  }, [selectedQuery, currentQuery]);
 
   // Show loading state while checking authentication or loading project
   if (status === "loading" || (isLoading && !project)) {
@@ -681,17 +622,6 @@ function ProjectDashboard(): React.ReactElement {
 
         <ImprovedDashboardLayout
           projectName={project?.name}
-          historyPane={
-            projectId ? (
-              <HistoryPane
-                onSelect={handleQuerySelect}
-                selectedQueryId={selectedQuery?.id}
-                projectId={projectId}
-              />
-            ) : (
-              <div className="p-4 text-gray-400">Loading history...</div>
-            )
-          }
           filesPane={
             projectId ? (
               <FilesPane
@@ -702,21 +632,6 @@ function ProjectDashboard(): React.ReactElement {
             ) : (
               <div className="p-4 text-gray-400">Loading files...</div>
             )
-          }
-          columnManagementPane={
-            <ColumnManagementPane
-              onColumnChange={(column) => {
-                // If a column is selected, show a success message
-                if (column) {
-                  setSuccessMessage(`Column "${column.name}" is now active.`);
-
-                  // Clear the message after a few seconds
-                  setTimeout(() => {
-                    setSuccessMessage(null);
-                  }, 5000);
-                }
-              }}
-            />
           }
           queryResultsPane={
             uploadPreview ? (
@@ -733,7 +648,6 @@ function ProjectDashboard(): React.ReactElement {
                 onPageChange={handlePageChange}
                 onSortChange={handleSortChange}
                 onApplyFilters={handleApplyFilters}
-                onColumnMergesChange={handleColumnMergesChange}
                 userId={session?.user?.id}
               />
             )

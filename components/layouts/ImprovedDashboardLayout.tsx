@@ -10,19 +10,11 @@ import { useStableSession } from "../../lib/hooks/useStableSession";
 import { useRouter } from "next/router";
 import Image from "next/image";
 import { Button, Link, Card, ResizablePanel, ResizablePanelGroup } from "../ui";
-import {
-  FaDatabase,
-  FaHistory,
-  FaUpload,
-  FaChevronDown,
-  FaChevronUp,
-} from "react-icons/fa";
+import { FaUpload, FaChevronDown, FaChevronUp } from "react-icons/fa";
 
 interface ImprovedDashboardLayoutProps {
   children?: React.ReactNode;
-  historyPane?: React.ReactNode;
   filesPane?: React.ReactNode;
-  columnManagementPane?: React.ReactNode;
   queryResultsPane?: React.ReactNode;
   chatInputPane?: React.ReactNode;
   projectName?: string;
@@ -30,9 +22,7 @@ interface ImprovedDashboardLayoutProps {
 
 const ImprovedDashboardLayout: React.FC<ImprovedDashboardLayoutProps> = ({
   children,
-  historyPane,
   filesPane,
-  columnManagementPane,
   queryResultsPane,
   chatInputPane,
   projectName,
@@ -41,8 +31,6 @@ const ImprovedDashboardLayout: React.FC<ImprovedDashboardLayoutProps> = ({
   const router = useRouter();
   // UI state
   const [showFileUpload, setShowFileUpload] = useState(false);
-  const [showColumnManagement, setShowColumnManagement] = useState(false);
-  const [showHistory, setShowHistory] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(400); // Default width (match minWidth)
   const [isInitialRender, setIsInitialRender] = useState(true);
 
@@ -50,12 +38,7 @@ const ImprovedDashboardLayout: React.FC<ImprovedDashboardLayoutProps> = ({
   const initialMountRef = useRef(true);
 
   // Memoize child components to prevent re-renders when toggling sections
-  const memoizedHistoryPane = useMemo(() => historyPane, [historyPane]);
   const memoizedFilesPane = useMemo(() => filesPane, [filesPane]);
-  const memoizedColumnManagementPane = useMemo(
-    () => columnManagementPane,
-    [columnManagementPane]
-  );
 
   // Store sidebar width and panel states in localStorage to persist between sessions
   useEffect(() => {
@@ -75,10 +58,6 @@ const ImprovedDashboardLayout: React.FC<ImprovedDashboardLayoutProps> = ({
         const states = JSON.parse(savedPanelStates);
         if (states.showFileUpload !== undefined)
           setShowFileUpload(states.showFileUpload);
-        if (states.showColumnManagement !== undefined)
-          setShowColumnManagement(states.showColumnManagement);
-        if (states.showHistory !== undefined)
-          setShowHistory(states.showHistory);
       } catch (e) {
         // Ignore parsing errors
       }
@@ -112,37 +91,22 @@ const ImprovedDashboardLayout: React.FC<ImprovedDashboardLayoutProps> = ({
 
   // Toggle panel visibility and save state to localStorage
   const togglePanel = useCallback(
-    (panel: "history" | "files" | "columns") => {
+    (panel: "files") => {
       let newState;
       switch (panel) {
-        case "history":
-          newState = !showHistory;
-          setShowHistory(newState);
-          break;
         case "files":
           newState = !showFileUpload;
           setShowFileUpload(newState);
           break;
-        case "columns":
-          newState = !showColumnManagement;
-          setShowColumnManagement(newState);
-          break;
       }
 
-      // Save all panel states to localStorage
+      // Save panel state to localStorage
       const panelStates = {
-        showHistory,
-        showFileUpload,
-        showColumnManagement,
-        [panel === "history"
-          ? "showHistory"
-          : panel === "files"
-          ? "showFileUpload"
-          : "showColumnManagement"]: newState,
+        showFileUpload: newState,
       };
       localStorage.setItem("panelStates", JSON.stringify(panelStates));
     },
-    [showHistory, showFileUpload, showColumnManagement]
+    [showFileUpload]
   );
 
   // Redirect to sign-in page if not authenticated
@@ -271,32 +235,6 @@ const ImprovedDashboardLayout: React.FC<ImprovedDashboardLayoutProps> = ({
             className="bg-ui-primary border-r border-ui-border flex flex-col"
             scrollable={true}
           >
-            {/* History Section with Toggle */}
-            <div className="border-b border-ui-border">
-              <div
-                className="p-3 bg-ui-secondary flex justify-between items-center cursor-pointer"
-                onClick={() => togglePanel("history")}
-              >
-                <h2 className="text-sm font-semibold text-gray-300 flex items-center">
-                  <FaHistory className="mr-2" /> Query History
-                </h2>
-                {showHistory ? (
-                  <FaChevronUp size={14} />
-                ) : (
-                  <FaChevronDown size={14} />
-                )}
-              </div>
-              <div
-                className={`max-h-[30vh] overflow-y-auto transition-all duration-300 ${
-                  showHistory
-                    ? "opacity-100 max-h-[30vh]"
-                    : "opacity-0 max-h-0 overflow-hidden"
-                }`}
-              >
-                {historyPane}
-              </div>
-            </div>
-
             {/* File Upload Section with Toggle */}
             <div className="border-b border-ui-border">
               <div
@@ -323,32 +261,6 @@ const ImprovedDashboardLayout: React.FC<ImprovedDashboardLayoutProps> = ({
               </div>
             </div>
 
-            {/* Column Management Section (Collapsed by Default) */}
-            <div className="border-b border-ui-border">
-              <div
-                className="p-3 bg-ui-secondary flex justify-between items-center cursor-pointer"
-                onClick={() => togglePanel("columns")}
-              >
-                <h2 className="text-sm font-semibold text-gray-300 flex items-center">
-                  <FaDatabase className="mr-2" /> Column Management
-                </h2>
-                {showColumnManagement ? (
-                  <FaChevronUp size={14} />
-                ) : (
-                  <FaChevronDown size={14} />
-                )}
-              </div>
-              <div
-                className={`p-3 transition-all duration-300 ${
-                  showColumnManagement
-                    ? "opacity-100"
-                    : "opacity-0 h-0 overflow-hidden p-0"
-                }`}
-              >
-                {columnManagementPane}
-              </div>
-            </div>
-
             {/* Quick Upload Button - Always Visible */}
             <div className="p-4 mt-auto">
               <Button
@@ -356,9 +268,7 @@ const ImprovedDashboardLayout: React.FC<ImprovedDashboardLayoutProps> = ({
                   setShowFileUpload(true);
                   // Save panel state to localStorage
                   const panelStates = {
-                    showHistory,
                     showFileUpload: true,
-                    showColumnManagement,
                   };
                   localStorage.setItem(
                     "panelStates",

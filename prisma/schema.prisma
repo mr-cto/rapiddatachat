@@ -193,6 +193,20 @@ model FileData {
   @@map("file_data")
 }
 
+model ViewMetadata {
+  id               Int      @id @default(autoincrement())
+  viewName         String   @unique @map("view_name")
+  fileId           String   @map("file_id")
+  userId           String   @map("user_id")
+  originalFilename String   @map("original_filename")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([fileId], map: "idx_view_metadata_file_id")
+  @@index([userId], map: "idx_view_metadata_user_id")
+  @@map("view_metadata")
+}
+
 model ColumnMerge {
   id         String   @id @default(uuid())
   userId     String   @map("user_id")

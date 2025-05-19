@@ -8,14 +8,7 @@
  * @returns boolean True if using Prisma Accelerate
  */
 export function isPrismaAccelerate(): boolean {
-  // Check both DATABASE_URL and RAW_DATABASE_URL for Prisma Accelerate
-  return (
-    process.env.DATABASE_URL?.includes("prisma.io") ||
-    process.env.DATABASE_URL?.includes("prisma-data.io") ||
-    process.env.RAW_DATABASE_URL?.includes("prisma.io") ||
-    process.env.RAW_DATABASE_URL?.includes("prisma-data.io") ||
-    false
-  );
+  return true;
 }
 
 /**
