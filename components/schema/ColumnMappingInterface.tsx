@@ -623,6 +623,7 @@ const ColumnMappingInterface: React.FC<ColumnMappingInterfaceProps> = ({
               <ColumnMappingDisplay
                 fileColumns={fileColumns}
                 schemaColumns={schemaColumns}
+                mappings={mappings}
                 isLoading={isLoading}
                 onSelectFileColumn={handleSelectFileColumn}
                 onSelectSchemaColumn={handleSelectSchemaColumn}
