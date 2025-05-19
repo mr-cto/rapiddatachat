@@ -1,18 +1,9 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../../../lib/authOptions";
-import { PrismaClient } from "@prisma/client";
 import { createMergedColumnView } from "../../../lib/columnMergeService";
+import { getPrismaClient } from "../../../lib/prisma/replicaClient";
 
-// Initialize Prisma client (singleton)
-let prismaInstance: PrismaClient | null = null;
-
-function getPrismaClient(): PrismaClient {
-  if (!prismaInstance) {
-    prismaInstance = new PrismaClient();
-  }
-  return prismaInstance;
-}
 
 export default async function handler(
   req: NextApiRequest,
