@@ -135,6 +135,34 @@ export default async function handler(
         : req.query.projectId;
     }
 
+    // Get column merges information if provided
+    let columnMerges = null;
+    if (fields.columnMerges) {
+      try {
+        const columnMergesStr = Array.isArray(fields.columnMerges)
+          ? fields.columnMerges[0]
+          : fields.columnMerges;
+        columnMerges = JSON.parse(columnMergesStr);
+        console.log(`Column merges provided: ${columnMergesStr}`);
+      } catch (err) {
+        console.warn("Error parsing column merges:", err);
+      }
+    }
+
+    // Get visible columns information if provided
+    let visibleColumns = null;
+    if (fields.visibleColumns) {
+      try {
+        const visibleColumnsStr = Array.isArray(fields.visibleColumns)
+          ? fields.visibleColumns[0]
+          : fields.visibleColumns;
+        visibleColumns = JSON.parse(visibleColumnsStr);
+        console.log(`Visible columns provided: ${visibleColumnsStr}`);
+      } catch (err) {
+        console.warn("Error parsing visible columns:", err);
+      }
+    }
+
     console.log(
       `Project ID: ${projectId || "none"} (source: ${
         projectId ? (fields.projectId ? "form data" : "query params") : "none"
@@ -330,6 +358,8 @@ export default async function handler(
           path: filePath,
           dbOperationSuccess,
           projectId: projectId || null,
+          columnMerges: columnMerges,
+          visibleColumns: visibleColumns,
         };
       })
     );
@@ -350,6 +380,8 @@ export default async function handler(
         status: file.status,
         format: file.format,
         projectId: file.projectId,
+        columnMerges: file.columnMerges,
+        visibleColumns: file.visibleColumns,
       })),
       message: anyDbOperationFailed
         ? "Files uploaded successfully, but database operations were skipped. The application may have limited functionality."
@@ -407,6 +439,8 @@ async function processFilesAsync(
     path: string;
     dbOperationSuccess: boolean;
     projectId: string | null;
+    columnMerges: any[] | null;
+    visibleColumns: string[] | null;
   }>,
   cookie: string,
   userIdFromUpload: string
@@ -455,6 +489,8 @@ async function processFilesAsync(
           body: JSON.stringify({
             fileId: file.id,
             projectId: file.projectId,
+            columnMerges: file.columnMerges,
+            visibleColumns: file.visibleColumns,
           }),
         }
       );

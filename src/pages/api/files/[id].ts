@@ -133,7 +133,21 @@ async function handleDeleteRequest(
 
     if (totalRecords > 0) {
       // Use batched deletion with direct SQL for better performance
-      const batchSize = 5000;
+      // Determine optimal batch size based on total records
+      let batchSize = 5000; // Default batch size
+
+      // Scale batch size based on total records for better performance
+      if (totalRecords > 300000) {
+        // For extremely large files (500k+ rows)
+        batchSize = 25000;
+      } else if (totalRecords > 100000) {
+        // For very large files (100k-500k rows)
+        batchSize = 10000;
+      }
+
+      console.log(
+        `Using batch size of ${batchSize} for ${totalRecords} records`
+      );
       let deletedCount = 0;
 
       while (deletedCount < totalRecords) {

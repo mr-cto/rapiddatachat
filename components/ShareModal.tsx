@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import Modal from "./Modal";
 import { downloadCSV } from "../utils/exportUtils";
+import { createZipWithCSV, downloadZip } from "../utils/zipUtils";
+import { convertToCSV } from "../utils/exportUtils";
 
 interface ShareModalProps {
   isOpen: boolean;
@@ -37,6 +39,12 @@ const ShareModal: React.FC<ShareModalProps> = ({
   const [shareLink, setShareLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [exportProgress, setExportProgress] = useState<{
+    current: number;
+    total: number;
+    percentage: number;
+  } | null>(null);
 
   /**
    * Generate a shareable link for the query results
@@ -98,9 +106,6 @@ const ShareModal: React.FC<ShareModalProps> = ({
   };
 
   /**
-   * Download the results as a CSV file
-   */
-  /**
    * Process results to include merged columns, virtual columns, and respect column order
    * @returns Processed results with all columns properly handled
    */
@@ -133,52 +138,205 @@ const ShareModal: React.FC<ShareModalProps> = ({
     }
 
     // Process virtual columns if they exist
-    // Note: This is a simplified implementation as we don't have access to the actual
-    // expressions evaluation logic here. In a real implementation, you would need to
-    // evaluate the expressions or ensure they're already evaluated in the results.
     if (virtualColumns && virtualColumns.length > 0) {
-      // Ensure virtual columns are included in the export
-      // In a real implementation, these would be calculated based on their expressions
       virtualColumns.forEach((vc) => {
         processedResults.forEach((row: Record<string, unknown>) => {
-          // If the virtual column is not already in the results (it should be if properly passed)
           if (row[vc.name] === undefined) {
-            // Set a placeholder value or calculate it if possible
             row[vc.name] = row[vc.name] || `[Virtual: ${vc.name}]`;
           }
         });
       });
     }
 
-    // We no longer need to reorder the data here since we're passing the columnOrder to downloadCSV
-    // The convertToCSV function will handle the ordering
-    // This ensures that the column order is respected in the CSV file
-
     return processedResults;
   };
 
   /**
    * Download the results as a CSV file, respecting merged columns and column order
+   * Uses chunked processing for Vercel compatibility
    */
-  const handleDownloadCSV = () => {
+  const handleDownloadCSV = async () => {
     try {
+      setIsGeneratingLink(true); // Show loading state
+      setError(null);
+      setExportProgress(null);
+
       const filename = `query-results-${new Date()
         .toISOString()
         .slice(0, 10)}.csv`;
 
-      // Process the results to include merged columns and virtual columns
-      const processedResults = processResultsForExport();
+      // First, get metadata about the export
+      const metadataResponse = await fetch("/api/export-all-data", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include", // Include cookies for authentication
+        body: JSON.stringify({
+          sqlQuery,
+          columnMerges,
+          virtualColumns,
+          chunk: 0, // Request metadata
+        }),
+      });
 
-      // Use the column order exactly as provided - don't modify it
-      // This ensures that columns appear in the exact order specified by the user
-      // If columnOrder is not provided, we'll use the default order from the data
-      const effectiveColumnOrder = columnOrder ? [...columnOrder] : undefined;
+      if (!metadataResponse.ok) {
+        const errorData = await metadataResponse.json();
+        throw new Error(errorData.error || "Failed to get export metadata");
+      }
 
-      // Download the processed results with the effective column order
-      downloadCSV(processedResults, filename, effectiveColumnOrder);
+      const metadata = await metadataResponse.json();
+      const { totalRows, totalChunks, chunkSize } = metadata;
+
+      console.log(
+        `Export metadata: ${totalRows} rows in ${totalChunks} chunks of ${chunkSize} rows each`
+      );
+
+      // If there's no data, show an error
+      if (totalRows === 0) {
+        setError("No data to export");
+        setIsGeneratingLink(false);
+        return;
+      }
+
+      // For small datasets (single chunk), use the simple approach
+      if (totalChunks === 1) {
+        setExportProgress({ current: 0, total: 1, percentage: 0 });
+
+        const dataResponse = await fetch("/api/export-all-data", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include", // Include cookies for authentication
+          body: JSON.stringify({
+            sqlQuery,
+            columnMerges,
+            virtualColumns,
+            chunk: 1, // Get the first (and only) chunk
+          }),
+        });
+
+        if (!dataResponse.ok) {
+          const errorData = await dataResponse.json();
+
+          // Check if it's a response size limit error (status 413)
+          if (dataResponse.status === 413) {
+            console.warn(
+              "Response size limit exceeded, retrying with smaller chunk size"
+            );
+            // The server has already reduced the chunk size, so we can try again
+            setError(
+              "Export chunk size was too large. Retrying with a smaller chunk size..."
+            );
+
+            // Wait a moment before retrying
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+
+            // Clear the error and retry
+            setError(null);
+            return handleDownloadCSV();
+          }
+
+          throw new Error(errorData.error || "Failed to export data");
+        }
+
+        const data = await dataResponse.json();
+        setExportProgress({ current: 1, total: 1, percentage: 100 });
+
+        // Use the column order exactly as provided
+        const effectiveColumnOrder = columnOrder ? [...columnOrder] : undefined;
+
+        // Download the data
+        await downloadCSV(data.results, filename, effectiveColumnOrder);
+
+        setSuccessMessage(
+          `Successfully exported ${totalRows.toLocaleString()} rows`
+        );
+        setTimeout(() => setSuccessMessage(null), 3000);
+      }
+      // For large datasets, use chunked processing
+      else {
+        // Create an array to hold all chunks
+        const allData: Record<string, unknown>[] = [];
+
+        // Process each chunk
+        for (let i = 1; i <= totalChunks; i++) {
+          setExportProgress({
+            current: i,
+            total: totalChunks,
+            percentage: Math.round((i / totalChunks) * 100),
+          });
+
+          const chunkResponse = await fetch("/api/export-all-data", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            credentials: "include", // Include cookies for authentication
+            body: JSON.stringify({
+              sqlQuery,
+              columnMerges,
+              virtualColumns,
+              chunk: i,
+            }),
+          });
+
+          if (!chunkResponse.ok) {
+            const errorData = await chunkResponse.json();
+
+            // Check if it's a response size limit error (status 413)
+            if (chunkResponse.status === 413) {
+              console.warn(
+                "Response size limit exceeded, retrying with smaller chunk size"
+              );
+              // The server has already reduced the chunk size, so we can try again
+              setError(
+                "Export chunk size was too large. Retrying with a smaller chunk size..."
+              );
+
+              // Wait a moment before retrying
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+
+              // Clear the error and retry
+              setError(null);
+              return handleDownloadCSV();
+            }
+
+            throw new Error(errorData.error || `Failed to export chunk ${i}`);
+          }
+
+          const chunkData = await chunkResponse.json();
+
+          // Add this chunk's data to the full dataset
+          allData.push(...chunkData.results);
+        }
+
+        // Use the column order exactly as provided
+        const effectiveColumnOrder = columnOrder ? [...columnOrder] : undefined;
+
+        // Convert to CSV
+        const csvData = convertToCSV(allData, effectiveColumnOrder);
+
+        // Create a ZIP file with the CSV data
+        const zipBlob = await createZipWithCSV(csvData, filename);
+
+        // Download the ZIP file
+        downloadZip(zipBlob, `${filename.replace(/\.csv$/, "")}.zip`);
+
+        setSuccessMessage(
+          `Successfully exported ${totalRows.toLocaleString()} rows (ZIP compressed)`
+        );
+        setTimeout(() => setSuccessMessage(null), 3000);
+      }
+
+      console.log(`Exported ${totalRows} rows of data`);
     } catch (error) {
       console.error("Error downloading CSV:", error);
       setError("Failed to download CSV. Please try again.");
+    } finally {
+      setIsGeneratingLink(false); // Hide loading state
+      setExportProgress(null);
     }
   };
 
@@ -196,38 +354,102 @@ const ShareModal: React.FC<ShareModalProps> = ({
         <div>
           <button
             onClick={handleDownloadCSV}
-            disabled={results.length === 0}
+            disabled={results.length === 0 || isGeneratingLink}
             className={`flex items-center px-4 py-2 rounded-md text-white font-medium ${
-              results.length === 0
+              results.length === 0 || isGeneratingLink
                 ? "bg-gray-600 cursor-not-allowed"
                 : "bg-accent-primary hover:bg-accent-primary-hover transition-all"
             }`}
           >
-            <svg
-              className="w-4 h-4 mr-2"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-              ></path>
-            </svg>
-            Download as CSV
+            {isGeneratingLink ? (
+              <>
+                <svg
+                  className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  ></circle>
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
+                </svg>
+                {exportProgress
+                  ? `Exporting... ${exportProgress.percentage}%`
+                  : "Preparing Export..."}
+              </>
+            ) : (
+              <>
+                <svg
+                  className="w-4 h-4 mr-2"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                  ></path>
+                </svg>
+                Download as CSV
+              </>
+            )}
           </button>
           <p className="text-xs text-gray-400 mt-2">
-            Download the current view as a CSV file for use in spreadsheet
-            applications.
+            Download the complete dataset as a CSV file for use in spreadsheet
+            applications. Large datasets will be automatically compressed.
           </p>
         </div>
 
         {error && (
           <div className="mt-2 p-3 bg-red-900/30 border border-red-800 rounded-md text-sm text-red-400">
             {error}
+          </div>
+        )}
+
+        {successMessage && (
+          <div className="mt-2 p-3 bg-green-900/30 border border-green-800 rounded-md text-sm text-green-400 flex items-center">
+            <svg
+              className="w-4 h-4 mr-2"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M5 13l4 4L19 7"
+              ></path>
+            </svg>
+            {successMessage}
+          </div>
+        )}
+
+        {exportProgress && (
+          <div className="mt-2">
+            <div className="w-full bg-gray-700 rounded-full h-2.5">
+              <div
+                className="bg-accent-primary h-2.5 rounded-full"
+                style={{ width: `${exportProgress.percentage}%` }}
+              ></div>
+            </div>
+            <p className="text-xs text-gray-400 mt-1 text-center">
+              Processing chunk {exportProgress.current} of{" "}
+              {exportProgress.total}
+            </p>
           </div>
         )}
       </div>

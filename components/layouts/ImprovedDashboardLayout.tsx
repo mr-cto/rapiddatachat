@@ -216,7 +216,7 @@ const ImprovedDashboardLayout: React.FC<ImprovedDashboardLayoutProps> = ({
         <ResizablePanelGroup
           defaultLeftWidth={sidebarWidth}
           minLeftWidth={400}
-          maxLeftWidth={800}
+          maxLeftWidth={1200}
           onResize={(leftWidth) => {
             setSidebarWidth(leftWidth);
             localStorage.setItem("sidebarWidth", leftWidth.toString());
@@ -259,28 +259,6 @@ const ImprovedDashboardLayout: React.FC<ImprovedDashboardLayoutProps> = ({
               >
                 {filesPane}
               </div>
-            </div>
-
-            {/* Quick Upload Button - Always Visible */}
-            <div className="p-4 mt-auto">
-              <Button
-                onClick={() => {
-                  setShowFileUpload(true);
-                  // Save panel state to localStorage
-                  const panelStates = {
-                    showFileUpload: true,
-                  };
-                  localStorage.setItem(
-                    "panelStates",
-                    JSON.stringify(panelStates)
-                  );
-                }}
-                variant="primary"
-                fullWidth
-                className="flex items-center justify-center"
-              >
-                <FaUpload className="mr-2" /> Upload New Data
-              </Button>
             </div>
           </ResizablePanel>
 

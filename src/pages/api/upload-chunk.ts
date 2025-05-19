@@ -73,39 +73,51 @@ function reassembleChunks(
   userId: string = "unknown",
   projectId: string | null = null
 ): string {
+  console.log(`Reassembling ${totalChunks} chunks for file ${fileId}`);
+
   // Generate the folder paths
   const chunkFolderPath = generateFilePath(userId, projectId, fileId, "chunks");
   const chunkDir = path.join(UPLOADS_DIR, chunkFolderPath);
+  console.log(`Chunk directory: ${chunkDir}`);
 
-  const outputFolderPath = generateFilePath(
-    userId,
-    projectId,
-    fileId,
-    originalFilename
-  );
-  const outputDir = path.join(PROCESSED_DIR, path.dirname(outputFolderPath));
+  // Check if chunk directory exists
+  if (!fs.existsSync(chunkDir)) {
+    console.error(`Chunk directory does not exist: ${chunkDir}`);
+    throw new Error(`Chunk directory not found: ${chunkDir}`);
+  }
+
+  // Create a simple output path in the processed directory
+  const ext = path.extname(originalFilename);
+  const outputDir = path.join(PROCESSED_DIR, userId.replace(/[@.]/g, "_"));
 
   // Create output directory if it doesn't exist
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
-  const ext = path.extname(originalFilename);
-  const outputPath = path.join(
-    PROCESSED_DIR,
-    outputFolderPath,
-    `${fileId}${ext}`
-  );
+  const outputPath = path.join(outputDir, `${fileId}${ext}`);
+  console.log(`Output path: ${outputPath}`);
 
+  // Create a write stream for the output file
   const outputStream = fs.createWriteStream(outputPath);
 
+  // Read each chunk and write it to the output file
   for (let i = 0; i < totalChunks; i++) {
     const chunkPath = path.join(chunkDir, `${i}`);
+    console.log(`Reading chunk ${i} from ${chunkPath}`);
+
+    if (!fs.existsSync(chunkPath)) {
+      console.error(`Chunk file not found: ${chunkPath}`);
+      throw new Error(`Chunk file not found: ${chunkPath}`);
+    }
+
     const chunkData = fs.readFileSync(chunkPath);
     outputStream.write(chunkData);
   }
 
+  // Close the output stream
   outputStream.end();
+  console.log(`File reassembled successfully at ${outputPath}`);
 
   return outputPath;
 }
@@ -153,21 +165,24 @@ export default async function handler(
 
   try {
     const userId = userEmail || "unknown";
+    console.log("Processing chunk upload for user:", userId);
+
+    // More permissive form configuration for chunks
     const form = formidable({
       maxFiles: 1,
       maxFileSize: 500 * 1024 * 1024, // 500MB per chunk
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      filter: (part) => {
-        // Only accept CSV and Excel files
-        if (part.mimetype) {
-          return ALLOWED_MIME_TYPES.includes(part.mimetype);
-        }
-        return false;
-      },
+      // Don't filter chunks by MIME type since they're binary data
+      filter: () => true,
     });
+
+    console.log("Formidable initialized, parsing request...");
 
     // Parse the form data
     const [fields, files] = await form.parse(req);
+
+    console.log("Request parsed successfully");
+    console.log("Fields received:", Object.keys(fields).join(", "));
+    console.log("Files received:", Object.keys(files).join(", "));
 
     // Get chunk metadata
     const fileId = fields.fileId?.[0] || uuidv4();
@@ -177,6 +192,15 @@ export default async function handler(
     const totalSize = parseInt(fields.totalSize?.[0] || "0", 10);
     const mimeType = fields.mimeType?.[0] || "";
     const projectId = fields.projectId?.[0] || null;
+
+    console.log("Chunk metadata:", {
+      fileId,
+      originalFilename,
+      currentChunk: `${currentChunk + 1}/${totalChunks}`,
+      totalSize,
+      mimeType,
+      projectId,
+    });
 
     // Validate chunk metadata
     if (
@@ -193,6 +217,8 @@ export default async function handler(
 
     // Check if files were uploaded
     if (!files.chunk || files.chunk.length === 0) {
+      console.error("No chunk found in the request");
+      console.log("Available files:", JSON.stringify(files));
       return res.status(400).json({ error: "No chunk uploaded" });
     }
 
@@ -216,15 +242,43 @@ export default async function handler(
 
     if (isComplete) {
       // Reassemble the file
-      const filePath = reassembleChunks(
-        fileId,
-        originalFilename,
-        totalChunks,
-        userId,
-        projectId
-      );
+      let filePath;
+      try {
+        console.log(`Attempting to reassemble chunks for file ${fileId}`);
+        filePath = reassembleChunks(
+          fileId,
+          originalFilename,
+          totalChunks,
+          userId,
+          projectId
+        );
+
+        // Check if file exists
+        if (!fs.existsSync(filePath)) {
+          console.error(`Reassembled file not found at ${filePath}`);
+          return res.status(500).json({
+            error: "Failed to reassemble file chunks",
+            details: `File not found at ${filePath}`,
+          });
+        }
+
+        console.log(`Successfully reassembled file at ${filePath}`);
+      } catch (reassembleError) {
+        console.error("Error reassembling chunks:", reassembleError);
+        return res.status(500).json({
+          error: "Failed to reassemble file chunks",
+          details:
+            reassembleError instanceof Error
+              ? reassembleError.message
+              : "Unknown error",
+        });
+      }
+
       const fileSize = fs.statSync(filePath).size;
       const format = originalFilename.split(".").pop() || "";
+      console.log(
+        `Reassembled file size: ${fileSize} bytes, format: ${format}`
+      );
 
       // Store file metadata in the database
       const dbFileId = uuidv4();
@@ -292,9 +346,16 @@ export default async function handler(
     }
   } catch (error) {
     console.error("Chunk upload error:", error);
+    console.error(
+      "Error stack:",
+      error instanceof Error ? error.stack : "No stack trace"
+    );
+
+    // Return a more detailed error response
     return res.status(500).json({
       error: "Failed to upload chunk",
       details: error instanceof Error ? error.message : "Unknown error",
+      stack: error instanceof Error ? error.stack : undefined,
     });
   }
 }

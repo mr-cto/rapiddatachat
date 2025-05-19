@@ -1,4 +1,4 @@
-// Script to create the file_data table if it doesn't exist
+// Script to create the file_data table using Prisma
 const { PrismaClient } = require("@prisma/client");
 
 async function createFileDataTable() {
@@ -22,31 +22,35 @@ async function createFileDataTable() {
 
     console.log("Creating file_data table...");
 
-    // Create the table
-    await prisma.$executeRaw`
-      CREATE TABLE IF NOT EXISTS "file_data" (
+    // Create the table - execute each statement separately
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE "file_data" (
         "id" TEXT NOT NULL,
         "file_id" TEXT NOT NULL,
         "ingested_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "data" JSONB NOT NULL,
         CONSTRAINT "file_data_pkey" PRIMARY KEY ("id")
       )
-    `;
+    `);
 
-    // Create the index
-    await prisma.$executeRaw`
-      CREATE INDEX IF NOT EXISTS "idx_file_data_file" ON "file_data"("file_id")
-    `;
+    console.log("Table created, adding index...");
 
-    // Add the foreign key constraint
-    await prisma.$executeRaw`
-      ALTER TABLE "file_data" 
-      ADD CONSTRAINT "file_data_file_id_fkey" 
-      FOREIGN KEY ("file_id") 
-      REFERENCES "files"("id") 
-      ON DELETE CASCADE 
+    // Create index
+    await prisma.$executeRawUnsafe(`
+      CREATE INDEX "idx_file_data_file" ON "file_data"("file_id")
+    `);
+
+    console.log("Index created, adding foreign key constraint...");
+
+    // Add foreign key constraint
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "file_data"
+      ADD CONSTRAINT "file_data_file_id_fkey"
+      FOREIGN KEY ("file_id")
+      REFERENCES "files"("id")
+      ON DELETE CASCADE
       ON UPDATE CASCADE
-    `;
+    `);
 
     console.log("file_data table created successfully.");
   } catch (error) {
@@ -57,5 +61,5 @@ async function createFileDataTable() {
 }
 
 createFileDataTable()
-  .then(() => console.log("Done"))
+  .then(() => console.log("Script completed."))
   .catch((error) => console.error("Script failed:", error));

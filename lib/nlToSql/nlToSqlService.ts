@@ -2,7 +2,7 @@ import { createLLMService, LLMService } from "./llmService";
 import { createSchemaService, SchemaService } from "./schemaService";
 import { createQueryService, QueryService } from "./queryService";
 import { getQueryHistoryByProject } from "./projectQueryHistory";
-import { activateAvailableFiles } from "../fileActivation";
+import { activateAvailableFiles } from "../fileActivationExport";
 import { executeQuery } from "../database";
 import {
   SchemaService as SchemaManagementService,
@@ -427,18 +427,19 @@ export class NLToSQLService {
       let sampleData = "";
       if (schema.tables && schema.tables.length > 0) {
         const table = schema.tables[0];
-        const fileIdMatch = table.name.match(/file_([a-f0-9-]+)$/);
-        let viewName = "";
-
-        if (fileIdMatch && fileIdMatch[1]) {
-          viewName = `user_t_mrcto_ai_file_${fileIdMatch[1]}`;
-        } else {
-          viewName = `"${table.name.replace(/[^a-zA-Z0-9_]/g, "_")}"`;
-        }
+        // Sanitize the table name to avoid SQL injection and syntax errors
+        const sanitizedTableName = table.name.replace(/[^a-zA-Z0-9_]/g, "_");
 
         try {
-          sampleData = await this.schemaService.getSampleData(viewName, 3);
-          console.log(`[NLToSQLService] Retrieved sample data for ${viewName}`);
+          // Don't use quotes in the table name passed to getSampleData
+          // The method will handle quoting internally as needed
+          sampleData = await this.schemaService.getSampleData(
+            sanitizedTableName,
+            3
+          );
+          console.log(
+            `[NLToSQLService] Retrieved sample data for "${sanitizedTableName}"`
+          );
         } catch (sampleError) {
           console.error(
             `[NLToSQLService] Error getting sample data:`,

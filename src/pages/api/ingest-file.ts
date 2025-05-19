@@ -51,6 +51,18 @@ export default withAuth(async function handler(
       return res.status(400).json({ error: "File ID is required" });
     }
 
+    // Get column merges and visible columns information if provided
+    const columnMerges = req.body.columnMerges || null;
+    const visibleColumns = req.body.visibleColumns || null;
+
+    if (columnMerges) {
+      log.info(`Column merges provided for file ${fileId}`);
+    }
+
+    if (visibleColumns) {
+      log.info(`Visible columns provided for file ${fileId}`);
+    }
+
     log.info(`Starting ingestion process for file ${fileId}`);
 
     // Get file information from database
@@ -353,6 +365,34 @@ export default withAuth(async function handler(
                 END
               WHERE id = '${fileId}'
             `);
+
+            // If column merges were provided, store them in metadata
+            if (columnMerges) {
+              await executeQuery(`
+                UPDATE files
+                SET metadata = jsonb_set(
+                  COALESCE(metadata, '{}'::jsonb),
+                  '{column_merges}',
+                  '${JSON.stringify(columnMerges)}'::jsonb
+                )
+                WHERE id = '${fileId}'
+              `);
+              log.info(`Stored column merges in file metadata for ${fileId}`);
+            }
+
+            // If visible columns were provided, store them in metadata
+            if (visibleColumns) {
+              await executeQuery(`
+                UPDATE files
+                SET metadata = jsonb_set(
+                  COALESCE(metadata, '{}'::jsonb),
+                  '{visible_columns}',
+                  '${JSON.stringify(visibleColumns)}'::jsonb
+                )
+                WHERE id = '${fileId}'
+              `);
+              log.info(`Stored visible columns in file metadata for ${fileId}`);
+            }
             log.info(`Stored column headers in file metadata for ${fileId}`);
 
             // Update file status to indicate headers are available
@@ -464,6 +504,8 @@ export default withAuth(async function handler(
       fileId,
       rowCount: processResult.rowCount,
       columns: processResult.headers,
+      columnMerges: columnMerges,
+      visibleColumns: visibleColumns,
       dbOperationsSkipped,
       message: dbOperationsSkipped
         ? "File processed successfully, but database operations were skipped. The application may have limited functionality."

@@ -1,6 +1,12 @@
+import { createZipWithCSV, downloadZip } from "./zipUtils";
+
+// Define the threshold for when to use ZIP compression (in rows)
+const ZIP_THRESHOLD = 10000;
+
 /**
  * Convert data to CSV format
  * @param data Array of objects to convert to CSV
+ * @param columnOrder Optional column order
  * @returns CSV string
  */
 export const convertToCSV = (
@@ -74,35 +80,56 @@ export const convertToCSV = (
  * Download data as a CSV file
  * @param data Array of objects to download as CSV
  * @param filename Name of the file to download
+ * @param columnOrder Optional column order
+ * @param forceZip Force ZIP compression regardless of data size
  */
-export const downloadCSV = (
+export const downloadCSV = async (
   data: Record<string, unknown>[],
   filename: string = "export.csv",
-  columnOrder?: string[]
-): void => {
+  columnOrder?: string[],
+  forceZip: boolean = false
+): Promise<void> => {
   const csv = convertToCSV(data, columnOrder);
 
-  // Create a blob with the CSV data
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  // Determine if we should use ZIP compression
+  const useZip = forceZip || data.length >= ZIP_THRESHOLD;
 
-  // Create a download link
-  const link = document.createElement("a");
+  if (useZip) {
+    // Get the base filename without extension
+    const baseFilename = filename.replace(/\.csv$/, "");
 
-  // Create a URL for the blob
-  const url = URL.createObjectURL(blob);
+    // Create a ZIP file with the CSV
+    const zipBlob = await createZipWithCSV(csv, filename);
 
-  // Set link properties
-  link.setAttribute("href", url);
-  link.setAttribute("download", filename);
-  link.style.visibility = "hidden";
+    // Download the ZIP file
+    downloadZip(zipBlob, `${baseFilename}.zip`);
 
-  // Add link to document
-  document.body.appendChild(link);
+    console.log(`Downloaded ${data.length} rows as ZIP file`);
+  } else {
+    // Create a blob with the CSV data
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
 
-  // Click the link to download the file
-  link.click();
+    // Create a download link
+    const link = document.createElement("a");
 
-  // Clean up
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+    // Create a URL for the blob
+    const url = URL.createObjectURL(blob);
+
+    // Set link properties
+    link.setAttribute("href", url);
+    link.setAttribute("download", filename);
+    link.style.visibility = "hidden";
+
+    // Add link to document
+    document.body.appendChild(link);
+
+    // Click the link to download the file
+    link.click();
+
+    // Clean up
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    console.log(`Downloaded ${data.length} rows as CSV file`);
+  }
 };

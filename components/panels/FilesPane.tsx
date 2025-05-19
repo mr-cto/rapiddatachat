@@ -13,6 +13,7 @@ import SchemaColumnMapper from "../SchemaColumnMapper";
 import { Button, Card } from "../ui";
 import { v4 as uuidv4 } from "uuid";
 import { parseFileClient } from "../../utils/clientParse";
+import EnhancedFileUpload from "../EnhancedFileUpload";
 
 interface FileData {
   id: string;
@@ -1970,35 +1971,18 @@ const FilesPane: React.FC<FilesPaneProps> = ({
 
   FileUploadComponent.displayName = "FileUploadComponent";
 
-  // Create a memoized file upload component
+  // Create a memoized enhanced file upload component
   const fileUploadElement = useMemo(
     () => (
-      <FileUploadComponent
-        dragActive={dragActive}
+      <EnhancedFileUpload
+        onFilesSelected={handleFilesUpload}
         uploading={uploading}
-        uploadStatus={uploadStatus}
-        uploadProgress={uploadProgress}
-        isFirstUpload={isFirstUpload}
-        hasActiveSchema={hasActiveSchema}
-        MAX_FILE_SIZE={MAX_FILE_SIZE}
-        handleDrag={handleDrag}
-        handleDrop={handleDrop}
-        inputRef={inputRef}
-        handleChange={handleChange}
+        progress={uploadProgress}
+        projectId={projectId}
+        useChunkedUpload={true}
       />
     ),
-    [
-      dragActive,
-      uploading,
-      uploadStatus,
-      uploadProgress,
-      isFirstUpload,
-      hasActiveSchema,
-      MAX_FILE_SIZE,
-      handleDrag,
-      handleDrop,
-      handleChange,
-    ]
+    [uploading, uploadProgress, projectId, handleFilesUpload]
   );
 
   // Render file list UI
