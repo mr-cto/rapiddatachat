@@ -8,6 +8,9 @@ import ImprovedQueryResultsPane from "../../../../components/panels/ImprovedQuer
 import { Button } from "../../../../components/ui";
 import ErrorBoundary from "../../../../components/ErrorBoundary";
 import UploadPreviewPane from "../../../../components/panels/UploadPreviewPane";
+import { GlobalSchemaProvider } from "../../../../lib/contexts/GlobalSchemaContext";
+import ColumnManagementPane from "../../../../components/panels/ColumnManagementPane";
+import { GlobalSchema } from "../../../../lib/schemaManagement";
 
 interface Project {
   id: string;
@@ -66,6 +69,12 @@ function ProjectDashboard(): React.ReactElement {
     totalRows?: number;
   } | null>(null);
   const [currentQuery, setCurrentQuery] = useState<string>("");
+
+  // State for schema columns - maintained by GlobalSchemaContext now
+  const [activeSchema, setActiveSchema] = useState<GlobalSchema | null>(null);
+  const [schemaColumns, setSchemaColumns] = useState<string[]>([]);
+  const [isLoadingSchema, setIsLoadingSchema] = useState<boolean>(false);
+  const [schemaError, setSchemaError] = useState<string | null>(null);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -641,112 +650,123 @@ function ProjectDashboard(): React.ReactElement {
           </div>
         )}
 
-        <ImprovedDashboardLayout
-          projectName={project?.name}
-          filesPane={
-            projectId ? (
-              <FilesPane
-                onSelectFile={handleFileSelect}
-                selectedFileId={selectedFileId}
-                projectId={projectId}
-                onFileCountChange={(count) => {
-                  // If we have files, ensure we load the top 10 records
-                  if (
-                    count > 0 &&
-                    (!result || !result.results || result.results.length === 0)
-                  ) {
-                    // Load top 10 records when files are present but no results are showing
-                    (async () => {
-                      try {
-                        setIsLoading(true);
-                        setError(null);
+        {/* Wrap the entire dashboard in GlobalSchemaProvider with columns from ColumnManagementPane */}
+        <GlobalSchemaProvider
+          columns={schemaColumns}
+          activeSchema={activeSchema}
+          isLoading={isLoadingSchema}
+          error={schemaError}
+          projectId={projectId}
+        >
+          <ImprovedDashboardLayout
+            projectName={project?.name}
+            filesPane={
+              projectId ? (
+                <FilesPane
+                  onSelectFile={handleFileSelect}
+                  selectedFileId={selectedFileId}
+                  projectId={projectId}
+                  onFileCountChange={(count) => {
+                    // If we have files, ensure we load the top 10 records
+                    if (
+                      count > 0 &&
+                      (!result ||
+                        !result.results ||
+                        result.results.length === 0)
+                    ) {
+                      // Load top 10 records when files are present but no results are showing
+                      (async () => {
+                        try {
+                          setIsLoading(true);
+                          setError(null);
 
-                        const response = await fetch(
-                          "/api/file-data/top-records",
-                          {
-                            method: "POST",
-                            headers: {
-                              "Content-Type": "application/json",
-                            },
-                            body: JSON.stringify({
-                              projectId,
-                              limit: 10,
-                            }),
-                          }
-                        );
-
-                        const data = await response.json();
-
-                        if (!response.ok) {
-                          throw new Error(
-                            data.error || "Failed to load records"
+                          const response = await fetch(
+                            "/api/file-data/top-records",
+                            {
+                              method: "POST",
+                              headers: {
+                                "Content-Type": "application/json",
+                              },
+                              body: JSON.stringify({
+                                projectId,
+                                limit: 10,
+                              }),
+                            }
                           );
-                        }
 
-                        if (data.results && data.results.length > 0) {
-                          setResult({
-                            sqlQuery:
-                              "SELECT * FROM file_data FETCH FIRST 10 ROWS ONLY",
-                            explanation:
-                              "Top 10 records loaded automatically, your changes will apply to the full dataset on download",
-                            results: data.results,
-                            executionTime: data.executionTime,
-                            totalRows: data.totalRows,
-                          });
+                          const data = await response.json();
+
+                          if (!response.ok) {
+                            throw new Error(
+                              data.error || "Failed to load records"
+                            );
+                          }
+
+                          if (data.results && data.results.length > 0) {
+                            setResult({
+                              sqlQuery:
+                                "SELECT * FROM file_data FETCH FIRST 10 ROWS ONLY",
+                              explanation:
+                                "Top 10 records loaded automatically, your changes will apply to the full dataset on download",
+                              results: data.results,
+                              executionTime: data.executionTime,
+                              totalRows: data.totalRows,
+                            });
+                          }
+                        } catch (err) {
+                          console.error(
+                            "Error loading records on file count change:",
+                            err
+                          );
+                        } finally {
+                          setIsLoading(false);
                         }
-                      } catch (err) {
-                        console.error(
-                          "Error loading records on file count change:",
-                          err
-                        );
-                      } finally {
-                        setIsLoading(false);
-                      }
-                    })();
-                  }
-                }}
-              />
-            ) : (
-              <div className="p-4 text-gray-400">Loading files...</div>
-            )
-          }
-          queryResultsPane={
-            uploadPreview ? (
-              <UploadPreviewPane
-                data={uploadPreview}
-                onClear={() => setUploadPreview(null)}
-              />
-            ) : (
-              <ImprovedQueryResultsPane
-                isLoading={isLoading}
-                error={error}
-                result={result}
-                currentQuery={currentQuery}
-                onSortChange={handleSortChange}
-                onApplyFilters={handleApplyFilters}
-                userId={session?.user?.id}
-                projectId={projectId} // Pass projectId to ImprovedQueryResultsPane
-              />
-            )
-          }
-          chatInputPane={
-            // Temporarily disabled NL-to-SQL query input
-            <div className="bg-ui-primary p-2 border-t border-ui-border">
-              <div className="flex items-center justify-center p-4 bg-yellow-50 border border-yellow-200 rounded-md">
-                <div className="text-center">
-                  <p className="text-yellow-800 font-medium">
-                    Natural language queries are temporarily disabled for
-                    maintenance.
-                  </p>
-                  <p className="text-yellow-600 text-sm mt-1">
-                    We're working on improving the query processing system.
-                    Please check back soon.
-                  </p>
+                      })();
+                    }
+                  }}
+                />
+              ) : (
+                <div className="p-4 text-gray-400">Loading files...</div>
+              )
+            }
+            queryResultsPane={
+              uploadPreview ? (
+                <UploadPreviewPane
+                  data={uploadPreview}
+                  onClear={() => setUploadPreview(null)}
+                />
+              ) : (
+                <ImprovedQueryResultsPane
+                  isLoading={isLoading}
+                  error={error}
+                  result={result}
+                  currentQuery={currentQuery}
+                  onSortChange={handleSortChange}
+                  onApplyFilters={handleApplyFilters}
+                  userId={session?.user?.id}
+                  projectId={projectId} // Pass projectId to ImprovedQueryResultsPane
+                />
+              )
+            }
+            chatInputPane={
+              // Temporarily disabled NL-to-SQL query input
+              <div className="bg-ui-primary p-2 border-t border-ui-border">
+                <div className="flex items-center justify-center p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+                  <div className="text-center">
+                    <p className="text-yellow-800 font-medium">
+                      Natural language queries are temporarily disabled for
+                      maintenance.
+                    </p>
+                    <p className="text-yellow-600 text-sm mt-1">
+                      We're working on improving the query processing system.
+                      Please check back soon.
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
-          }
-        />
+            }
+          />
+        </GlobalSchemaProvider>
       </ErrorBoundary>
     );
   } catch (error) {

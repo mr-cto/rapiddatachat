@@ -5,6 +5,7 @@ import {
   syncColumnMergesToViewState,
   loadColumnMergesFromViewState,
 } from "./ColumnMergeManagerViewState";
+import { useGlobalSchema } from "../lib/contexts/GlobalSchemaContext";
 
 interface ColumnMerge {
   id: string;
@@ -17,29 +18,91 @@ interface ColumnMergeModalProps {
   isOpen: boolean;
   onClose: () => void;
   fileId: string;
-  columns: string[];
+  columns?: string[]; // Make columns optional since we'll fetch them
   initialColumnMerges?: ColumnMerge[];
   onColumnMergesChange?: (columnMerges: ColumnMerge[]) => void;
   data: Record<string, unknown>[];
   viewStateManager?: ViewStateManager;
+  projectId?: string; // Add projectId to fetch schema columns
 }
 
 const ColumnMergeModal: React.FC<ColumnMergeModalProps> = ({
   isOpen,
   onClose,
   fileId,
-  columns,
+  columns: propColumns,
   initialColumnMerges = [],
   onColumnMergesChange,
   data,
   viewStateManager,
+  projectId,
 }) => {
+  // Basic log to confirm the component is being rendered
+  console.log("[ColumnMergeModal] Rendering with isOpen:", isOpen);
   // Initialize column merges from view state if available
   const [columnMerges, setColumnMerges] = useState<ColumnMerge[]>(
     viewStateManager
       ? loadColumnMergesFromViewState(viewStateManager)
       : initialColumnMerges
   );
+
+  // Get schema columns from the global context
+  const {
+    schemaColumns: globalSchemaColumns,
+    activeSchema,
+    isLoading: isLoadingGlobalSchema,
+    error: globalSchemaError,
+  } = useGlobalSchema();
+
+  // Log the active schema when it changes
+  useEffect(() => {
+    if (activeSchema) {
+      console.log("[ColumnMergeModal] Active schema changed:", {
+        name: activeSchema.name,
+        columnsCount: activeSchema.columns.length,
+        columns: activeSchema.columns.map((col) => col.name),
+      });
+    }
+  }, [activeSchema]);
+
+  // Combine prop columns with schema columns, with prop columns taking precedence
+  // Make sure we're using the columns from the active schema if available
+  const columns =
+    propColumns ||
+    (activeSchema && activeSchema.columns && activeSchema.columns.length > 0
+      ? activeSchema.columns.map((col) => col.name)
+      : globalSchemaColumns || []);
+
+  // Log the final columns being used
+  useEffect(() => {
+    if (isOpen) {
+      console.log("[ColumnMergeModal] Final columns being used:", {
+        count: columns.length,
+        columns: columns,
+      });
+    }
+  }, [isOpen, columns]);
+
+  // Log the columns for debugging
+  useEffect(() => {
+    if (isOpen) {
+      console.log("ColumnMergeModal columns:", {
+        propColumns: propColumns?.length || 0,
+        globalSchemaColumns: globalSchemaColumns.length,
+        combined: columns.length,
+        fileId,
+        projectId,
+      });
+
+      // Log the actual columns
+      console.log(
+        "[ColumnMergeModal] Global schema columns:",
+        globalSchemaColumns
+      );
+      console.log("[ColumnMergeModal] Prop columns:", propColumns || []);
+      console.log("[ColumnMergeModal] Combined columns:", columns);
+    }
+  }, [isOpen, propColumns, globalSchemaColumns, columns, fileId, projectId]);
 
   // Update column merges when initialColumnMerges changes
   useEffect(() => {
@@ -105,6 +168,8 @@ const ColumnMergeModal: React.FC<ColumnMergeModalProps> = ({
       }
     }
   }, [data, columns]);
+
+  // We no longer need to fetch schema columns here as they come from the global context
 
   // Toggle column selection
   const toggleColumnSelection = (column: string) => {
@@ -412,20 +477,42 @@ const ColumnMergeModal: React.FC<ColumnMergeModalProps> = ({
               Select Columns to Merge
             </label>
             <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-2 border border-ui-border rounded-md">
-              {columns.map((column) => (
-                <label
-                  key={column}
-                  className="flex items-center space-x-2 text-sm bg-ui-secondary px-2 py-1 rounded border border-ui-border hover:border-accent-primary/50 transition-colors"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedColumns.includes(column)}
-                    onChange={() => toggleColumnSelection(column)}
-                    className="rounded text-accent-primary focus:ring-accent-primary"
-                  />
-                  <span className="text-gray-300">{column}</span>
-                </label>
-              ))}
+              {isLoadingGlobalSchema ? (
+                <div className="flex justify-center items-center w-full py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-accent-primary"></div>
+                  <span className="ml-2 text-gray-400">Loading columns...</span>
+                </div>
+              ) : globalSchemaError ? (
+                <div className="w-full p-2 bg-red-900/30 text-red-400 rounded-md text-sm">
+                  <p>{globalSchemaError}</p>
+                  <p className="mt-1">Using available columns instead.</p>
+                </div>
+              ) : columns.length === 0 ? (
+                <div className="w-full p-2 text-gray-400 text-center">
+                  No columns available. Please ensure your file has been
+                  properly processed.
+                </div>
+              ) : Array.isArray(columns) && columns.length > 0 ? (
+                columns.map((column: string) => (
+                  <label
+                    key={column}
+                    className="flex items-center space-x-2 text-sm bg-ui-secondary px-2 py-1 rounded border border-ui-border hover:border-accent-primary/50 transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedColumns.includes(column)}
+                      onChange={() => toggleColumnSelection(column)}
+                      className="rounded text-accent-primary focus:ring-accent-primary"
+                    />
+                    <span className="text-gray-300">{column}</span>
+                  </label>
+                ))
+              ) : (
+                <div className="w-full p-2 text-gray-400 text-center">
+                  No columns available. Please ensure your file has been
+                  properly processed.
+                </div>
+              )}
             </div>
           </div>
 
@@ -477,7 +564,10 @@ const ColumnMergeModal: React.FC<ColumnMergeModalProps> = ({
 
                               // Update preview if it's showing
                               if (showPreview) {
-                                generatePreview();
+                                // Use setTimeout to ensure state is updated before preview generation
+                                setTimeout(() => {
+                                  generatePreview();
+                                }, 0);
                               }
                             }
                           }}
@@ -537,7 +627,7 @@ const ColumnMergeModal: React.FC<ColumnMergeModalProps> = ({
 
                 {/* Right column: Live preview */}
                 <div className="md:col-span-2">
-                  {showPreview && previewData.length > 0 ? (
+                  {showPreview && previewData && previewData.length > 0 ? (
                     <div className="p-3 bg-ui-secondary border border-ui-border rounded-md">
                       <h5 className="text-sm font-medium text-gray-300 mb-2">
                         Live Preview
@@ -580,17 +670,18 @@ const ColumnMergeModal: React.FC<ColumnMergeModalProps> = ({
                                 }
                               >
                                 {/* Cells for selected columns */}
-                                {selectedColumns.map((column) => (
-                                  <td
-                                    key={column}
-                                    className="px-3 py-2 text-xs text-gray-300"
-                                  >
-                                    {row[column] !== undefined &&
-                                    row[column] !== null
-                                      ? String(row[column])
-                                      : ""}
-                                  </td>
-                                ))}
+                                {Array.isArray(selectedColumns) &&
+                                  selectedColumns.map((column) => (
+                                    <td
+                                      key={column}
+                                      className="px-3 py-2 text-xs text-gray-300"
+                                    >
+                                      {row[column] !== undefined &&
+                                      row[column] !== null
+                                        ? String(row[column])
+                                        : ""}
+                                    </td>
+                                  ))}
                                 {/* Cell for merged column */}
                                 <td className="px-3 py-2 text-xs font-medium text-accent-primary">
                                   {row[newMergeName] !== undefined &&

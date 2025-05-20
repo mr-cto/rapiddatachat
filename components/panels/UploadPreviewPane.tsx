@@ -14,12 +14,14 @@ interface UploadPreviewPaneProps {
   data: Record<string, unknown>[];
   onClear: () => void;
   viewStateManager?: ViewStateManager;
+  projectId?: string; // Add projectId prop
 }
 
 const UploadPreviewPane: React.FC<UploadPreviewPaneProps> = ({
   data,
   onClear,
   viewStateManager,
+  projectId,
 }) => {
   const [showColumnFilterModal, setShowColumnFilterModal] = useState(false);
   const [showColumnMergeModal, setShowColumnMergeModal] = useState(false);
@@ -51,7 +53,9 @@ const UploadPreviewPane: React.FC<UploadPreviewPaneProps> = ({
       <div className="py-3 px-4 bg-ui-primary border-b border-ui-border sticky top-0 z-10 w-full shadow-sm mb-4 rounded-lg">
         <div className="flex justify-between items-center">
           <div className="flex items-center">
-            <h3 className="text-lg font-semibold text-accent-primary">Upload Preview</h3>
+            <h3 className="text-lg font-semibold text-accent-primary">
+              Upload Preview
+            </h3>
             <Badge variant="info" size="sm" className="ml-3">
               {data.length} rows
             </Badge>
@@ -73,13 +77,19 @@ const UploadPreviewPane: React.FC<UploadPreviewPaneProps> = ({
             >
               <FaFilter className="mr-1" /> Columns
             </Button>
-            <Button onClick={onClear} variant="secondary" size="sm" className="flex items-center">
+            <Button
+              onClick={onClear}
+              variant="secondary"
+              size="sm"
+              className="flex items-center"
+            >
               <FaInfoCircle className="mr-1" /> Close Preview
             </Button>
           </div>
         </div>
         <p className="text-xs text-accent-primary mt-2">
-          Ingestion is in progress. Queries and CSV export will not include this data until complete.
+          Ingestion is in progress. Queries and CSV export will not include this
+          data until complete.
         </p>
       </div>
       <div className="flex-1 overflow-auto">
@@ -88,7 +98,11 @@ const UploadPreviewPane: React.FC<UploadPreviewPaneProps> = ({
             fileId="upload-preview"
             data={data}
             visibleColumns={visibleColumns}
-            initialColumnMerges={viewStateManager ? loadColumnMergesFromViewState(viewStateManager) : []}
+            initialColumnMerges={
+              viewStateManager
+                ? loadColumnMergesFromViewState(viewStateManager)
+                : []
+            }
             onColumnMergesChange={(merges) => {
               if (viewStateManager) {
                 syncColumnMergesToViewState(viewStateManager, merges);
@@ -105,6 +119,8 @@ const UploadPreviewPane: React.FC<UploadPreviewPaneProps> = ({
         initialVisibleColumns={visibleColumns}
         onApplyFilters={handleApplyColumnFilters}
         viewStateManager={viewStateManager}
+        fileId="upload-preview"
+        projectId={projectId}
       />
       <ColumnMergeModal
         isOpen={showColumnMergeModal}
@@ -113,6 +129,7 @@ const UploadPreviewPane: React.FC<UploadPreviewPaneProps> = ({
         columns={allColumns}
         initialColumnMerges={[]}
         data={data}
+        projectId={projectId}
         onColumnMergesChange={(merges) => {
           if (viewStateManager) {
             syncColumnMergesToViewState(viewStateManager, merges);

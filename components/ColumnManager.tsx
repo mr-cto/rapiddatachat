@@ -75,6 +75,17 @@ export const ColumnManager: React.FC<ColumnManagerProps> = ({
 
       const data = await response.json();
       const userColumns = data.schemas;
+      console.log(
+        `[ColumnManager] Fetched ${userColumns.length} columns from API`
+      );
+
+      // Log the columns and their column counts
+      userColumns.forEach((col: GlobalSchema) => {
+        console.log(
+          `[ColumnManager] Column ${col.name} has ${col.columns.length} data columns`
+        );
+      });
+
       setColumns(userColumns);
 
       // Set active column if one is marked as active

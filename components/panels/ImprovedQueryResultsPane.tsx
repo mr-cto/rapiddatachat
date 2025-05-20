@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useGlobalSchema } from "../../lib/contexts/GlobalSchemaContext";
 import { ColumnMergeManager } from "../ColumnMergeManager";
 import ShareModal from "../ShareModal";
 import ColumnFilterModal from "../ColumnFilterModal";
@@ -71,6 +72,26 @@ const ImprovedQueryResultsPane: React.FC<ImprovedQueryResultsPaneProps> = ({
   previewData,
   isPreview = false,
 }) => {
+  // Get schema columns from the global context
+  const { schemaColumns: globalSchemaColumns, activeSchema } =
+    useGlobalSchema();
+
+  // Log the global schema columns when they change
+  useEffect(() => {
+    console.log("[ImprovedQueryResultsPane] Global schema columns:", {
+      count: globalSchemaColumns.length,
+      columns: globalSchemaColumns,
+    });
+
+    if (activeSchema) {
+      console.log("[ImprovedQueryResultsPane] Active schema:", {
+        name: activeSchema.name,
+        columnsCount: activeSchema.columns.length,
+        columns: activeSchema.columns.map((col) => col.name),
+      });
+    }
+  }, [globalSchemaColumns, activeSchema]);
+
   // State for modal visibility
   const [showColumnFilterModal, setShowColumnFilterModal] = useState(false);
   const [showColumnMergeModal, setShowColumnMergeModal] = useState(false);
@@ -114,6 +135,11 @@ const ImprovedQueryResultsPane: React.FC<ImprovedQueryResultsPaneProps> = ({
         });
       });
 
+      // Include global schema columns if available
+      if (globalSchemaColumns.length > 0) {
+        globalSchemaColumns.forEach((col) => allKeys.add(col));
+      }
+
       const allColumnsArray = Array.from(allKeys);
       setAllAvailableColumns(allColumnsArray);
       setVisibleColumns(allColumnsArray);
@@ -140,7 +166,33 @@ const ImprovedQueryResultsPane: React.FC<ImprovedQueryResultsPaneProps> = ({
         return row;
       });
 
-      setProcessedResults(processed);
+      // Add all columns from GlobalSchemaContext to each row, even if they don't have values
+      const processedWithAllColumns = processed.map((row) => {
+        const rowWithAllColumns = { ...row };
+
+        // Add columns from GlobalSchemaContext if they don't exist in the row
+        if (globalSchemaColumns.length > 0) {
+          globalSchemaColumns.forEach((colName) => {
+            if (rowWithAllColumns[colName] === undefined) {
+              rowWithAllColumns[colName] = null;
+            }
+          });
+        } else if (activeSchema && activeSchema.columns) {
+          activeSchema.columns.forEach((col) => {
+            if (rowWithAllColumns[col.name] === undefined) {
+              rowWithAllColumns[col.name] = null;
+            }
+          });
+        }
+
+        return rowWithAllColumns;
+      });
+
+      console.log(
+        "[ImprovedQueryResultsPane] Processed results with all columns:",
+        processedWithAllColumns
+      );
+      setProcessedResults(processedWithAllColumns);
 
       // Get all unique keys from processed data for visible columns
       const allKeys = new Set<string>();
@@ -157,8 +209,25 @@ const ImprovedQueryResultsPane: React.FC<ImprovedQueryResultsPaneProps> = ({
         });
       }
 
+      // Include global schema columns if available
+      if (globalSchemaColumns.length > 0) {
+        console.log(
+          "[ImprovedQueryResultsPane] Adding global schema columns to available columns"
+        );
+        globalSchemaColumns.forEach((col) => allKeys.add(col));
+      } else if (activeSchema && activeSchema.columns) {
+        console.log(
+          "[ImprovedQueryResultsPane] Adding active schema columns to available columns"
+        );
+        activeSchema.columns.forEach((col) => allKeys.add(col.name));
+      }
+
       // Store all available columns
       const allColumnsArray = Array.from(allKeys);
+      console.log(
+        "[ImprovedQueryResultsPane] All available columns:",
+        allColumnsArray
+      );
       setAllAvailableColumns(allColumnsArray);
 
       // Always load column visibility from viewStateManager first if available
@@ -515,10 +584,16 @@ const ImprovedQueryResultsPane: React.FC<ImprovedQueryResultsPaneProps> = ({
             <ColumnFilterModal
               isOpen={showColumnFilterModal}
               onClose={() => setShowColumnFilterModal(false)}
-              columns={allAvailableColumns}
+              columns={
+                globalSchemaColumns.length > 0
+                  ? globalSchemaColumns
+                  : allAvailableColumns
+              }
               initialVisibleColumns={visibleColumns}
               onApplyFilters={handleApplyColumnFilters}
               viewStateManager={viewStateManager}
+              fileId="query-results"
+              projectId={projectId}
             />
 
             {/* Column Merge Modal */}
@@ -526,8 +601,13 @@ const ImprovedQueryResultsPane: React.FC<ImprovedQueryResultsPaneProps> = ({
               isOpen={showColumnMergeModal}
               onClose={() => setShowColumnMergeModal(false)}
               fileId="query-results"
-              columns={allAvailableColumns}
+              columns={
+                globalSchemaColumns.length > 0
+                  ? globalSchemaColumns
+                  : allAvailableColumns
+              }
               initialColumnMerges={activeColumnMerges}
+              projectId={projectId}
               onColumnMergesChange={(merges) => {
                 // Update local state
                 setActiveColumnMerges(merges);
@@ -575,7 +655,7 @@ const ImprovedQueryResultsPane: React.FC<ImprovedQueryResultsPaneProps> = ({
                       onColumnMergesChange(merges);
                     }
                   }}
-                  visibleColumns={visibleColumns}
+                  visibleColumns={allAvailableColumns} // Use all available columns to show all columns in the table
                   viewStateManager={viewStateManager}
                 />
               </Card>

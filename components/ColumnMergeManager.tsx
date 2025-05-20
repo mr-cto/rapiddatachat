@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { DataTable } from "./DataTable";
-
+import ColumnMergeModal from "./ColumnMergeModal";
 import { ViewStateManager } from "../lib/viewStateManager";
 
 interface ColumnMergeManagerProps {
@@ -31,6 +31,7 @@ interface ColumnMergeManagerProps {
   ) => void;
   visibleColumns?: string[];
   viewStateManager?: ViewStateManager;
+  projectId?: string; // Add projectId prop
 }
 
 interface ColumnMerge {
@@ -59,6 +60,7 @@ export const ColumnMergeManager: React.FC<ColumnMergeManagerProps> = ({
   onColumnMergesChange,
   visibleColumns,
   viewStateManager,
+  projectId,
 }) => {
   // Listen for the custom event from the QueryResultsPane
   React.useEffect(() => {
@@ -912,234 +914,23 @@ export const ColumnMergeManager: React.FC<ColumnMergeManagerProps> = ({
           </div>
         )}
 
-        {/* Column merge form */}
-        {showMergeForm && (
-          <div className="mb-4 p-4 bg-ui-secondary dark:bg-ui-secondary rounded-md border border-gray-200 dark:border-gray-700">
-            <h4 className="text-sm font-medium text-secondary dark:text-secondary mb-3">
-              Create Column Merge
-            </h4>
-
-            {error && (
-              <div className="mb-3 p-2 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-200 rounded-md text-sm">
-                {error}
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div>
-                <label className="block text-sm font-medium text-secondary dark:text-secondary mb-1">
-                  Merge Name
-                </label>
-                <input
-                  type="text"
-                  value={newMergeName}
-                  onChange={(e) => setNewMergeName(e.target.value)}
-                  placeholder="e.g., full_name"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-ui-primary dark:bg-ui-primary text-secondary dark:text-secondary"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-secondary dark:text-secondary mb-1">
-                  Delimiter
-                </label>
-                <select
-                  value={delimiter}
-                  onChange={(e) => setDelimiter(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-ui-primary dark:bg-ui-primary text-secondary dark:text-secondary"
-                >
-                  <option value=" ">Space ( )</option>
-                  <option value=",">Comma (,)</option>
-                  <option value="-">Hyphen (-)</option>
-                  <option value="_">Underscore (_)</option>
-                  <option value=".">Period (.)</option>
-                  <option value="">No delimiter</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-secondary dark:text-secondary mb-1">
-                Select Columns to Merge
-              </label>
-              <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-ui-primary dark:bg-ui-primary">
-                {availableColumns.map((column) => (
-                  <label
-                    key={column}
-                    className="flex items-center space-x-2 text-sm text-secondary dark:text-secondary bg-ui-secondary dark:bg-ui-secondary px-2 py-1 rounded border border-gray-200 dark:border-gray-700"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedColumns.includes(column)}
-                      onChange={() => toggleColumnSelection(column)}
-                      className="rounded text-accent-primary focus:ring-accent-primary"
-                    />
-                    <span>{column}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* Preview section */}
-            {showPreview ? (
-              <div className="mb-4">
-                <h4 className="text-sm font-medium text-secondary dark:text-secondary mb-2">
-                  Preview and Reorder Columns
-                </h4>
-
-                {/* Column reordering */}
-                <div className="p-3 bg-ui-primary dark:bg-ui-primary border border-gray-300 dark:border-gray-600 rounded-md mb-3">
-                  <h5 className="text-sm font-medium text-secondary dark:text-secondary mb-2">
-                    Column Order
-                  </h5>
-                  <div className="space-y-2">
-                    {selectedColumns.map((column, index) => (
-                      <div
-                        key={column}
-                        className="flex items-center justify-between bg-ui-secondary dark:bg-ui-secondary p-2 rounded-md"
-                      >
-                        <span>{column}</span>
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={() => moveColumnUp(index)}
-                            disabled={index === 0}
-                            className={`p-1 rounded ${
-                              index === 0
-                                ? "text-gray-400 cursor-not-allowed"
-                                : "text-accent-primary hover:bg-accent-primary/10"
-                            }`}
-                            title="Move up"
-                          >
-                            ↑
-                          </button>
-                          <button
-                            onClick={() => moveColumnDown(index)}
-                            disabled={index === selectedColumns.length - 1}
-                            className={`p-1 rounded ${
-                              index === selectedColumns.length - 1
-                                ? "text-gray-400 cursor-not-allowed"
-                                : "text-accent-primary hover:bg-accent-primary/10"
-                            }`}
-                            title="Move down"
-                          >
-                            ↓
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Preview data table */}
-                <div className="p-3 bg-ui-primary dark:bg-ui-primary border border-gray-300 dark:border-gray-600 rounded-md mb-3">
-                  <h5 className="text-sm font-medium text-secondary dark:text-secondary mb-2">
-                    Preview Data (First {previewData.length}{" "}
-                    {previewData.length === 1 ? "Row" : "Rows"})
-                  </h5>
-
-                  {previewData.length === 0 ? (
-                    <div className="text-tertiary dark:text-tertiary italic">
-                      No data available for preview
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                        <thead className="bg-ui-secondary dark:bg-ui-secondary">
-                          <tr>
-                            {/* Column headers for selected columns */}
-                            {selectedColumns.map((column) => (
-                              <th
-                                key={column}
-                                scope="col"
-                                className="px-3 py-2 text-left text-xs font-medium text-secondary dark:text-secondary uppercase tracking-wider"
-                              >
-                                {column}
-                              </th>
-                            ))}
-                            {/* Header for merged column */}
-                            <th
-                              scope="col"
-                              className="px-3 py-2 text-left text-xs font-medium text-accent-primary uppercase tracking-wider"
-                            >
-                              {newMergeName}
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-ui-primary dark:bg-ui-primary divide-y divide-gray-200 dark:divide-gray-700">
-                          {previewData.map((row, rowIndex) => (
-                            <tr
-                              key={rowIndex}
-                              className={
-                                rowIndex % 2 === 0
-                                  ? "bg-ui-primary dark:bg-ui-primary"
-                                  : "bg-ui-secondary dark:bg-ui-secondary"
-                              }
-                            >
-                              {/* Cells for selected columns */}
-                              {selectedColumns.map((column) => (
-                                <td
-                                  key={column}
-                                  className="px-3 py-2 text-xs text-secondary dark:text-secondary"
-                                >
-                                  {row[column] !== undefined &&
-                                  row[column] !== null
-                                    ? String(row[column])
-                                    : ""}
-                                </td>
-                              ))}
-                              {/* Cell for merged column */}
-                              <td className="px-3 py-2 text-xs font-medium text-accent-primary">
-                                {row[newMergeName] !== undefined &&
-                                row[newMergeName] !== null
-                                  ? String(row[newMergeName])
-                                  : ""}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-                <div className="flex justify-end space-x-3">
-                  <button
-                    onClick={() => setShowPreview(false)}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-secondary dark:text-secondary hover:bg-gray-100 dark:hover:bg-gray-800"
-                  >
-                    Back
-                  </button>
-                  <button
-                    onClick={createColumnMerge}
-                    disabled={isLoading}
-                    className={`px-4 py-2 rounded-md text-white ${
-                      isLoading
-                        ? "bg-gray-400 cursor-not-allowed"
-                        : "bg-accent-primary hover:bg-accent-primary-hover"
-                    }`}
-                  >
-                    {isLoading ? "Creating..." : "Confirm Merge"}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex justify-end">
-                <button
-                  onClick={() => void generatePreview()}
-                  disabled={
-                    isLoading || !newMergeName || selectedColumns.length === 0
-                  }
-                  className={`px-4 py-2 rounded-md text-white ${
-                    isLoading || !newMergeName || selectedColumns.length === 0
-                      ? "bg-gray-400 cursor-not-allowed"
-                      : "bg-accent-primary hover:bg-accent-primary-hover"
-                  }`}
-                >
-                  Preview Merge
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+        {/* Use the ColumnMergeModal component instead of the inline form */}
+        <ColumnMergeModal
+          isOpen={showMergeForm}
+          onClose={() => setShowMergeForm(false)}
+          fileId={fileId}
+          columns={availableColumns}
+          initialColumnMerges={columnMerges}
+          onColumnMergesChange={(newMerges) => {
+            setColumnMerges(newMerges);
+            if (onColumnMergesChange) {
+              onColumnMergesChange(newMerges);
+            }
+          }}
+          data={data}
+          viewStateManager={viewStateManager}
+          projectId={projectId}
+        />
       </div>
 
       {/* Data table with merged columns - accounting for chat bar */}

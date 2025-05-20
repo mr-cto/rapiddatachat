@@ -2,30 +2,97 @@ import React, { useState, useEffect, useRef } from "react";
 import Modal from "./Modal";
 
 import { ViewStateManager } from "../lib/viewStateManager";
+import { useGlobalSchema } from "../lib/contexts/GlobalSchemaContext";
 
 interface ColumnFilterModalProps {
   isOpen: boolean;
   onClose: () => void;
-  columns: string[];
+  columns?: string[]; // Make columns optional since we'll fetch them
   initialVisibleColumns?: string[];
   onApplyFilters: (visibleColumns: string[]) => void;
   viewStateManager?: ViewStateManager;
+  fileId?: string; // Add fileId to fetch schema columns
+  projectId?: string; // Add projectId to fetch schema columns
 }
 
 const ColumnFilterModal: React.FC<ColumnFilterModalProps> = ({
   isOpen,
   onClose,
-  columns,
+  columns: propColumns,
   initialVisibleColumns,
   onApplyFilters,
   viewStateManager,
+  fileId,
+  projectId,
 }) => {
+  // Basic log to confirm the component is being rendered
+  console.log("[ColumnFilterModal] Rendering with isOpen:", isOpen);
+  // Get schema columns from the global context
+  const {
+    schemaColumns: globalSchemaColumns,
+    activeSchema,
+    isLoading: isLoadingGlobalSchema,
+    error: globalSchemaError,
+  } = useGlobalSchema();
+
+  // Log the active schema when it changes
+  useEffect(() => {
+    if (activeSchema) {
+      console.log("[ColumnFilterModal] Active schema changed:", {
+        name: activeSchema.name,
+        columnsCount: activeSchema.columns.length,
+        columns: activeSchema.columns.map((col) => col.name),
+      });
+    }
+  }, [activeSchema]);
+
+  // Combine prop columns with schema columns, with prop columns taking precedence
+  // Make sure we're using the columns from the active schema if available
+  const columns =
+    propColumns ||
+    (activeSchema && activeSchema.columns
+      ? activeSchema.columns.map((col) => col.name)
+      : globalSchemaColumns);
+
+  // Log the final columns being used
+  useEffect(() => {
+    if (isOpen) {
+      console.log("[ColumnFilterModal] Final columns being used:", {
+        count: columns.length,
+        columns: columns,
+      });
+    }
+  }, [isOpen, columns]);
+
+  // Log the columns for debugging
+  useEffect(() => {
+    if (isOpen) {
+      console.log("ColumnFilterModal columns:", {
+        propColumns: propColumns?.length || 0,
+        globalSchemaColumns: globalSchemaColumns.length,
+        combined: columns.length,
+        fileId,
+        projectId,
+      });
+
+      // Log the actual columns
+      console.log(
+        "[ColumnFilterModal] Global schema columns:",
+        globalSchemaColumns
+      );
+      console.log("[ColumnFilterModal] Prop columns:", propColumns || []);
+      console.log("[ColumnFilterModal] Combined columns:", columns);
+    }
+  }, [isOpen, propColumns, globalSchemaColumns, columns, fileId, projectId]);
+
   const [visibleColumns, setVisibleColumns] = useState<string[]>(
     initialVisibleColumns || columns
   );
   const [orderedColumns, setOrderedColumns] = useState<string[]>([]);
   const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+
+  // We no longer need to fetch schema columns here as they come from the global context
 
   // Reset visible columns when columns change or load from viewStateManager
   useEffect(() => {
@@ -194,6 +261,19 @@ const ColumnFilterModal: React.FC<ColumnFilterModalProps> = ({
       maxWidth="max-w-2xl"
     >
       <div className="space-y-4">
+        {isLoadingGlobalSchema ? (
+          <div className="flex justify-center items-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-accent-primary"></div>
+            <span className="ml-2 text-gray-400">Loading columns...</span>
+          </div>
+        ) : globalSchemaError ? (
+          <div className="p-4 bg-red-900/30 text-red-400 rounded-md">
+            <p className="font-medium">Error loading columns</p>
+            <p className="text-sm">{globalSchemaError}</p>
+            <p className="text-sm mt-2">Using available columns instead.</p>
+          </div>
+        ) : null}
+
         <div className="flex justify-between items-center">
           <p className="text-sm text-gray-400">
             Select which columns to display in the results table.

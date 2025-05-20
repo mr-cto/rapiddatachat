@@ -5,7 +5,7 @@ import { useRouter } from "next/router";
 import Image from "next/image";
 import { Button, Link, Card, ResizablePanel, ResizablePanelGroup } from "../ui";
 import { FaUpload, FaDatabase } from "react-icons/fa";
-import ColumnManagementPane from "../panels/ColumnManagementPane";
+import ColumnManagementPaneWithContext from "../ColumnManagementPaneWithContext";
 
 interface ImprovedDashboardLayoutProps {
   children?: React.ReactNode;
@@ -226,11 +226,8 @@ const ImprovedDashboardLayout: React.FC<ImprovedDashboardLayoutProps> = ({
                   </h2>
                 </div>
                 <div className="flex-1 overflow-y-auto p-3">
-                  <ColumnManagementPane
+                  <ColumnManagementPaneWithContext
                     projectId={router.query.id as string}
-                    onColumnChange={(schema) => {
-                      console.log("Schema selected:", schema?.name);
-                    }}
                     refreshTrigger={filePreviewData ? 1 : 0}
                   />
                 </div>
