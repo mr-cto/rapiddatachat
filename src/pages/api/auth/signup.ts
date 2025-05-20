@@ -64,7 +64,25 @@ export default async function handler(
 
     // Check if user already exists
     // Use the replica client directly to ensure we're using the correct database
+    console.log("Getting replica client for user check...");
     const existingUser = await prisma.useReplica(async (replicaClient) => {
+      console.log(
+        "Replica client received:",
+        replicaClient ? "Valid client" : "Undefined client"
+      );
+      console.log(
+        "Replica client models:",
+        Object.keys(replicaClient).filter((key) => !key.startsWith("$"))
+      );
+
+      if (!replicaClient.user) {
+        // console.error(
+        //   "replicaClient.user is undefined. Available models:",
+        //   Object.keys(replicaClient).filter((key) => !key.startsWith("$"))
+        // );
+        throw new Error("User model not available in Prisma client");
+      }
+
       return replicaClient.user.findUnique({
         where: { email: email.toLowerCase().trim() },
       });
@@ -117,6 +135,29 @@ export default async function handler(
     });
   } catch (error: any) {
     console.error("Signup error:", error);
+
+    // Log more details about the error
+    if (error.code) {
+      console.error(`Error code: ${error.code}`);
+    }
+
+    if (error.meta) {
+      console.error(`Error metadata:`, error.meta);
+    }
+
+    console.error(`Error stack: ${error.stack}`);
+
+    // Check if it's related to the replica client
+    if (error.message?.includes("replicaClient")) {
+      console.error(
+        "Replica client error detected. Check connection manager and database URLs."
+      );
+      console.error(
+        `RAW_DATABASE_DATABASE_URL is ${
+          process.env.RAW_DATABASE_DATABASE_URL ? "set" : "not set"
+        }`
+      );
+    }
 
     // Handle known errors
     if (error.message === "User with this email already exists") {

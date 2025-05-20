@@ -489,12 +489,30 @@ export class NLToSQLService {
       }
 
       // Generate SQL from the natural language query
-      const { sql: sqlQuery, explanation } =
-        await this.llmService.translateToSQL(
-          enhancedQuery,
-          schemaInfo,
-          sampleData
-        );
+      const {
+        sql: sqlQuery,
+        explanation,
+        error,
+      } = await this.llmService.translateToSQL(
+        enhancedQuery,
+        schemaInfo,
+        sampleData
+      );
+
+      // Check if the LLM returned an error (e.g., incomplete query)
+      if (error) {
+        console.log(`[NLToSQLService] LLM returned an error: ${error}`);
+        return {
+          sqlQuery: "",
+          explanation: explanation || error,
+          error: error,
+          results: [],
+          totalRows: 0,
+          totalPages: 0,
+          currentPage: 1,
+          executionTime: 0,
+        };
+      }
 
       // Ensure the query includes proper filtering
       let finalSqlQuery = sqlQuery;

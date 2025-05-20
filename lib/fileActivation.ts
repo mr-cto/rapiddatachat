@@ -608,8 +608,9 @@ export async function activateFile(
     }
 
     // Attach file to user workspace
+    let attached = false;
     try {
-      const attached = await attachFileToUserWorkspace(fileId, userId);
+      attached = await attachFileToUserWorkspace(fileId, userId);
       if (!attached) {
         console.warn(
           `[FileActivation] Failed to attach file ${fileId} to user workspace, but continuing activation`
@@ -623,6 +624,14 @@ export async function activateFile(
       );
       // Continue with activation even if view creation fails
       // Log the error but don't fail the entire activation process
+    }
+
+    // If we're using the viewless approach, log this information
+    if (attached === true) {
+      console.log(
+        `[FileActivation] File ${fileId} activated using viewless approach due to permission restrictions`
+      );
+      dbOperationsSkipped = true;
     }
 
     // Update file status to active

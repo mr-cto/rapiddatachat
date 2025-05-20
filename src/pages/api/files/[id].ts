@@ -204,14 +204,31 @@ async function handleDeleteRequest(
       });
     });
 
-    // Delete column mappings (this was missing and causing the foreign key constraint error)
-    await (prisma as any).useReplica(async (replicaClient: PrismaClient) => {
-      return await replicaClient.columnMapping.deleteMany({
-        where: {
-          fileId,
-        },
+    // Delete column mappings using Prisma client with fallback
+    try {
+      await (prisma as any).useReplica(async (replicaClient: PrismaClient) => {
+        // Debug: Log available models
+        // console.log(
+        //   "Available models:",
+        //   Object.keys(replicaClient).filter((key) => !key.startsWith("_"))
+        // );
+
+        // Try to use the columnMapping model
+        return await (replicaClient as any).columnMapping.deleteMany({
+          where: {
+            fileId,
+          },
+        });
       });
-    });
+      console.log(`Successfully deleted column mappings for file ${fileId}`);
+    } catch (error) {
+      console.log(
+        `Error deleting column mappings: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+      console.log("Continuing with file deletion despite column mapping error");
+    }
 
     // Get and delete column merges
     // Get column merges

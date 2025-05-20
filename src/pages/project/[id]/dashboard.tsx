@@ -4,7 +4,7 @@ import { useSession } from "next-auth/react";
 import ImprovedDashboardLayout from "../../../../components/layouts/ImprovedDashboardLayout";
 import FilesPane from "../../../../components/panels/FilesPane";
 import ImprovedQueryResultsPane from "../../../../components/panels/ImprovedQueryResultsPane";
-import ImprovedChatInputPane from "../../../../components/panels/ImprovedChatInputPane";
+// import ImprovedChatInputPane from "../../../../components/panels/ImprovedChatInputPane";
 import { Button } from "../../../../components/ui";
 import ErrorBoundary from "../../../../components/ErrorBoundary";
 import UploadPreviewPane from "../../../../components/panels/UploadPreviewPane";
@@ -64,8 +64,6 @@ function ProjectDashboard(): React.ReactElement {
     results: Record<string, unknown>[];
     executionTime?: number;
     totalRows?: number;
-    totalPages?: number;
-    currentPage?: number;
   } | null>(null);
   const [currentQuery, setCurrentQuery] = useState<string>("");
 
@@ -174,6 +172,58 @@ function ProjectDashboard(): React.ReactElement {
     };
 
     fetchProject();
+
+    // Load top 10 records on initial load if we have a project ID
+    if (projectId) {
+      const loadInitialRecords = async () => {
+        try {
+          setIsLoading(true);
+          setError(null);
+
+          const response = await fetch("/api/file-data/top-records", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              projectId,
+              limit: 10,
+            }),
+          });
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(data.error || "Failed to load initial records");
+          }
+
+          // Only set result if we actually have data to show
+          // This prevents "No Results Found" message on fresh projects
+          if (data.results && data.results.length > 0) {
+            setResult({
+              sqlQuery: "SELECT * FROM file_data FETCH FIRST 10 ROWS ONLY",
+              explanation:
+                "Top 10 records loaded for column management purposes, your changes will apply to the full dataset on download",
+              results: data.results,
+              executionTime: data.executionTime,
+              totalRows: data.totalRows,
+            });
+          } else {
+            // For fresh projects with no data, set result to null
+            // This will prevent showing "No Results Found" message
+            setResult(null);
+          }
+        } catch (err) {
+          console.error("Error loading initial records:", err);
+          // Don't set error state here to avoid blocking the UI
+          // The user can still interact with the files pane
+        } finally {
+          setIsLoading(false);
+        }
+      };
+
+      loadInitialRecords();
+    }
   }, [projectId, status, router.isReady]);
 
   // Add error recovery mechanism for database connectivity issues
@@ -263,11 +313,9 @@ function ProjectDashboard(): React.ReactElement {
         setResult({
           sqlQuery: data.sqlQuery,
           explanation: data.explanation,
-          results: data.results,
+          results: data.results.slice(0, 10), // Ensure only 10 records are shown
           executionTime: data.executionTime,
           totalRows: data.totalRows,
-          totalPages: data.totalPages,
-          currentPage: data.currentPage,
         });
       }
     } catch (err) {
@@ -279,60 +327,7 @@ function ProjectDashboard(): React.ReactElement {
     }
   };
 
-  // Handle page change
-  const handlePageChange = (page: number) => {
-    if (!currentQuery) return;
-
-    setIsLoading(true);
-
-    (async () => {
-      try {
-        const queryOptions = {
-          page,
-          pageSize: 10,
-          fileId: selectedFileId,
-          projectId: projectId, // Include project ID in the query
-        };
-
-        const response = await fetch("/api/nl-to-sql", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            query: currentQuery,
-            ...queryOptions,
-          }),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || "Failed to process query");
-        }
-
-        if (data.error) {
-          setError(data.error);
-        } else {
-          setResult({
-            sqlQuery: data.sqlQuery,
-            explanation: data.explanation,
-            results: data.results,
-            executionTime: data.executionTime,
-            totalRows: data.totalRows,
-            totalPages: data.totalPages,
-            currentPage: data.currentPage,
-          });
-        }
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "An unknown error occurred"
-        );
-      } finally {
-        setIsLoading(false);
-      }
-    })();
-  };
+  // Pagination has been removed to show only 10 records
 
   // Handle sort change
   const handleSortChange = (column: string, direction: "asc" | "desc") => {
@@ -374,11 +369,9 @@ function ProjectDashboard(): React.ReactElement {
           setResult({
             sqlQuery: data.sqlQuery,
             explanation: data.explanation,
-            results: data.results,
+            results: data.results.slice(0, 10), // Ensure only 10 records are shown
             executionTime: data.executionTime,
             totalRows: data.totalRows,
-            totalPages: data.totalPages,
-            currentPage: data.currentPage || 1,
           });
         }
       } catch (err) {
@@ -430,11 +423,9 @@ function ProjectDashboard(): React.ReactElement {
           setResult({
             sqlQuery: data.sqlQuery,
             explanation: data.explanation,
-            results: data.results,
+            results: data.results.slice(0, 10), // Ensure only 10 records are shown
             executionTime: data.executionTime,
             totalRows: data.totalRows,
-            totalPages: data.totalPages,
-            currentPage: data.currentPage || 1,
           });
         }
       } catch (err) {
@@ -645,19 +636,29 @@ function ProjectDashboard(): React.ReactElement {
                 error={error}
                 result={result}
                 currentQuery={currentQuery}
-                onPageChange={handlePageChange}
                 onSortChange={handleSortChange}
                 onApplyFilters={handleApplyFilters}
                 userId={session?.user?.id}
+                projectId={projectId} // Pass projectId to ImprovedQueryResultsPane
               />
             )
           }
           chatInputPane={
-            <ImprovedChatInputPane
-              onSubmit={handleSubmit}
-              isLoading={isLoading}
-              selectedFileId={selectedFileId}
-            />
+            // Temporarily disabled NL-to-SQL query input
+            <div className="bg-ui-primary p-2 border-t border-ui-border">
+              <div className="flex items-center justify-center p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+                <div className="text-center">
+                  <p className="text-yellow-800 font-medium">
+                    Natural language queries are temporarily disabled for
+                    maintenance.
+                  </p>
+                  <p className="text-yellow-600 text-sm mt-1">
+                    We're working on improving the query processing system.
+                    Please check back soon.
+                  </p>
+                </div>
+              </div>
+            </div>
           }
         />
       </ErrorBoundary>

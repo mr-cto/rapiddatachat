@@ -609,28 +609,115 @@ export const ColumnMergeManager: React.FC<ColumnMergeManagerProps> = ({
 
       // Find the merge to be deleted to get its name
       const mergeToDelete = columnMerges.find((merge) => merge.id === mergeId);
-      const mergeNameToDelete = mergeToDelete?.mergeName;
+
+      // If the merge doesn't exist in our local state, just update the UI state
+      if (!mergeToDelete) {
+        console.warn(
+          `Column merge with ID ${mergeId} not found in local state, removing from UI only`
+        );
+
+        // Update local state to remove the non-existent merge
+        setColumnMerges((prevMerges) => {
+          const newMerges = prevMerges.filter((merge) => merge.id !== mergeId);
+
+          // Notify parent component of the change
+          if (onColumnMergesChange) {
+            onColumnMergesChange(newMerges);
+          }
+
+          // Update view state manager if available
+          if (viewStateManager) {
+            viewStateManager.removeColumnMerge(mergeId);
+          }
+
+          return newMerges;
+        });
+
+        setIsLoading(false);
+        return;
+      }
+
+      const mergeNameToDelete = mergeToDelete.mergeName;
 
       console.log(
         `Deleting column merge: ${mergeId}, name: ${mergeNameToDelete}`
       );
 
-      // Delete the column merge via API
+      // For temporary column merges (created in the modal with IDs starting with "merge-"),
+      // skip the API call and just update the UI state
+      if (mergeId.startsWith("merge-")) {
+        console.log(`Skipping API call for temporary column merge: ${mergeId}`);
+
+        // Update local state to remove the temporary merge
+        setColumnMerges((prevMerges) => {
+          const newMerges = prevMerges.filter((merge) => merge.id !== mergeId);
+
+          // Notify parent component of the change
+          if (onColumnMergesChange) {
+            onColumnMergesChange(newMerges);
+          }
+
+          // Update view state manager if available
+          if (viewStateManager) {
+            viewStateManager.removeColumnMerge(mergeId);
+          }
+
+          // Check if this merged column name is used by any other merges
+          const isColumnNameStillUsed = newMerges.some(
+            (merge) => merge.mergeName === mergeNameToDelete
+          );
+
+          // If the column name is no longer used, remove it from available columns
+          if (!isColumnNameStillUsed && mergeNameToDelete) {
+            // Only remove from available columns if it's not a regular column
+            // This check prevents removing original columns that might have the same name
+            const isOriginalColumn = data.some((row) =>
+              Object.keys(row).includes(mergeNameToDelete)
+            );
+
+            if (!isOriginalColumn) {
+              console.log(
+                `Removing merged column from available columns: ${mergeNameToDelete}`
+              );
+              setAvailableColumns((prev) =>
+                prev.filter((col) => col !== mergeNameToDelete)
+              );
+            }
+          }
+
+          return newMerges;
+        });
+
+        setIsLoading(false);
+        return;
+      }
+
+      // For non-temporary column merges, delete via API
       const deleteResponse = await fetch(`/api/column-merges/${mergeId}`, {
         method: "DELETE",
       });
 
       if (!deleteResponse.ok) {
-        let errorMessage = `Failed to delete column merge: ${deleteResponse.statusText}`;
-        try {
-          const errorData = await deleteResponse.json();
-          if (errorData && errorData.error) {
-            errorMessage = errorData.error;
+        // If the merge is not found on the server (404), just update the UI state
+        if (deleteResponse.status === 404) {
+          console.warn(
+            `Column merge with ID ${mergeId} not found on server, removing from UI only`
+          );
+
+          // Continue with UI updates as if deletion was successful
+        } else {
+          // For other errors, throw an exception
+          let errorMessage = `Failed to delete column merge: ${deleteResponse.statusText}`;
+          try {
+            const errorData = await deleteResponse.json();
+            if (errorData && errorData.error) {
+              errorMessage = errorData.error;
+            }
+          } catch (e) {
+            // Ignore JSON parsing errors
           }
-        } catch (e) {
-          // Ignore JSON parsing errors
+          throw new Error(errorMessage);
         }
-        throw new Error(errorMessage);
       }
 
       // For query results, manually update the UI

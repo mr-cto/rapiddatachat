@@ -6,6 +6,7 @@ interface ModalProps {
   title: string;
   children: React.ReactNode;
   maxWidth?: string;
+  zIndex?: number;
 }
 
 const Modal: React.FC<ModalProps> = ({
@@ -14,6 +15,7 @@ const Modal: React.FC<ModalProps> = ({
   title,
   children,
   maxWidth = "max-w-lg",
+  zIndex = 50,
 }) => {
   const modalRef = useRef<HTMLDivElement>(null);
 
@@ -60,7 +62,9 @@ const Modal: React.FC<ModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50 animate-fadeIn">
+    <div
+      className={`fixed inset-0 z-${zIndex} flex items-center justify-center p-4 bg-black bg-opacity-50 animate-fadeIn`}
+    >
       <div
         ref={modalRef}
         className={`bg-ui-primary rounded-lg shadow-xl ${maxWidth} w-full relative animate-scaleIn`}

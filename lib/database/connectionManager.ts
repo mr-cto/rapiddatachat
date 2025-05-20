@@ -44,16 +44,9 @@ export class DatabaseConnectionManager {
       this.poolCreationTimestamps.set(client, Date.now());
     }
 
-    // Initialize replica pool
+    // Initialize replica pool - using the same URL as primary
     for (let i = 0; i < this.minPoolSize; i++) {
-      const client = new PrismaClient({
-        datasources: {
-          db: {
-            // Always use the raw database URL without modifications
-            url: process.env.RAW_DATABASE_DATABASE_URL,
-          },
-        },
-      });
+      const client = new PrismaClient();
       this.replicaPool.push(client);
       this.poolCreationTimestamps.set(client, Date.now());
     }
@@ -101,8 +94,18 @@ export class DatabaseConnectionManager {
    * @returns PrismaClient instance configured to use the replica database
    */
   getReplicaClient(): PrismaClient {
+    console.log("Getting replica client. Pool size:", this.replicaPool.length);
+    console.log(
+      "RAW_DATABASE_DATABASE_URL is",
+      process.env.RAW_DATABASE_DATABASE_URL ? "set" : "not set"
+    );
+
     if (this.replicaPool.length > 0) {
       const client = this.replicaPool.pop()!;
+      // console.log(
+      //   "Retrieved client from pool. Available models:",
+      //   Object.keys(client).filter((key) => !key.startsWith("$"))
+      // );
 
       // Check if the client is too old and should be refreshed
       const creationTime = this.poolCreationTimestamps.get(client) || 0;
@@ -115,14 +118,8 @@ export class DatabaseConnectionManager {
           );
         this.poolCreationTimestamps.delete(client);
 
-        const newClient = new PrismaClient({
-          datasources: {
-            db: {
-              // Always use the raw database URL without modifications
-              url: process.env.RAW_DATABASE_DATABASE_URL,
-            },
-          },
-        });
+        // Using default PrismaClient without custom datasource
+        const newClient = new PrismaClient();
         this.poolCreationTimestamps.set(newClient, Date.now());
         return newClient;
       }
@@ -131,16 +128,22 @@ export class DatabaseConnectionManager {
     }
 
     // No clients available in the pool, create a new one
-    const client = new PrismaClient({
-      datasources: {
-        db: {
-          // Always use the raw database URL without modifications
-          url: process.env.RAW_DATABASE_DATABASE_URL,
-        },
-      },
-    });
-    this.poolCreationTimestamps.set(client, Date.now());
-    return client;
+    console.log("Creating new replica client (using default connection)");
+    try {
+      // Using default PrismaClient without custom datasource
+      const client = new PrismaClient();
+
+      // console.log(
+      //   "New replica client created successfully. Available models:",
+      //   Object.keys(client).filter((key) => !key.startsWith("$"))
+      // );
+
+      this.poolCreationTimestamps.set(client, Date.now());
+      return client;
+    } catch (error) {
+      console.error("Error creating new replica client:", error);
+      throw error;
+    }
   }
 
   /**

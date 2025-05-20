@@ -6,7 +6,7 @@ import { Button, Card } from "./ui";
 import {
   FaArrowsAlt,
   FaTrash,
-  FaMerge,
+  FaObjectGroup, // Using FaObjectGroup instead of FaMerge which doesn't exist
   FaCheck,
   FaTimes,
 } from "react-icons/fa";
@@ -163,7 +163,7 @@ const ColumnHeader: React.FC<{
                 className="p-1 text-blue-400 hover:text-blue-300"
                 title="Merge with other columns"
               >
-                <FaMerge className="w-3 h-3" />
+                <FaObjectGroup className="w-3 h-3" />
               </button>
             </>
           )}
@@ -191,45 +191,160 @@ const CsvPreview: React.FC<CsvPreviewProps> = ({
     null
   );
 
-  // Parse the CSV file on component mount
+  // Parse the file on component mount
   useEffect(() => {
     const parseFile = async () => {
       setLoading(true);
       setError(null);
 
       try {
-        Papa.parse(file, {
-          header: true,
-          preview: 5, // Only parse 5 rows for the preview
-          skipEmptyLines: true,
-          complete: (results) => {
-            if (results.data && results.data.length > 0) {
-              setPreviewData(results.data);
+        // Check file type
+        const fileType = file.name.split(".").pop()?.toLowerCase();
 
-              // Extract column names and create column config
-              const headers =
-                results.meta.fields || Object.keys(results.data[0]);
-              const columnConfigs = headers.map((header, index) => ({
-                id: `col-${index}`,
-                originalName: header,
-                displayName: header,
-                selected: false,
-                merged: false,
-                mergedWith: [],
-              }));
+        if (fileType === "csv") {
+          // Parse CSV using Papa Parse
+          Papa.parse(file, {
+            header: true,
+            preview: 5, // Only parse 5 rows for the preview
+            skipEmptyLines: true,
+            complete: (results) => {
+              if (results.data && results.data.length > 0) {
+                setPreviewData(results.data);
 
-              setColumns(columnConfigs);
-            } else {
-              setError("No data found in the file");
-            }
+                // Extract column names and create column config
+                const headers =
+                  results.meta.fields ||
+                  Object.keys(results.data[0] as Record<string, unknown>);
+                const columnConfigs = headers.map((header, index) => ({
+                  id: `col-${index}`,
+                  originalName: header,
+                  displayName: header,
+                  selected: false,
+                  merged: false,
+                  mergedWith: [],
+                }));
+
+                setColumns(columnConfigs);
+              } else {
+                setError("No data found in the file");
+              }
+              setLoading(false);
+            },
+            error: (err) => {
+              setError(`Error parsing CSV: ${err.message}`);
+              setLoading(false);
+            },
+          });
+        } else if (fileType === "xlsx" || fileType === "xls") {
+          // Parse XLSX using xlsx library
+          try {
+            console.log(`Parsing XLSX file: ${file.name}`);
+
+            // Import xlsx library dynamically
+            const XLSX = await import("xlsx");
+
+            // Read the file as array buffer
+            const reader = new FileReader();
+
+            reader.onload = (e) => {
+              try {
+                if (!e.target?.result) {
+                  throw new Error("Failed to read file");
+                }
+
+                const data = new Uint8Array(e.target.result as ArrayBuffer);
+                console.log(`Processing ${data.length} bytes of XLSX data`);
+
+                // Parse workbook with proper options
+                const workbook = XLSX.read(data, {
+                  type: "array",
+                  cellDates: true,
+                  cellNF: false,
+                  cellText: false,
+                });
+
+                if (!workbook.SheetNames.length) {
+                  throw new Error("No sheets found in workbook");
+                }
+
+                // Get first sheet
+                const sheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+
+                // Convert to JSON with headers
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, {
+                  raw: false,
+                  dateNF: "yyyy-mm-dd",
+                  defval: null,
+                  blankrows: false,
+                });
+
+                console.log(`Parsed ${jsonData.length} rows from XLSX`);
+
+                if (jsonData.length > 0) {
+                  // Take only first 5 rows for preview
+                  const previewRows = jsonData.slice(0, 5);
+                  setPreviewData(previewRows);
+
+                  // Extract headers from first row
+                  const headers = Object.keys(
+                    jsonData[0] as Record<string, unknown>
+                  );
+                  const columnConfigs = headers.map((header, index) => ({
+                    id: `col-${index}`,
+                    originalName: header,
+                    displayName: header,
+                    selected: false,
+                    merged: false,
+                    mergedWith: [],
+                  }));
+
+                  setColumns(columnConfigs);
+                } else {
+                  throw new Error("No data found in XLSX file");
+                }
+
+                setLoading(false);
+              } catch (parseError) {
+                console.error("Error parsing XLSX:", parseError);
+                setError(
+                  `Error parsing XLSX: ${
+                    parseError instanceof Error
+                      ? parseError.message
+                      : String(parseError)
+                  }`
+                );
+                setLoading(false);
+              }
+            };
+
+            reader.onerror = () => {
+              setError(
+                `Error reading file: ${
+                  reader.error?.message || "Unknown error"
+                }`
+              );
+              setLoading(false);
+            };
+
+            reader.readAsArrayBuffer(file);
+          } catch (xlsxError) {
+            console.error("XLSX processing error:", xlsxError);
+            setError(
+              `Error processing XLSX file: ${
+                xlsxError instanceof Error
+                  ? xlsxError.message
+                  : String(xlsxError)
+              }`
+            );
             setLoading(false);
-          },
-          error: (err) => {
-            setError(`Error parsing CSV: ${err.message}`);
-            setLoading(false);
-          },
-        });
+          }
+        } else {
+          setError(`Unsupported file type: ${fileType}`);
+          setLoading(false);
+        }
       } catch (err) {
+        console.error("File parsing error:", err);
         setError(
           `Error parsing file: ${
             err instanceof Error ? err.message : String(err)

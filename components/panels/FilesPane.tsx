@@ -60,6 +60,7 @@ interface FilesPaneProps {
   selectedFileId?: string;
   projectId?: string;
   onPreviewParsed?: (preview: Record<string, unknown>[]) => void;
+  onFileCountChange?: (count: number) => void;
 }
 
 // Memoized file item component to prevent unnecessary re-renders
@@ -284,6 +285,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
   selectedFileId,
   projectId,
   onPreviewParsed,
+  onFileCountChange,
 }) => {
   const { data: session, userId, isAuthenticated } = useStableSession();
   const [files, setFiles] = useState<FileData[]>([]);
@@ -445,6 +447,11 @@ const FilesPane: React.FC<FilesPaneProps> = ({
 
         // If there are files, assume there's a schema
         setHasActiveSchema(!filesEmpty);
+
+        // Notify parent about file count change
+        if (onFileCountChange) {
+          onFileCountChange(data.files.length);
+        }
       } else {
         setFiles([]);
         setIsFirstUpload(true);
@@ -817,7 +824,15 @@ const FilesPane: React.FC<FilesPaneProps> = ({
   };
 
   // Handle file upload
-  const handleFilesUpload = async (uploadedFiles: File[]) => {
+  const handleFilesUpload = async (
+    uploadedFiles: File[],
+    projectIdParam?: string,
+    options?: {
+      hasNewColumns?: boolean;
+      showPreview?: boolean;
+      previewData?: Record<string, unknown>[];
+    }
+  ) => {
     if (uploadedFiles.length === 0) return;
 
     setUploading(true);
@@ -825,6 +840,15 @@ const FilesPane: React.FC<FilesPaneProps> = ({
     setError(null);
     setUploadStatus("Uploading file...");
     setSuccessMessage(null);
+
+    // Use the options to determine the flow
+    const hasNewColumns = options?.hasNewColumns || false;
+    const showPreview = options?.showPreview || false;
+
+    // If we have preview data from papaparse, pass it to the parent component
+    if (options?.previewData && onPreviewParsed) {
+      onPreviewParsed(options.previewData);
+    }
 
     try {
       // Check if there's an active schema
@@ -1192,7 +1216,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
                   (col) => !existingColumnNames.includes(col)
                 );
 
-                if (newColumns.length > 0) {
+                if (newColumns.length > 0 || hasNewColumns) {
                   console.log(
                     `Found ${newColumns.length} new columns that don't match existing schema:`,
                     newColumns
@@ -1223,22 +1247,52 @@ const FilesPane: React.FC<FilesPaneProps> = ({
                     mappingRecord[col] = col;
                   });
 
-                  // Save the mapping
-                  const mappingResponse = await fetch("/api/column-mappings", {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                      fileId,
-                      schemaId: currentSchema.id,
-                      mappings: mappingRecord,
-                      newColumnsAdded: 0,
-                    }),
-                  });
+                  // Save the mapping with better error handling
+                  try {
+                    console.log(
+                      "Attempting to save column mapping with data:",
+                      {
+                        fileId,
+                        schemaId: currentSchema.id,
+                        mappingsCount: Object.keys(mappingRecord).length,
+                      }
+                    );
 
-                  if (!mappingResponse.ok) {
-                    throw new Error("Failed to save column mapping");
+                    const mappingResponse = await fetch(
+                      "/api/column-mappings",
+                      {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({
+                          fileId,
+                          schemaId: currentSchema.id,
+                          mappings: mappingRecord,
+                          newColumnsAdded: 0,
+                        }),
+                      }
+                    );
+
+                    if (!mappingResponse.ok) {
+                      const errorData = await mappingResponse
+                        .json()
+                        .catch(() => ({}));
+                      console.error("Column mapping save failed:", errorData);
+                      throw new Error(
+                        `Failed to save column mapping: ${
+                          errorData.error || mappingResponse.statusText
+                        }`
+                      );
+                    }
+
+                    console.log("Column mapping saved successfully");
+                  } catch (mappingError) {
+                    console.error("Error saving column mapping:", mappingError);
+                    // Continue with file activation even if mapping fails
+                    console.warn(
+                      "Continuing with file activation despite mapping error"
+                    );
                   }
 
                   // Activate the file
@@ -1559,22 +1613,46 @@ const FilesPane: React.FC<FilesPaneProps> = ({
                   mappingRecord[col] = col;
                 });
 
-                // Save the mapping
-                const mappingResponse = await fetch("/api/column-mappings", {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({
+                // Save the mapping with better error handling
+                try {
+                  console.log("Attempting to save column mapping with data:", {
                     fileId,
                     schemaId: currentSchema.id,
-                    mappings: mappingRecord,
-                    newColumnsAdded: 0,
-                  }),
-                });
+                    mappingsCount: Object.keys(mappingRecord).length,
+                  });
 
-                if (!mappingResponse.ok) {
-                  throw new Error("Failed to save column mapping");
+                  const mappingResponse = await fetch("/api/column-mappings", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                      fileId,
+                      schemaId: currentSchema.id,
+                      mappings: mappingRecord,
+                      newColumnsAdded: 0,
+                    }),
+                  });
+
+                  if (!mappingResponse.ok) {
+                    const errorData = await mappingResponse
+                      .json()
+                      .catch(() => ({}));
+                    console.error("Column mapping save failed:", errorData);
+                    throw new Error(
+                      `Failed to save column mapping: ${
+                        errorData.error || mappingResponse.statusText
+                      }`
+                    );
+                  }
+
+                  console.log("Column mapping saved successfully");
+                } catch (mappingError) {
+                  console.error("Error saving column mapping:", mappingError);
+                  // Continue with file activation even if mapping fails
+                  console.warn(
+                    "Continuing with file activation despite mapping error"
+                  );
                 }
 
                 // Activate the file
@@ -1688,6 +1766,12 @@ const FilesPane: React.FC<FilesPaneProps> = ({
 
       // Show success message
       setSuccessMessage("File successfully deleted");
+
+      // Check if this was the last file and notify parent
+      const updatedFilesList = files.filter((file) => file.id !== fileId);
+      if (updatedFilesList.length === 0 && onFileCountChange) {
+        onFileCountChange(0);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
     }
@@ -1972,18 +2056,21 @@ const FilesPane: React.FC<FilesPaneProps> = ({
   FileUploadComponent.displayName = "FileUploadComponent";
 
   // Create a memoized enhanced file upload component
-  const fileUploadElement = useMemo(
-    () => (
+  const fileUploadElement = useMemo(() => {
+    // Get existing columns from all files
+    const existingColumns = Object.values(fileColumns).flat();
+
+    return (
       <EnhancedFileUpload
         onFilesSelected={handleFilesUpload}
         uploading={uploading}
         progress={uploadProgress}
         projectId={projectId}
         useChunkedUpload={true}
+        existingColumns={existingColumns}
       />
-    ),
-    [uploading, uploadProgress, projectId, handleFilesUpload]
-  );
+    );
+  }, [uploading, uploadProgress, projectId, handleFilesUpload, fileColumns]);
 
   // Render file list UI
   const renderFileList = () => {
@@ -2008,24 +2095,6 @@ const FilesPane: React.FC<FilesPaneProps> = ({
                 <div className="h-5 bg-ui-tertiary rounded w-1/4 mb-3"></div>
               </div>
             ))}
-          </div>
-        </Card>
-      );
-    }
-
-    // Show empty state with integrated upload
-    if (files.length === 0) {
-      return (
-        <Card variant="default" padding="none">
-          <div className="p-8 text-center">
-            <FaFile className="mx-auto h-16 w-16 text-gray-500" />
-            <h3 className="mt-4 text-lg font-medium text-gray-300">
-              No files available
-            </h3>
-            <p className="mt-2 text-sm text-gray-400 max-w-md mx-auto">
-              Upload a file to see its columns and data structure.
-            </p>
-            <div className="mt-6 max-w-md mx-auto">{fileUploadElement}</div>
           </div>
         </Card>
       );
@@ -2063,58 +2132,6 @@ const FilesPane: React.FC<FilesPaneProps> = ({
   return (
     <div className="h-[50vh] flex flex-col">
       <div className="p-2 border-b border-ui-border">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center">
-            <h2 className="text-md font-semibold flex items-center text-gray-300">
-              <FaFile className="mr-1" /> Files{" "}
-              {files.length > 0 ? `(${files.length})` : ""}
-            </h2>
-            <Button
-              onClick={() => fetchFiles()}
-              variant="secondary"
-              size="sm"
-              className="ml-2 h-6 px-2 py-0"
-              title="Force refresh files list"
-              isLoading={loading}
-            >
-              {!loading && "↻"}
-            </Button>
-
-            {/* Add button to update large files status */}
-            {files.some(
-              (file) =>
-                file.status === "error" && file.sizeBytes > 100 * 1024 * 1024
-            ) && (
-              <Button
-                onClick={updateLargeFilesStatus}
-                variant="secondary"
-                size="sm"
-                className="ml-2 text-xs"
-                title="Update large files status"
-                isLoading={updatingLargeFiles}
-              >
-                Fix Large Files
-              </Button>
-            )}
-          </div>
-          <div className="flex items-center">
-            {projectId && (
-              <span className="text-xs text-gray-400 mr-2">
-                Project ID: {projectId.substring(0, 8)}...
-              </span>
-            )}
-            {files.length > 0 && (
-              <Button
-                onClick={() => setSuccessMessage(null)}
-                variant="primary"
-                size="sm"
-              >
-                Upload New File
-              </Button>
-            )}
-          </div>
-        </div>
-
         {successMessage && (
           <div className="mt-2 p-3 bg-green-900/30 border border-green-800 rounded-md">
             <p className="text-green-400 text-sm flex items-center">
@@ -2165,11 +2182,9 @@ const FilesPane: React.FC<FilesPaneProps> = ({
           </div>
         )}
 
-        {!successMessage && files.length > 0 && (
-          <div className="mt-2 mb-2 p-3 border border-ui-border rounded-md bg-ui-secondary">
-            {fileUploadElement}
-          </div>
-        )}
+        <div className="mt-2 mb-2 p-3 border border-ui-border rounded-md bg-ui-secondary">
+          {fileUploadElement}
+        </div>
 
         {error && (
           <div className="mt-2 p-3 bg-red-900/30 border border-red-800 rounded-md">
@@ -2193,7 +2208,29 @@ const FilesPane: React.FC<FilesPaneProps> = ({
         )}
       </div>
 
-      <div className="overflow-y-auto flex-1 p-1">{renderFileList()}</div>
+      {files.length > 0 && (
+        <div className="overflow-y-auto flex-1 p-1 mt-4">
+          <div className="flex items-center justify-between  mb-4">
+            <div className="flex items-center">
+              <h2 className="text-md font-semibold flex items-center text-gray-300">
+                <FaFile className="mr-1" /> Files{" "}
+                {files.length > 0 ? `(${files.length})` : ""}
+              </h2>
+              <Button
+                onClick={() => fetchFiles()}
+                variant="secondary"
+                size="sm"
+                className="ml-2 h-6 px-2 py-0"
+                title="Force refresh files list"
+                isLoading={loading}
+              >
+                {!loading && "refresh"}
+              </Button>
+            </div>
+          </div>
+          {renderFileList()}
+        </div>
+      )}
 
       {/* Schema Column Mapper Modal */}
       {showSchemaMapper && uploadedFileId && (

@@ -40,6 +40,13 @@ const ColumnMergeModal: React.FC<ColumnMergeModalProps> = ({
       ? loadColumnMergesFromViewState(viewStateManager)
       : initialColumnMerges
   );
+
+  // Update column merges when initialColumnMerges changes
+  useEffect(() => {
+    if (initialColumnMerges && initialColumnMerges.length > 0) {
+      setColumnMerges(initialColumnMerges);
+    }
+  }, [initialColumnMerges]);
   const [newMergeName, setNewMergeName] = useState("");
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
   const [delimiter, setDelimiter] = useState(" ");

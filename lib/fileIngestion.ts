@@ -237,15 +237,24 @@ export async function processXLSXStreaming(
           responseType: "arraybuffer",
         });
 
-        // Parse the workbook from the array buffer
-        workbook = xlsx.read(response.data, { type: "buffer" });
+        // Parse the workbook from the array buffer with proper options
+        workbook = xlsx.read(response.data, {
+          type: "buffer",
+          cellDates: true, // Convert date cells to JS dates
+          cellNF: false, // Don't include number formats
+          cellText: false, // Don't include rich text
+        });
       } catch (downloadError) {
         console.error(`Error downloading XLSX file from URL: ${downloadError}`);
         throw downloadError;
       }
     } else {
-      // Local file
-      workbook = xlsx.readFile(filePath);
+      // Local file with proper options
+      workbook = xlsx.readFile(filePath, {
+        cellDates: true, // Convert date cells to JS dates
+        cellNF: false, // Don't include number formats
+        cellText: false, // Don't include rich text
+      });
     }
 
     // Get the first worksheet
@@ -255,12 +264,35 @@ export async function processXLSXStreaming(
     // Get the range of the worksheet
     const range = xlsx.utils.decode_range(worksheet["!ref"] || "A1");
 
-    // Extract headers from the first row
+    // Extract headers from the first row with proper handling
     const headers: string[] = [];
     for (let col = range.s.c; col <= range.e.c; col++) {
       const cellAddress = xlsx.utils.encode_cell({ r: range.s.r, c: col });
       const cell = worksheet[cellAddress];
-      headers.push(cell && cell.v ? String(cell.v) : `Column${col + 1}`);
+
+      // Properly format header names
+      let headerName = "";
+      if (cell) {
+        // Format the header based on cell type
+        if (cell.t === "n") {
+          // Number
+          headerName = String(cell.v);
+        } else if (cell.t === "d") {
+          // Date
+          headerName = cell.w || String(cell.v);
+        } else if (cell.t === "b") {
+          // Boolean
+          headerName = String(cell.v);
+        } else if (cell.t === "s") {
+          // String
+          headerName = String(cell.v);
+        } else {
+          headerName = cell.w || String(cell.v || "");
+        }
+      }
+
+      // Ensure we have a valid header name
+      headers.push(headerName || `Column${col + 1}`);
     }
 
     console.log(`Extracted ${headers.length} headers from XLSX`);
@@ -339,8 +371,47 @@ export async function processXLSXStreaming(
         const cell = worksheet[cellAddress];
         const header = headers[c - range.s.c];
 
-        // Add cell value to row (handle empty cells)
-        row[header] = cell ? cell.v : null;
+        // Skip if header is undefined or null
+        if (!header) continue;
+
+        // Properly handle different cell types
+        if (!cell) {
+          row[header] = null;
+        } else {
+          switch (cell.t) {
+            case "n": // Number
+              row[header] = cell.v;
+              break;
+            case "d": // Date
+              // Format dates consistently
+              if (cell.v instanceof Date) {
+                row[header] = cell.v.toISOString();
+              } else {
+                row[header] = cell.w || cell.v;
+              }
+              break;
+            case "b": // Boolean
+              row[header] = Boolean(cell.v);
+              break;
+            case "s": // String
+              row[header] = String(cell.v);
+              break;
+            case "e": // Error
+              row[header] = null; // Treat error cells as null
+              break;
+            case "z": // Blank/stub
+              row[header] = null;
+              break;
+            default:
+              // For any other type, use the formatted string value if available
+              row[header] =
+                cell.w !== undefined
+                  ? cell.w
+                  : cell.v !== undefined
+                  ? String(cell.v)
+                  : null;
+          }
+        }
       }
 
       // Add row to batch
@@ -606,22 +677,50 @@ async function parseCSV(filePath: string): Promise<ParsedData> {
  * @deprecated Use processXLSXStreaming instead for large files
  */
 function parseXLSX(filePath: string): ParsedData {
-  // Read the XLSX file
-  const workbook = xlsx.readFile(filePath);
+  // Read the XLSX file with proper options
+  const workbook = xlsx.readFile(filePath, {
+    cellDates: true, // Convert date cells to JS dates
+    cellNF: false, // Don't include number formats
+    cellText: false, // Don't include rich text
+  });
 
   // Get the first worksheet
   const sheetName = workbook.SheetNames[0];
   const worksheet = workbook.Sheets[sheetName];
 
-  // Convert the worksheet to JSON
-  const jsonData = xlsx.utils.sheet_to_json(worksheet);
+  // Convert the worksheet to JSON with proper options
+  const jsonData = xlsx.utils.sheet_to_json(worksheet, {
+    raw: false, // Convert values to appropriate types
+    dateNF: "yyyy-mm-dd", // Date format
+    defval: null, // Default value for empty cells
+  });
 
   // Extract headers from the first row
   const headers = Object.keys(jsonData[0] || {});
 
+  // Process the data to ensure consistent types
+  const processedData = jsonData.map((row: Record<string, any>) => {
+    const processedRow: Record<string, any> = {};
+
+    // Process each field in the row
+    for (const [key, value] of Object.entries(row)) {
+      if (value instanceof Date) {
+        // Convert dates to ISO strings for consistency
+        processedRow[key] = value.toISOString();
+      } else if (value === undefined) {
+        // Convert undefined to null
+        processedRow[key] = null;
+      } else {
+        processedRow[key] = value;
+      }
+    }
+
+    return processedRow;
+  });
+
   return {
     headers,
-    rows: jsonData,
-    rowCount: jsonData.length,
+    rows: processedData,
+    rowCount: processedData.length,
   };
 }

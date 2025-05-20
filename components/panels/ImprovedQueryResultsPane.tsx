@@ -23,8 +23,6 @@ interface QueryResult {
   results: Record<string, unknown>[];
   executionTime?: number;
   totalRows?: number;
-  totalPages?: number;
-  currentPage?: number;
   columnMerges?: {
     id: string;
     mergeName: string;
@@ -42,7 +40,6 @@ interface ImprovedQueryResultsPaneProps {
   error: string | null;
   result: QueryResult | null;
   currentQuery: string;
-  onPageChange: (page: number) => void;
   onSortChange: (column: string, direction: "asc" | "desc") => void;
   onApplyFilters: (filters: Record<string, unknown>) => void;
   onColumnMergesChange?: (
@@ -55,6 +52,7 @@ interface ImprovedQueryResultsPaneProps {
   ) => void;
   viewStateManager?: ViewStateManager;
   userId?: string;
+  projectId?: string; // Add projectId prop
 }
 
 const ImprovedQueryResultsPane: React.FC<ImprovedQueryResultsPaneProps> = ({
@@ -62,12 +60,12 @@ const ImprovedQueryResultsPane: React.FC<ImprovedQueryResultsPaneProps> = ({
   error,
   result,
   currentQuery,
-  onPageChange,
   onSortChange,
   onApplyFilters,
   onColumnMergesChange,
   viewStateManager,
   userId,
+  projectId, // Extract projectId from props
 }) => {
   // State for modal visibility
   const [showColumnFilterModal, setShowColumnFilterModal] = useState(false);
@@ -85,6 +83,16 @@ const ImprovedQueryResultsPane: React.FC<ImprovedQueryResultsPaneProps> = ({
   // State for processed results
   const [processedResults, setProcessedResults] = useState<
     Record<string, unknown>[]
+  >([]);
+
+  // State for column merges
+  const [activeColumnMerges, setActiveColumnMerges] = useState<
+    {
+      id: string;
+      mergeName: string;
+      columnList: string[];
+      delimiter: string;
+    }[]
   >([]);
 
   // Process results to extract nested data
@@ -175,18 +183,27 @@ const ImprovedQueryResultsPane: React.FC<ImprovedQueryResultsPaneProps> = ({
     }
   }, [result]);
 
-  // Sync column merges with view state manager when they change
+  // Initialize column merges from result or view state manager
   useEffect(() => {
-    if (viewStateManager && result?.columnMerges) {
-      syncColumnMergesToViewState(viewStateManager, result.columnMerges);
+    if (viewStateManager) {
+      const mergesFromViewState =
+        loadColumnMergesFromViewState(viewStateManager);
+      if (mergesFromViewState && mergesFromViewState.length > 0) {
+        setActiveColumnMerges(mergesFromViewState);
+      } else if (result?.columnMerges && result.columnMerges.length > 0) {
+        setActiveColumnMerges(result.columnMerges);
+        syncColumnMergesToViewState(viewStateManager, result.columnMerges);
+      }
+    } else if (result?.columnMerges) {
+      setActiveColumnMerges(result.columnMerges);
     }
   }, [viewStateManager, result?.columnMerges]);
 
   // Update visible columns when column merges change
   useEffect(() => {
-    if (result?.columnMerges && result.columnMerges.length > 0) {
+    if (activeColumnMerges && activeColumnMerges.length > 0) {
       // Add merged column names to visible columns if they're not already there
-      const mergedColumnNames = result.columnMerges.map(
+      const mergedColumnNames = activeColumnMerges.map(
         (merge) => merge.mergeName
       );
       const newVisibleColumns = [...visibleColumns];
@@ -203,7 +220,7 @@ const ImprovedQueryResultsPane: React.FC<ImprovedQueryResultsPaneProps> = ({
         setVisibleColumns(newVisibleColumns);
       }
     }
-  }, [result?.columnMerges, visibleColumns]);
+  }, [activeColumnMerges, visibleColumns]);
 
   // Handle column filter changes
   const handleApplyColumnFilters = (columns: string[]) => {
@@ -322,6 +339,9 @@ const ImprovedQueryResultsPane: React.FC<ImprovedQueryResultsPaneProps> = ({
                 <Badge variant="info" size="sm" className="ml-2">
                   {result.totalRows.toLocaleString()}{" "}
                   {result.totalRows === 1 ? "row" : "rows"}
+                  {result.totalRows > 10 && (
+                    <span className="ml-1">(showing 10)</span>
+                  )}
                 </Badge>
               )}
             </div>
@@ -482,8 +502,21 @@ const ImprovedQueryResultsPane: React.FC<ImprovedQueryResultsPaneProps> = ({
               onClose={() => setShowColumnMergeModal(false)}
               fileId="query-results"
               columns={allAvailableColumns}
-              initialColumnMerges={result.columnMerges}
-              onColumnMergesChange={onColumnMergesChange}
+              initialColumnMerges={activeColumnMerges}
+              onColumnMergesChange={(merges) => {
+                // Update local state
+                setActiveColumnMerges(merges);
+
+                // Update view state manager if available
+                if (viewStateManager) {
+                  syncColumnMergesToViewState(viewStateManager, merges);
+                }
+
+                // Call the original callback
+                if (onColumnMergesChange) {
+                  onColumnMergesChange(merges);
+                }
+              }}
               data={processedResults}
               viewStateManager={viewStateManager}
             />
@@ -499,18 +532,14 @@ const ImprovedQueryResultsPane: React.FC<ImprovedQueryResultsPaneProps> = ({
                   fileId="query-results"
                   data={processedResults}
                   onSortChange={onSortChange}
-                  onPageChange={onPageChange}
-                  currentPage={result.currentPage}
-                  totalPages={result.totalPages}
                   totalRows={result.totalRows}
                   serverSideSort={true}
                   className="w-full"
-                  initialColumnMerges={
-                    viewStateManager
-                      ? loadColumnMergesFromViewState(viewStateManager)
-                      : result.columnMerges
-                  }
+                  initialColumnMerges={activeColumnMerges}
                   onColumnMergesChange={(merges) => {
+                    // Update local state
+                    setActiveColumnMerges(merges);
+
                     // Update view state manager if available
                     if (viewStateManager) {
                       syncColumnMergesToViewState(viewStateManager, merges);
@@ -562,9 +591,10 @@ const ImprovedQueryResultsPane: React.FC<ImprovedQueryResultsPaneProps> = ({
               naturalLanguageQuery={currentQuery}
               sqlQuery={result.sqlQuery || ""}
               results={processedResults}
-              columnMerges={result.columnMerges}
+              columnMerges={activeColumnMerges}
               virtualColumns={result.virtualColumns || []}
               columnOrder={visibleColumns}
+              projectId={projectId} // Pass projectId to ShareModal
             />
           </div>
         )}

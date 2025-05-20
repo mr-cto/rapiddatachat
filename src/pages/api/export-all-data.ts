@@ -58,7 +58,28 @@ export default async function handler(
     // First, get the total count
     if (chunk === 0) {
       // Build a count query to get the total number of rows
-      const countQuery = `SELECT COUNT(*) as total FROM (${baseQuery}) as count_query`;
+      // Always filter by project_id if available to get accurate counts
+      let countQuery;
+
+      if (projectId) {
+        // Use project ID filter for accurate count
+        console.log(
+          `[export-all-data] Using project filter with ID: ${projectId}`
+        );
+        countQuery = `
+          SELECT COUNT(*) as total
+          FROM file_data fd
+          JOIN files f ON fd.file_id = f.id
+          WHERE f.project_id = '${projectId}'
+        `;
+      } else {
+        // Fallback to base query if no project ID (should be rare)
+        console.log(
+          `[export-all-data] WARNING: No project ID provided for count query`
+        );
+        countQuery = `SELECT COUNT(*) as total FROM (${baseQuery}) as count_query`;
+      }
+
       console.log(`[export-all-data] Executing count query: ${countQuery}`);
 
       const countResult = await executeQuery(countQuery);
@@ -84,18 +105,34 @@ export default async function handler(
     // For subsequent requests, return the requested chunk of data
     const offset = (chunk - 1) * CHUNK_SIZE;
 
-    // Modify the query to select only the data columns, not all columns
-    // This helps avoid Prisma's 5MB response size limit
-    let modifiedBaseQuery = baseQuery;
-    if (modifiedBaseQuery.toUpperCase().startsWith("SELECT *")) {
-      // Replace SELECT * with SELECT fd.data, fd.id, fd.file_id to get only the necessary columns
-      modifiedBaseQuery = modifiedBaseQuery.replace(
-        /SELECT \*/i,
-        "SELECT fd.data, fd.id, fd.file_id"
-      );
-    }
+    // Build a query that properly filters by project ID
+    let chunkQuery;
 
-    const chunkQuery = `${modifiedBaseQuery} LIMIT ${CHUNK_SIZE} OFFSET ${offset}`;
+    if (projectId) {
+      // Use project ID filter for accurate data retrieval
+      chunkQuery = `
+        SELECT fd.data, fd.id, fd.file_id, fd.ingested_at
+        FROM file_data fd
+        JOIN files f ON fd.file_id = f.id
+        WHERE f.project_id = '${projectId}'
+        OFFSET ${offset} FETCH FIRST ${CHUNK_SIZE} ROWS ONLY
+      `;
+    } else {
+      // Modify the query to select only the data columns, not all columns
+      // This helps avoid Prisma's 5MB response size limit
+      let modifiedBaseQuery = baseQuery;
+      if (modifiedBaseQuery.toUpperCase().startsWith("SELECT *")) {
+        // Replace SELECT * with SELECT data, id, file_id, ingested_at to include all necessary columns
+        modifiedBaseQuery = modifiedBaseQuery.replace(
+          /SELECT \*/i,
+          "SELECT data, id, file_id, ingested_at"
+        );
+      }
+
+      // For PostgreSQL, we need to use the correct syntax for LIMIT and OFFSET
+      // The OFFSET clause must come before FETCH FIRST
+      chunkQuery = `${modifiedBaseQuery} OFFSET ${offset} FETCH FIRST ${CHUNK_SIZE} ROWS ONLY`;
+    }
 
     console.log(
       `[export-all-data] Executing chunk query ${chunk}: ${chunkQuery}`

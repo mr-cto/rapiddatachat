@@ -39,21 +39,8 @@ export class ProjectFilesService {
         // Get all files for the project using Prisma's type-safe queries
         const files = await replicaClient.file.findMany({
           where: {
-            OR: [
-              // Files directly associated with the project
-              { projectId },
-              // Files associated through the join table
-              {
-                id: {
-                  in: await replicaClient.project_files
-                    .findMany({
-                      where: { project_id: projectId },
-                      select: { file_id: true },
-                    })
-                    .then((results) => results.map((r) => r.file_id)),
-                },
-              },
-            ],
+            // Files directly associated with the project
+            projectId,
           },
           include: {
             // Include file errors count
@@ -136,19 +123,10 @@ export class ProjectFilesService {
           return false;
         }
 
-        // Add the file to the project using upsert to handle potential duplicates
-        await replicaClient.project_files.upsert({
-          where: {
-            project_id_file_id: {
-              project_id: projectId,
-              file_id: fileId,
-            },
-          },
-          update: {}, // No updates needed if it exists
-          create: {
-            project_id: projectId,
-            file_id: fileId,
-          },
+        // Update the file to associate it with the project
+        await replicaClient.file.update({
+          where: { id: fileId },
+          data: { projectId },
         });
 
         console.log(
@@ -186,13 +164,14 @@ export class ProjectFilesService {
       const replicaClient = connectionManager.getReplicaClient();
 
       try {
-        // Remove the file from the project
-        await replicaClient.project_files.delete({
+        // Remove the file from the project by setting projectId to null
+        await replicaClient.file.update({
           where: {
-            project_id_file_id: {
-              project_id: projectId,
-              file_id: fileId,
-            },
+            id: fileId,
+            projectId,
+          },
+          data: {
+            projectId: null,
           },
         });
 

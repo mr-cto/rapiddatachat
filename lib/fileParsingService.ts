@@ -205,18 +205,46 @@ export async function parseXLSX(
   sampleSize: number = 100
 ): Promise<FileParsingResult> {
   try {
-    // Read the XLSX file
-    const workbook = XLSX.readFile(filePath);
+    // Read the XLSX file with proper options
+    const workbook = XLSX.readFile(filePath, {
+      cellDates: true, // Convert date cells to JS dates
+      cellNF: false, // Don't include number formats
+      cellText: false, // Don't include rich text
+    });
 
     // Get the first sheet
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
 
-    // Convert to JSON
-    const data = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet);
+    // Convert to JSON with proper options
+    const data = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, {
+      raw: false, // Convert values to appropriate types
+      dateNF: "yyyy-mm-dd", // Date format
+      defval: null, // Default value for empty cells
+    });
+
+    // Process the data to ensure consistent types
+    const processedData = data.map((row: Record<string, any>) => {
+      const processedRow: Record<string, any> = {};
+
+      // Process each field in the row
+      for (const [key, value] of Object.entries(row)) {
+        if (value instanceof Date) {
+          // Convert dates to ISO strings for consistency
+          processedRow[key] = value.toISOString();
+        } else if (value === undefined) {
+          // Convert undefined to null
+          processedRow[key] = null;
+        } else {
+          processedRow[key] = value;
+        }
+      }
+
+      return processedRow;
+    });
 
     // Get sample data
-    const sampleData = data.slice(0, sampleSize);
+    const sampleData = processedData.slice(0, sampleSize);
 
     // Extract column information
     const columnData: Record<string, any[]> = {};
@@ -229,8 +257,8 @@ export async function parseXLSX(
     }
 
     // Populate column data
-    data.forEach((row) => {
-      Object.entries(row as Record<string, any>).forEach(([key, value]) => {
+    processedData.forEach((row) => {
+      Object.entries(row).forEach(([key, value]) => {
         if (columnData[key]) {
           columnData[key].push(value);
         }
@@ -256,7 +284,7 @@ export async function parseXLSX(
 
     return {
       columns,
-      rowCount: data.length,
+      rowCount: processedData.length,
       sampleData,
       fileType: "xlsx",
     };

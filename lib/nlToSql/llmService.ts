@@ -110,6 +110,8 @@ export class LLMService {
               "3. Use pattern matching efficiently with LIKE, ILIKE, or regular expressions " +
               "4. Leverage PostgreSQL's text manipulation functions when needed " +
               "5. For queries that might result in large IN clauses, use pattern matching or other techniques to avoid token limitations " +
+              "CRITICAL: For pagination, use 'OFFSET X ROWS FETCH FIRST Y ROWS ONLY' syntax instead of 'LIMIT Y OFFSET X'. " +
+              "For example, use 'FETCH FIRST 10 ROWS ONLY' instead of 'LIMIT 10'. " +
               "IMPORTANT: Return ONLY the raw SQL query without any markdown formatting, explanations, or comments. " +
               "Do not use code blocks, do not include the word 'SQL' or any other text - just return the raw query.",
           },
@@ -207,6 +209,13 @@ ${sampleData}
     - Leverage PostgreSQL's text manipulation functions when needed
     - For queries that might result in large IN clauses, use pattern matching or other techniques
     
+    # PostgreSQL Syntax Requirements
+    
+    - For pagination, use 'OFFSET X ROWS FETCH FIRST Y ROWS ONLY' syntax instead of 'LIMIT Y OFFSET X'
+    - For example, use 'FETCH FIRST 10 ROWS ONLY' instead of 'LIMIT 10'
+    - If asked for "top N records", use 'FETCH FIRST N ROWS ONLY' syntax
+    - Always follow standard PostgreSQL syntax for all SQL constructs
+    
     # Output Format
     IMPORTANT: Return ONLY the raw SQL query without any markdown formatting, explanations, or comments.
     Do not use code blocks, do not include the word 'SQL' or any other text - just return the raw query.
@@ -243,10 +252,101 @@ ${query}
 
     console.log("[LLMService] Final cleaned SQL:", sql);
 
+    // Check if the response is actually an explanation or error message rather than SQL
+    // Common patterns in explanations/error messages
+    const isExplanation =
+      sql.toLowerCase().includes("your question is incomplete") ||
+      sql.toLowerCase().includes("could you please specify") ||
+      sql.toLowerCase().includes("need more information") ||
+      sql.toLowerCase().includes("please provide more details") ||
+      sql.toLowerCase().includes("i need to understand") ||
+      sql.toLowerCase().includes("could you clarify") ||
+      !sql.toLowerCase().includes("select"); // Valid SQL queries should include SELECT
+
+    if (isExplanation) {
+      console.log(
+        "[LLMService] Response appears to be an explanation rather than SQL"
+      );
+      return {
+        sql: "",
+        explanation: sql,
+        error:
+          "The query is incomplete or unclear. Please provide more specific details.",
+      };
+    }
+
+    // Fix common SQL syntax issues
+    sql = this.fixSqlSyntax(sql);
+
     return {
       sql,
       explanation: "Generated SQL query based on your question.",
     };
+  }
+
+  /**
+   * Fix common SQL syntax issues
+   * @param sql SQL query to fix
+   * @returns Fixed SQL query
+   */
+  private fixSqlSyntax(sql: string): string {
+    console.log("[LLMService] Fixing SQL syntax");
+
+    // Fix LIMIT clause - PostgreSQL requires LIMIT to be after ORDER BY
+    // If there's a LIMIT clause but no ORDER BY, we need to ensure it's properly placed
+    if (
+      sql.toLowerCase().includes("limit") &&
+      !sql.toLowerCase().includes("order by")
+    ) {
+      // Check if LIMIT is at the end of the query
+      const limitMatch = sql.match(/LIMIT\s+(\d+)\s*$/i);
+      if (limitMatch) {
+        // Extract the limit value
+        const limitValue = limitMatch[1];
+        // Remove the LIMIT clause
+        sql = sql.replace(/LIMIT\s+\d+\s*$/i, "");
+        // Add the LIMIT clause with proper syntax
+        sql = `${sql.trim()} FETCH FIRST ${limitValue} ROWS ONLY`;
+        console.log("[LLMService] Fixed LIMIT clause:", sql);
+      }
+    }
+
+    // Fix LIMIT with OFFSET
+    const limitOffsetMatch = sql.match(/LIMIT\s+(\d+)\s+OFFSET\s+(\d+)/i);
+    if (limitOffsetMatch) {
+      const limitValue = limitOffsetMatch[1];
+      const offsetValue = limitOffsetMatch[2];
+      // Replace with proper PostgreSQL syntax
+      sql = sql.replace(
+        /LIMIT\s+\d+\s+OFFSET\s+\d+/i,
+        `OFFSET ${offsetValue} ROWS FETCH FIRST ${limitValue} ROWS ONLY`
+      );
+      console.log("[LLMService] Fixed LIMIT OFFSET clause:", sql);
+    }
+
+    // Fix standalone LIMIT in the middle of the query
+    const middleLimitMatch = sql.match(/LIMIT\s+(\d+)(?!\s*$)/i);
+    if (middleLimitMatch && !limitOffsetMatch) {
+      const limitValue = middleLimitMatch[1];
+      // Replace with proper PostgreSQL syntax
+      sql = sql.replace(/LIMIT\s+\d+/i, `FETCH FIRST ${limitValue} ROWS ONLY`);
+      console.log("[LLMService] Fixed middle LIMIT clause:", sql);
+    }
+
+    // Fix any remaining LIMIT clauses
+    if (sql.toLowerCase().includes("limit")) {
+      const anyLimitMatch = sql.match(/LIMIT\s+(\d+)/i);
+      if (anyLimitMatch) {
+        const limitValue = anyLimitMatch[1];
+        sql = sql.replace(
+          /LIMIT\s+\d+/i,
+          `FETCH FIRST ${limitValue} ROWS ONLY`
+        );
+        console.log("[LLMService] Fixed any remaining LIMIT clause:", sql);
+      }
+    }
+
+    return sql;
   }
 }
 

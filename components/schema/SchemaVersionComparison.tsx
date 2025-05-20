@@ -394,7 +394,6 @@ const SchemaVersionComparison: React.FC<SchemaVersionComparisonProps> = ({
                 <button
                   onClick={() => {
                     navigator.clipboard.writeText(changeScript);
-                    alert("Change script copied to clipboard");
                   }}
                   className="absolute top-2 right-2 p-1 bg-white dark:bg-gray-800 rounded-md shadow-sm hover:bg-gray-100 dark:hover:bg-gray-700"
                   title="Copy to clipboard"

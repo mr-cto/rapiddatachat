@@ -1,16 +1,10 @@
-import React, {
-  useState,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-} from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import { signOut } from "next-auth/react";
 import { useStableSession } from "../../lib/hooks/useStableSession";
 import { useRouter } from "next/router";
 import Image from "next/image";
 import { Button, Link, Card, ResizablePanel, ResizablePanelGroup } from "../ui";
-import { FaUpload, FaChevronDown, FaChevronUp } from "react-icons/fa";
+import { FaUpload } from "react-icons/fa";
 
 interface ImprovedDashboardLayoutProps {
   children?: React.ReactNode;
@@ -30,17 +24,17 @@ const ImprovedDashboardLayout: React.FC<ImprovedDashboardLayoutProps> = ({
   const { data: session, status, isAuthenticated } = useStableSession();
   const router = useRouter();
   // UI state
-  const [showFileUpload, setShowFileUpload] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(400); // Default width (match minWidth)
   const [isInitialRender, setIsInitialRender] = useState(true);
+  const [filePreviewData, setFilePreviewData] = useState<
+    Record<string, unknown>[] | null
+  >(null);
+  const [fileCount, setFileCount] = useState<number>(0);
 
   // Reference to track initial mount
   const initialMountRef = useRef(true);
 
-  // Memoize child components to prevent re-renders when toggling sections
-  const memoizedFilesPane = useMemo(() => filesPane, [filesPane]);
-
-  // Store sidebar width and panel states in localStorage to persist between sessions
+  // Store sidebar width in localStorage to persist between sessions
   useEffect(() => {
     // Try to get saved width from localStorage
     const savedWidth = localStorage.getItem("sidebarWidth");
@@ -50,18 +44,6 @@ const ImprovedDashboardLayout: React.FC<ImprovedDashboardLayoutProps> = ({
 
     // Mark that initial render is complete
     setIsInitialRender(false);
-
-    // Try to get saved panel states from localStorage
-    const savedPanelStates = localStorage.getItem("panelStates");
-    if (savedPanelStates) {
-      try {
-        const states = JSON.parse(savedPanelStates);
-        if (states.showFileUpload !== undefined)
-          setShowFileUpload(states.showFileUpload);
-      } catch (e) {
-        // Ignore parsing errors
-      }
-    }
 
     // Add event listener to prevent unnecessary re-renders on window focus
     const handleVisibilityChange = () => {
@@ -88,26 +70,6 @@ const ImprovedDashboardLayout: React.FC<ImprovedDashboardLayoutProps> = ({
       (chatInput as HTMLElement).style.left = `${width}px`;
     }
   }, []);
-
-  // Toggle panel visibility and save state to localStorage
-  const togglePanel = useCallback(
-    (panel: "files") => {
-      let newState;
-      switch (panel) {
-        case "files":
-          newState = !showFileUpload;
-          setShowFileUpload(newState);
-          break;
-      }
-
-      // Save panel state to localStorage
-      const panelStates = {
-        showFileUpload: newState,
-      };
-      localStorage.setItem("panelStates", JSON.stringify(panelStates));
-    },
-    [showFileUpload]
-  );
 
   // Redirect to sign-in page if not authenticated
   React.useEffect(() => {
@@ -217,16 +179,7 @@ const ImprovedDashboardLayout: React.FC<ImprovedDashboardLayoutProps> = ({
           defaultLeftWidth={sidebarWidth}
           minLeftWidth={400}
           maxLeftWidth={1200}
-          onResize={(leftWidth) => {
-            setSidebarWidth(leftWidth);
-            localStorage.setItem("sidebarWidth", leftWidth.toString());
-
-            // Force update chat input position
-            const chatInput = document.querySelector(".chat-input-container");
-            if (chatInput) {
-              (chatInput as HTMLElement).style.left = `${leftWidth}px`;
-            }
-          }}
+          onResize={handleSidebarResize}
           className="h-full"
         >
           {/* Left Sidebar - History and Tools */}
@@ -235,29 +188,28 @@ const ImprovedDashboardLayout: React.FC<ImprovedDashboardLayoutProps> = ({
             className="bg-ui-primary border-r border-ui-border flex flex-col"
             scrollable={true}
           >
-            {/* File Upload Section with Toggle */}
-            <div className="border-b border-ui-border">
-              <div
-                className="p-3 bg-ui-secondary flex justify-between items-center cursor-pointer"
-                onClick={() => togglePanel("files")}
-              >
+            {/* File Upload Section - Full Height */}
+            <div className="flex flex-col h-full">
+              <div className="p-3 bg-ui-secondary flex justify-between items-center border-b border-ui-border">
                 <h2 className="text-sm font-semibold text-gray-300 flex items-center">
-                  <FaUpload className="mr-2" /> Upload Data
+                  <FaUpload className="mr-2" /> Files
                 </h2>
-                {showFileUpload ? (
-                  <FaChevronUp size={14} />
-                ) : (
-                  <FaChevronDown size={14} />
-                )}
               </div>
-              <div
-                className={`p-3 transition-all duration-300 ${
-                  showFileUpload
-                    ? "opacity-100"
-                    : "opacity-0 h-0 overflow-hidden p-0"
-                }`}
-              >
-                {filesPane}
+              <div className="flex-1 overflow-y-auto p-3">
+                {React.isValidElement(filesPane)
+                  ? React.cloneElement(filesPane as React.ReactElement<any>, {
+                      onPreviewParsed: (preview: Record<string, unknown>[]) => {
+                        setFilePreviewData(preview);
+                      },
+                      onFileCountChange: (count: number) => {
+                        setFileCount(count);
+                        // Reset file preview data when all files are deleted
+                        if (count === 0) {
+                          setFilePreviewData(null);
+                        }
+                      },
+                    })
+                  : filesPane}
               </div>
             </div>
           </ResizablePanel>
@@ -270,7 +222,27 @@ const ImprovedDashboardLayout: React.FC<ImprovedDashboardLayoutProps> = ({
             {/* Query Results Section - Takes all available space with padding for chat input */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 pb-24">
               <div className="max-w-full break-words">
-                {queryResultsPane || children}
+                {/* Pass file preview data to query results pane if available */}
+                {React.isValidElement(queryResultsPane) && filePreviewData
+                  ? React.cloneElement(
+                      queryResultsPane as React.ReactElement<any>,
+                      {
+                        result:
+                          filePreviewData.length > 0
+                            ? {
+                                sqlQuery: "-- Preview of uploaded file",
+                                explanation:
+                                  "Showing the first 5 records from the uploaded file.",
+                                results: filePreviewData,
+                                executionTime: 0,
+                                totalRows: filePreviewData.length,
+                              }
+                            : null,
+                        isLoading: false,
+                        error: null,
+                      }
+                    )
+                  : queryResultsPane || children}
               </div>
             </div>
 

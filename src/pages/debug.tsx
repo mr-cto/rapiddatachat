@@ -559,9 +559,6 @@ export default function DebugPage({ user }: DebugPageProps) {
                           className="hover:bg-gray-50 cursor-pointer"
                           onClick={() => {
                             console.log("Log details:", log);
-                            alert(
-                              `Log Details:\n${JSON.stringify(log, null, 2)}`
-                            );
                           }}
                         >
                           <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-500">
