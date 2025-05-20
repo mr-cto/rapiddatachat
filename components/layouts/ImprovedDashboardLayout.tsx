@@ -4,7 +4,8 @@ import { useStableSession } from "../../lib/hooks/useStableSession";
 import { useRouter } from "next/router";
 import Image from "next/image";
 import { Button, Link, Card, ResizablePanel, ResizablePanelGroup } from "../ui";
-import { FaUpload } from "react-icons/fa";
+import { FaUpload, FaDatabase } from "react-icons/fa";
+import ColumnManagementPane from "../panels/ColumnManagementPane";
 
 interface ImprovedDashboardLayoutProps {
   children?: React.ReactNode;
@@ -188,28 +189,51 @@ const ImprovedDashboardLayout: React.FC<ImprovedDashboardLayoutProps> = ({
             className="bg-ui-primary border-r border-ui-border flex flex-col"
             scrollable={true}
           >
-            {/* File Upload Section - Full Height */}
+            {/* File Upload and Schema Management Section */}
             <div className="flex flex-col h-full">
-              <div className="p-3 bg-ui-secondary flex justify-between items-center border-b border-ui-border">
-                <h2 className="text-sm font-semibold text-gray-300 flex items-center">
-                  <FaUpload className="mr-2" /> Files
-                </h2>
+              {/* Files Section */}
+              <div className="flex flex-col h-1/2">
+                <div className="p-3 bg-ui-secondary flex justify-between items-center border-b border-ui-border">
+                  <h2 className="text-sm font-semibold text-gray-300 flex items-center">
+                    <FaUpload className="mr-2" /> Files
+                  </h2>
+                </div>
+                <div className="flex-1 overflow-y-auto p-3">
+                  {React.isValidElement(filesPane)
+                    ? React.cloneElement(filesPane as React.ReactElement<any>, {
+                        onPreviewParsed: (
+                          preview: Record<string, unknown>[]
+                        ) => {
+                          setFilePreviewData(preview);
+                        },
+                        onFileCountChange: (count: number) => {
+                          setFileCount(count);
+                          // Reset file preview data when all files are deleted
+                          if (count === 0) {
+                            setFilePreviewData(null);
+                          }
+                        },
+                      })
+                    : filesPane}
+                </div>
               </div>
-              <div className="flex-1 overflow-y-auto p-3">
-                {React.isValidElement(filesPane)
-                  ? React.cloneElement(filesPane as React.ReactElement<any>, {
-                      onPreviewParsed: (preview: Record<string, unknown>[]) => {
-                        setFilePreviewData(preview);
-                      },
-                      onFileCountChange: (count: number) => {
-                        setFileCount(count);
-                        // Reset file preview data when all files are deleted
-                        if (count === 0) {
-                          setFilePreviewData(null);
-                        }
-                      },
-                    })
-                  : filesPane}
+
+              {/* Schema Management Section */}
+              <div className="flex flex-col h-1/2 border-t border-ui-border">
+                <div className="p-3 bg-ui-secondary flex justify-between items-center border-b border-ui-border">
+                  <h2 className="text-sm font-semibold text-gray-300 flex items-center">
+                    <FaDatabase className="mr-2" /> Schema Management
+                  </h2>
+                </div>
+                <div className="flex-1 overflow-y-auto p-3">
+                  <ColumnManagementPane
+                    projectId={router.query.id as string}
+                    onColumnChange={(schema) => {
+                      console.log("Schema selected:", schema?.name);
+                    }}
+                    refreshTrigger={filePreviewData ? 1 : 0}
+                  />
+                </div>
               </div>
             </div>
           </ResizablePanel>
@@ -232,14 +256,16 @@ const ImprovedDashboardLayout: React.FC<ImprovedDashboardLayoutProps> = ({
                             ? {
                                 sqlQuery: "-- Preview of uploaded file",
                                 explanation:
-                                  "Showing the first 5 records from the uploaded file.",
-                                results: filePreviewData,
+                                  "Showing the first 10 records from the uploaded file.",
+                                results: filePreviewData.slice(0, 10), // Ensure we only show 10 records
                                 executionTime: 0,
                                 totalRows: filePreviewData.length,
                               }
                             : null,
                         isLoading: false,
                         error: null,
+                        previewData: filePreviewData,
+                        isPreview: true,
                       }
                     )
                   : queryResultsPane || children}

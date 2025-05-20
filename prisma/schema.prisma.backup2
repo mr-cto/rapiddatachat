@@ -1,0 +1,295 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("RAW_DATABASE_DATABASE_URL")
+}
+
+model Project {
+  id            String         @id @default(uuid())
+  name          String
+  description   String?
+  userId        String         @map("user_id")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  batch_jobs    batch_jobs[]
+  files         File[]
+  globalSchemas GlobalSchema[]
+
+  @@index([userId], map: "idx_projects_user")
+  @@map("projects")
+}
+
+model File {
+  id                    String                @id @default(uuid())
+  userId                String                @map("user_id")
+  filename              String
+  uploadedAt            DateTime              @default(now()) @map("uploaded_at")
+  ingestedAt            DateTime?             @map("ingested_at")
+  sizeBytes             Int                   @map("size_bytes")
+  format                String?
+  status                String                @default("pending")
+  metadata              Json?
+  filepath              String?
+  activationProgress    Int?                  @map("activation_progress")
+  activationStartedAt   DateTime?             @map("activation_started_at")
+  activationCompletedAt DateTime?             @map("activation_completed_at")
+  activationError       String?               @map("activation_error")
+  projectId             String?               @map("project_id")
+  batch_jobs            batch_jobs[]
+  columnMerges          ColumnMerge[]
+  columnMappings        ColumnMapping[]
+  deadLetterQueueItems  DeadLetterQueueItem[]
+  fileErrors            FileError[]
+  project               Project?              @relation(fields: [projectId], references: [id])
+  sources               Source[]
+
+  @@index([userId], map: "idx_files_user")
+  @@index([projectId], map: "idx_files_project")
+  @@map("files")
+}
+
+model GlobalSchema {
+  id          String         @id @default(uuid())
+  projectId   String         @map("project_id")
+  name        String
+  description String?
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  project     Project        @relation(fields: [projectId], references: [id])
+  columns     SchemaColumn[]
+  columnMappings ColumnMapping[]
+
+  @@index([projectId], map: "idx_global_schemas_project")
+  @@map("global_schemas")
+}
+
+model SchemaColumn {
+  id             String       @id @default(uuid())
+  globalSchemaId String       @map("global_schema_id")
+  name           String
+  description    String?
+  dataType       String       @map("data_type")
+  isRequired     Boolean      @default(false) @map("is_required")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  globalSchema   GlobalSchema @relation(fields: [globalSchemaId], references: [id])
+
+  @@unique([globalSchemaId, name])
+  @@index([globalSchemaId], map: "idx_schema_columns_global_schema")
+  @@map("schema_columns")
+}
+
+model Source {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  fileId    String   @map("file_id")
+  file      File     @relation(fields: [fileId], references: [id])
+
+  @@map("sources")
+}
+
+model Query {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  queryText String   @map("query_text")
+  createdAt DateTime @default(now()) @map("created_at")
+  status    String
+  error     String?
+  results   Result[]
+
+  @@index([userId], map: "idx_queries_user")
+  @@index([createdAt], map: "idx_queries_created_at")
+  @@map("queries")
+}
+
+model Result {
+  id         String   @id @default(uuid())
+  queryId    String   @map("query_id")
+  resultData Json?    @map("result_data")
+  createdAt  DateTime @default(now()) @map("created_at")
+  query      Query    @relation(fields: [queryId], references: [id], onDelete: Cascade)
+
+  @@map("results")
+}
+
+model FileError {
+  id        String   @id @default(uuid())
+  fileId    String   @map("file_id")
+  errorType String   @map("error_type")
+  severity  String
+  message   String
+  details   String?
+  timestamp DateTime
+  file      File     @relation(fields: [fileId], references: [id])
+
+  @@map("file_errors")
+}
+
+model DeadLetterQueueItem {
+  id          String    @id @default(uuid())
+  fileId      String    @map("file_id")
+  operation   String
+  payload     String
+  error       String
+  timestamp   DateTime
+  retryCount  Int       @default(0) @map("retry_count")
+  lastRetryAt DateTime? @map("last_retry_at")
+  file        File      @relation(fields: [fileId], references: [id])
+
+  @@map("dead_letter_queue")
+}
+
+model FileData {
+  id         String   @id @default(uuid())
+  fileId     String   @map("file_id")
+  ingestedAt DateTime @default(now()) @map("ingested_at")
+  data       Json
+
+  @@index([fileId], map: "idx_file_data_file")
+  @@map("file_data")
+}
+
+model batch_jobs {
+  id                  String                @id
+  name                String
+  description         String?
+  status              String
+  created_at          DateTime              @default(now())
+  started_at          DateTime?
+  completed_at        DateTime?
+  total_records       Int?
+  processed_records   Int?
+  failed_records      Int?
+  configuration       Json?
+  project_id          String?
+  file_id             String?
+  files               File?                 @relation(fields: [file_id], references: [id])
+  projects            Project?              @relation(fields: [project_id], references: [id])
+  batch_partitions    batch_partitions[]
+  performance_metrics performance_metrics[]
+  resource_usage      resource_usage[]
+  tuning_history      tuning_history[]
+
+  @@index([file_id], map: "idx_batch_jobs_file_id")
+  @@index([project_id], map: "idx_batch_jobs_project_id")
+  @@index([status], map: "idx_batch_jobs_status")
+}
+
+model batch_partitions {
+  id                  String                @id
+  job_id              String
+  partition_number    Int
+  status              String
+  created_at          DateTime              @default(now())
+  started_at          DateTime?
+  completed_at        DateTime?
+  total_records       Int?
+  processed_records   Int?
+  failed_records      Int?
+  partition_data      Json?
+  batch_jobs          batch_jobs            @relation(fields: [job_id], references: [id], onDelete: Cascade)
+  performance_metrics performance_metrics[]
+
+  @@index([job_id], map: "idx_batch_partitions_job_id")
+  @@index([status], map: "idx_batch_partitions_status")
+}
+
+model performance_metrics {
+  id               String            @id
+  component        String
+  metric_name      String
+  metric_value     Float
+  timestamp        DateTime          @default(now())
+  context          Json?
+  job_id           String?
+  partition_id     String?
+  batch_jobs       batch_jobs?       @relation(fields: [job_id], references: [id], onDelete: Cascade)
+  batch_partitions batch_partitions? @relation(fields: [partition_id], references: [id], onDelete: Cascade)
+
+  @@index([component], map: "idx_performance_metrics_component")
+  @@index([job_id], map: "idx_performance_metrics_job_id")
+  @@index([metric_name], map: "idx_performance_metrics_metric_name")
+  @@index([timestamp], map: "idx_performance_metrics_timestamp")
+}
+
+model resource_usage {
+  id            String      @id
+  resource_type String
+  resource_name String
+  usage_value   Float
+  timestamp     DateTime    @default(now())
+  context       Json?
+  job_id        String?
+  batch_jobs    batch_jobs? @relation(fields: [job_id], references: [id], onDelete: Cascade)
+
+  @@index([job_id], map: "idx_resource_usage_job_id")
+  @@index([resource_name], map: "idx_resource_usage_resource_name")
+  @@index([resource_type], map: "idx_resource_usage_resource_type")
+  @@index([timestamp], map: "idx_resource_usage_timestamp")
+}
+
+model tuning_history {
+  id             String      @id
+  parameter_name String
+  old_value      String
+  new_value      String
+  reason         String?
+  effectiveness  Float?
+  timestamp      DateTime    @default(now())
+  job_id         String?
+  batch_jobs     batch_jobs? @relation(fields: [job_id], references: [id], onDelete: Cascade)
+
+  @@index([job_id], map: "idx_tuning_history_job_id")
+  @@index([parameter_name], map: "idx_tuning_history_parameter_name")
+  @@index([timestamp], map: "idx_tuning_history_timestamp")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([email], map: "idx_users_email")
+  @@map("users")
+}
+
+model ColumnMerge {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  fileId     String   @map("file_id")
+  mergeName  String   @map("merge_name")
+  columnList String[] @map("column_list")
+  delimiter  String   @default(" ")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  file       File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "idx_column_merges_user_id")
+  @@index([fileId], map: "idx_column_merges_file_id")
+  @@map("column_merges")
+}
+
+model ColumnMapping {
+  id                String   @id @default(uuid())
+  fileId            String   @map("file_id")
+  globalSchemaId    String   @map("global_schema_id")
+  schemaColumnId    String   @map("schema_column_id")
+  fileColumn        String   @map("file_column")
+  transformationRule String?  @map("transformation_rule")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  file              File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  globalSchema      GlobalSchema @relation(fields: [globalSchemaId], references: [id], onDelete: Cascade)
+
+  @@index([fileId], map: "idx_column_mappings_file_id")
+  @@index([globalSchemaId], map: "idx_column_mappings_schema_id")
+  @@map("column_mappings")
+}

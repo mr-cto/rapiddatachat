@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
+import Modal from "./Modal";
 import {
+  ColumnMapping,
   GlobalSchema,
   SchemaColumn,
-  ColumnMapping,
 } from "../lib/schemaManagement";
-import Modal from "./Modal";
+import { v4 as uuidv4 } from "uuid";
 
-interface SchemaColumnMapperProps {
+interface ImprovedSchemaColumnMapperProps {
   isOpen: boolean;
   onClose: () => void;
   fileId: string;
@@ -16,41 +17,47 @@ interface SchemaColumnMapperProps {
   onMappingComplete?: (mapping: ColumnMapping) => void;
 }
 
-/**
- * Interface for column sample data
- */
-interface ColumnSampleData {
+interface ColumnSample {
   name: string;
   sampleValues: string[];
   dataType: string;
 }
 
+interface ColumnMappingItem {
+  fileColumn: string;
+  schemaColumn: string;
+  addToSchema?: boolean;
+}
+
 /**
- * SchemaColumnMapper component for mapping file columns to schema columns
+ * ImprovedSchemaColumnMapper - A better approach to mapping file columns to schema columns
+ * that focuses on correctly displaying the actual column names
  */
-const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
+export const ImprovedSchemaColumnMapper: React.FC<
+  ImprovedSchemaColumnMapperProps
+> = ({
   isOpen,
   onClose,
   fileId,
-  fileColumns,
+  fileColumns: initialFileColumns,
   userId,
   projectId,
   onMappingComplete,
 }) => {
+  // State for schemas
   const [schemas, setSchemas] = useState<GlobalSchema[]>([]);
   const [selectedSchema, setSelectedSchema] = useState<GlobalSchema | null>(
     null
   );
-  const [mappings, setMappings] = useState<
-    Array<{
-      fileColumn: string;
-      schemaColumn: string;
-      addToSchema?: boolean;
-    }>
-  >([]);
-  const [columnSampleData, setColumnSampleData] = useState<ColumnSampleData[]>(
-    []
-  );
+
+  // State for file columns and sample data
+  const [fileColumns, setFileColumns] = useState<string[]>(initialFileColumns);
+  const [columnSamples, setColumnSamples] = useState<ColumnSample[]>([]);
+
+  // State for column mappings
+  const [mappings, setMappings] = useState<ColumnMappingItem[]>([]);
+
+  // UI state
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<"select-schema" | "map-columns" | "review">(
@@ -58,64 +65,65 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
   );
   const [searchTerm, setSearchTerm] = useState<string>("");
 
-  // Initialize column data immediately on mount
+  // Track if this component has already been processed for this file
+  const [hasProcessed, setHasProcessed] = useState<boolean>(false);
+
+  // Fetch schemas when component mounts
   useEffect(() => {
-    if (isOpen && fileColumns.length > 0) {
-      // Create initial column data with just names
-      const initialData: ColumnSampleData[] = fileColumns.map((columnName) => ({
-        name: columnName,
-        sampleValues: [],
-        dataType: "text",
-      }));
-      setColumnSampleData(initialData);
-
-      // If we have a fileId, fetch the file metadata to get actual column names
-      if (fileId) {
-        fetch(`/api/files/${fileId}`)
-          .then((response) => {
-            if (response.ok) {
-              return response.json();
-            }
-            throw new Error(
-              `Failed to fetch file metadata: ${response.statusText}`
-            );
-          })
-          .then((data) => {
-            // If we have columns in the metadata, use those directly
-            if (
-              data.file?.metadata?.columns &&
-              Array.isArray(data.file.metadata.columns) &&
-              data.file.metadata.columns.length > 0
-            ) {
-              console.log(
-                "Using columns from file metadata on mount:",
-                data.file.metadata.columns
-              );
-
-              // Create initial column data with actual column names
-              const actualColumnData: ColumnSampleData[] =
-                data.file.metadata.columns.map((columnName: string) => ({
-                  name: columnName,
-                  sampleValues: [],
-                  dataType: "text",
-                }));
-              setColumnSampleData(actualColumnData);
-            }
-          })
-          .catch((error) => {
-            console.warn("Error fetching file metadata on mount:", error);
-            // Continue with the provided fileColumns
-          });
-      }
-    }
-  }, [isOpen, fileColumns, fileId]);
-
-  // Fetch schemas on component mount
-  useEffect(() => {
-    if (isOpen && userId) {
+    if (isOpen && userId && !hasProcessed) {
       fetchSchemas();
     }
-  }, [isOpen, userId, projectId]);
+  }, [isOpen, userId, projectId, hasProcessed]);
+
+  // Fetch actual column names and sample data when component mounts
+  useEffect(() => {
+    if (isOpen && fileId && !hasProcessed) {
+      // Check if this file has already been processed
+      checkFileProcessingStatus();
+    }
+  }, [isOpen, fileId, hasProcessed]);
+
+  /**
+   * Check if the file is already being processed or active
+   */
+  const checkFileProcessingStatus = async () => {
+    try {
+      const response = await fetch(`/api/files/${fileId}`);
+      if (response.ok) {
+        const data = await response.json();
+        const fileStatus = data.file?.status;
+
+        console.log(`File ${fileId} status: ${fileStatus}`);
+
+        // If the file is already being processed or is active, don't show the mapper
+        if (fileStatus === "processing" || fileStatus === "active") {
+          console.log(
+            `File ${fileId} is already ${fileStatus}, skipping column mapping`
+          );
+          setHasProcessed(true);
+          onClose(); // Close the mapper
+
+          // If there's a completion callback, call it with empty mapping
+          if (onMappingComplete) {
+            onMappingComplete({
+              fileId,
+              schemaId: "",
+              mappings: {},
+              newColumnsAdded: 0,
+            });
+          }
+          return;
+        }
+
+        // Otherwise, fetch the column names
+        fetchActualColumnNames();
+      }
+    } catch (err) {
+      console.error("Error checking file status:", err);
+      // Continue with column mapping if we can't check the status
+      fetchActualColumnNames();
+    }
+  };
 
   // Initialize mappings when schema is selected
   useEffect(() => {
@@ -124,14 +132,163 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
     }
   }, [selectedSchema, fileColumns]);
 
-  // Fetch sample data for columns when fileId is available and we're in the mapping step
-  useEffect(() => {
-    if (isOpen && fileId && step === "map-columns") {
-      fetchColumnSampleData();
-    }
-  }, [isOpen, fileId, step]);
+  /**
+   * Fetch actual column names from the file
+   */
+  const fetchActualColumnNames = async () => {
+    try {
+      setIsLoading(true);
 
-  // Fetch all schemas for the user
+      // First try to get column names from file metadata
+      const fileResponse = await fetch(`/api/files/${fileId}`);
+      if (fileResponse.ok) {
+        const fileData = await fileResponse.json();
+        console.log("File metadata:", fileData);
+
+        if (
+          fileData.file?.metadata?.columns &&
+          Array.isArray(fileData.file.metadata.columns) &&
+          fileData.file.metadata.columns.length > 0
+        ) {
+          console.log(
+            "Using columns from file metadata:",
+            fileData.file.metadata.columns
+          );
+          setFileColumns(fileData.file.metadata.columns);
+
+          // Initialize empty sample data
+          const initialSamples = fileData.file.metadata.columns.map(
+            (col: string) => ({
+              name: col,
+              sampleValues: [],
+              dataType: "text",
+            })
+          );
+          setColumnSamples(initialSamples);
+
+          // Fetch sample data in the background
+          fetchSampleData(fileData.file.metadata.columns);
+          return;
+        }
+      }
+
+      // If metadata doesn't have columns, try to get from parsed data
+      const dataResponse = await fetch(
+        `/api/file-parsed-data/${fileId}?limit=5`
+      );
+      if (dataResponse.ok) {
+        const parsedData = await dataResponse.json();
+        console.log("Parsed data:", parsedData);
+
+        if (parsedData.data && parsedData.data.length > 0) {
+          // Extract column names from the first row
+          const extractedColumns = Object.keys(parsedData.data[0]);
+          console.log("Extracted columns from parsed data:", extractedColumns);
+
+          if (extractedColumns.length > 0) {
+            setFileColumns(extractedColumns);
+
+            // Extract sample values and detect data types
+            const samples = extractSamplesFromData(
+              extractedColumns,
+              parsedData.data
+            );
+            setColumnSamples(samples);
+            return;
+          }
+        }
+      }
+
+      // If all else fails, use the provided fileColumns
+      console.log("Using provided file columns:", initialFileColumns);
+      setFileColumns(initialFileColumns);
+
+      // Initialize empty sample data
+      const fallbackSamples = initialFileColumns.map((col) => ({
+        name: col,
+        sampleValues: [],
+        dataType: "text",
+      }));
+      setColumnSamples(fallbackSamples);
+    } catch (err) {
+      console.error("Error fetching column names:", err);
+      setError(
+        "Failed to fetch column names. Using provided column names instead."
+      );
+
+      // Use provided columns as fallback
+      setFileColumns(initialFileColumns);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /**
+   * Extract sample values and detect data types from parsed data
+   */
+  const extractSamplesFromData = (
+    columns: string[],
+    data: any[]
+  ): ColumnSample[] => {
+    return columns.map((column) => {
+      // Extract up to 5 sample values
+      const values = data
+        .slice(0, 5)
+        .map((row) => row[column])
+        .filter((val) => val !== undefined && val !== null)
+        .map((val) => String(val));
+
+      // Detect data type
+      let dataType = "text";
+      if (values.length > 0) {
+        const firstValue = values[0];
+        if (!isNaN(Number(firstValue))) {
+          dataType = "number";
+        } else if (
+          typeof firstValue === "string" &&
+          !isNaN(Date.parse(firstValue))
+        ) {
+          dataType = "date";
+        } else if (
+          typeof firstValue === "string" &&
+          (firstValue.toLowerCase() === "true" ||
+            firstValue.toLowerCase() === "false")
+        ) {
+          dataType = "boolean";
+        }
+      }
+
+      return {
+        name: column,
+        sampleValues: values,
+        dataType,
+      };
+    });
+  };
+
+  /**
+   * Fetch sample data for columns
+   */
+  const fetchSampleData = async (columns: string[]) => {
+    try {
+      const response = await fetch(`/api/file-parsed-data/${fileId}?limit=5`);
+      if (response.ok) {
+        const parsedData = await response.json();
+
+        if (parsedData.data && parsedData.data.length > 0) {
+          const samples = extractSamplesFromData(columns, parsedData.data);
+          setColumnSamples(samples);
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching sample data:", err);
+      // Don't set error state to avoid blocking the UI
+    }
+  };
+
+  /**
+   * Fetch all schemas for the user
+   */
   const fetchSchemas = async () => {
     try {
       setIsLoading(true);
@@ -186,217 +343,9 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
     }
   };
 
-  // Fetch sample data for columns
-  const fetchColumnSampleData = async () => {
-    try {
-      // Create minimal sample data first to ensure column names display immediately
-      const initialData: ColumnSampleData[] = fileColumns.map((columnName) => ({
-        name: columnName,
-        sampleValues: [],
-        dataType: "text",
-      }));
-      setColumnSampleData(initialData);
-
-      // Don't block UI with loading state
-      const localLoading = true;
-      setError(null);
-
-      // Use a smaller limit to improve performance
-      const response = await fetch(`/api/file-parsed-data/${fileId}?limit=3`);
-      if (!response.ok) {
-        console.warn(`Failed to fetch sample data: ${response.statusText}`);
-        return; // Already set initial data with column names
-      }
-
-      const data = await response.json();
-
-      if (!data.data || !Array.isArray(data.data) || data.data.length === 0) {
-        console.warn("No sample data available");
-        return; // Already set initial data with column names
-      }
-
-      // Try to extract actual column names from the parsed data
-      if (data.data.length > 0 && typeof data.data[0] === "object") {
-        const actualColumnNames = Object.keys(data.data[0]);
-        if (actualColumnNames.length > 0) {
-          console.log(
-            "Extracted actual column names from parsed data:",
-            actualColumnNames
-          );
-
-          // Create new mappings with the actual column names
-          const newMappings = actualColumnNames.map((columnName) => {
-            // Try to find a matching schema column by name
-            const matchingSchemaColumn = selectedSchema
-              ? findMatchingSchemaColumn(columnName, selectedSchema.columns)
-              : undefined;
-
-            return {
-              fileColumn: columnName,
-              schemaColumn: matchingSchemaColumn?.name || "",
-              addToSchema: false,
-            };
-          });
-
-          // Update mappings with actual column names
-          setMappings(newMappings);
-
-          // Extract sample values for each column
-          const sampleData: ColumnSampleData[] = actualColumnNames.map(
-            (columnName) => {
-              // Only process up to 3 values for performance
-              const values = [];
-              for (let i = 0; i < Math.min(data.data.length, 3); i++) {
-                const val = data.data[i][columnName];
-                if (val !== undefined && val !== null) {
-                  values.push(String(val));
-                }
-              }
-
-              // Simple data type detection
-              let dataType = "text";
-              if (values.length > 0) {
-                const firstValue = values[0];
-                if (!isNaN(Number(firstValue))) {
-                  dataType = "number";
-                } else if (
-                  typeof firstValue === "string" &&
-                  !isNaN(Date.parse(firstValue))
-                ) {
-                  dataType = "date";
-                }
-              }
-
-              return {
-                name: columnName,
-                sampleValues: values,
-                dataType,
-              };
-            }
-          );
-
-          setColumnSampleData(sampleData);
-          return;
-        }
-      }
-
-      // Fallback: check if the file metadata already has columns
-      const fileResponse = await fetch(`/api/files/${fileId}`);
-      if (fileResponse.ok) {
-        const fileData = await fileResponse.json();
-        console.log("File metadata for column extraction:", fileData);
-
-        // If we have columns in the metadata, use those directly
-        if (
-          fileData.file?.metadata?.columns &&
-          Array.isArray(fileData.file.metadata.columns) &&
-          fileData.file.metadata.columns.length > 0
-        ) {
-          console.log(
-            "Using columns from file metadata:",
-            fileData.file.metadata.columns
-          );
-
-          // Create new mappings with the actual column names from metadata
-          const metadataColumns = fileData.file.metadata.columns;
-          const newMappings = metadataColumns.map((columnName: string) => {
-            // Try to find a matching schema column by name
-            const matchingSchemaColumn = selectedSchema
-              ? findMatchingSchemaColumn(columnName, selectedSchema.columns)
-              : undefined;
-
-            return {
-              fileColumn: columnName,
-              schemaColumn: matchingSchemaColumn?.name || "",
-              addToSchema: false,
-            };
-          });
-
-          // Update mappings with actual column names from metadata
-          setMappings(newMappings);
-
-          // Extract sample values for each column from the data
-          const sampleData: ColumnSampleData[] = metadataColumns.map(
-            (columnName: string) => {
-              // Only process up to 3 values for performance
-              const values = [];
-              for (let i = 0; i < Math.min(data.data.length, 3); i++) {
-                const val = data.data[i][columnName];
-                if (val !== undefined && val !== null) {
-                  values.push(String(val));
-                }
-              }
-
-              // Simple data type detection
-              let dataType = "text";
-              if (values.length > 0) {
-                const firstValue = values[0];
-                if (!isNaN(Number(firstValue))) {
-                  dataType = "number";
-                } else if (
-                  typeof firstValue === "string" &&
-                  !isNaN(Date.parse(firstValue))
-                ) {
-                  dataType = "date";
-                }
-              }
-
-              return {
-                name: columnName,
-                sampleValues: values,
-                dataType,
-              };
-            }
-          );
-
-          setColumnSampleData(sampleData);
-          return;
-        }
-      }
-
-      // If we couldn't get columns from metadata, extract from data
-      const sampleData: ColumnSampleData[] = fileColumns.map((columnName) => {
-        // Only process up to 3 values for performance
-        const values = [];
-        for (let i = 0; i < Math.min(data.data.length, 3); i++) {
-          const val = data.data[i][columnName];
-          if (val !== undefined && val !== null) {
-            values.push(String(val));
-          }
-        }
-
-        // Simple data type detection
-        let dataType = "text";
-        if (values.length > 0) {
-          const firstValue = values[0];
-          if (!isNaN(Number(firstValue))) {
-            dataType = "number";
-          } else if (
-            typeof firstValue === "string" &&
-            !isNaN(Date.parse(firstValue))
-          ) {
-            dataType = "date";
-          }
-        }
-
-        return {
-          name: columnName,
-          sampleValues: values,
-          dataType,
-        };
-      });
-
-      setColumnSampleData(sampleData);
-    } catch (err) {
-      console.error("Error fetching column sample data:", err);
-      // Don't set error state to avoid blocking the UI
-      // We already have the column names displayed
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Initialize mappings based on column name similarity
+  /**
+   * Initialize mappings based on column name similarity
+   */
   const initializeMappings = () => {
     if (!selectedSchema) return;
 
@@ -417,7 +366,9 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
     setMappings(initialMappings);
   };
 
-  // Find a matching schema column based on name similarity
+  /**
+   * Find a matching schema column based on name similarity
+   */
   const findMatchingSchemaColumn = (
     fileColumn: string,
     schemaColumns: SchemaColumn[]
@@ -457,14 +408,18 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
     return match;
   };
 
-  // Handle schema selection
+  /**
+   * Handle schema selection
+   */
   const handleSchemaSelect = (schemaId: string) => {
     const schema = schemas.find((s) => s.id === schemaId);
     setSelectedSchema(schema || null);
     setStep("map-columns");
   };
 
-  // Update a mapping
+  /**
+   * Update a mapping
+   */
   const updateMapping = (fileColumn: string, schemaColumn: string) => {
     setMappings(
       mappings.map((m) =>
@@ -473,7 +428,9 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
     );
   };
 
-  // Toggle add to schema option
+  /**
+   * Toggle add to schema option
+   */
   const toggleAddToSchema = (fileColumn: string) => {
     setMappings(
       mappings.map((m) =>
@@ -482,7 +439,9 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
     );
   };
 
-  // Save the column mapping
+  /**
+   * Save the column mapping
+   */
   const saveMapping = async () => {
     if (!selectedSchema) return;
 
@@ -580,6 +539,9 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
       const data = await response.json();
 
       if (data.success) {
+        // Mark this file as processed to prevent duplicate processing
+        setHasProcessed(true);
+
         if (onMappingComplete) {
           // Include information about new columns added in the response
           const responseData = {
@@ -603,7 +565,9 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
     }
   };
 
-  // Navigate to the next step
+  /**
+   * Navigate to the next step
+   */
   const nextStep = () => {
     if (step === "select-schema") {
       setStep("map-columns");
@@ -612,7 +576,9 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
     }
   };
 
-  // Navigate to the previous step
+  /**
+   * Navigate to the previous step
+   */
   const prevStep = () => {
     if (step === "map-columns") {
       setStep("select-schema");
@@ -729,7 +695,7 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredMappings.map((mapping, index) => {
                 // Find sample data for this column
-                const sampleData = columnSampleData.find(
+                const sampleData = columnSamples.find(
                   (col) => col.name === mapping.fileColumn
                 );
 
@@ -992,7 +958,7 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
                 .filter((m) => m.schemaColumn || m.addToSchema)
                 .map((mapping, index) => {
                   // Find sample data for this column
-                  const sampleData = columnSampleData.find(
+                  const sampleData = columnSamples.find(
                     (col) => col.name === mapping.fileColumn
                   );
 
@@ -1087,7 +1053,7 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Map Columns to Schema"
+      title="Column Mapping"
       maxWidth="max-w-4xl"
     >
       {error && (
@@ -1184,5 +1150,3 @@ const SchemaColumnMapper: React.FC<SchemaColumnMapperProps> = ({
     </Modal>
   );
 };
-
-export default SchemaColumnMapper;

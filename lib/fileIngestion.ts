@@ -266,6 +266,51 @@ export async function processXLSXStreaming(
 
     // Extract headers from the first row with proper handling
     const headers: string[] = [];
+
+    // First, try to convert the sheet to JSON to get the actual column names
+    try {
+      // Convert the worksheet to JSON with header row
+      const jsonData = xlsx.utils.sheet_to_json(worksheet, {
+        header: 1, // Use first row as headers
+        raw: false, // Convert values to appropriate types
+        defval: null, // Default value for empty cells
+      });
+
+      // If we have data and the first row has values, use those as headers
+      if (jsonData && jsonData.length > 0 && Array.isArray(jsonData[0])) {
+        const headerRow = jsonData[0];
+
+        // Use the actual column names from the first row
+        for (let i = 0; i < headerRow.length; i++) {
+          const headerName = headerRow[i];
+          // Only use generic column names if the header is empty
+          headers.push(headerName ? String(headerName) : `Column${i + 1}`);
+        }
+
+        console.log(
+          `Extracted ${headers.length} headers from XLSX using sheet_to_json`
+        );
+
+        // Call the headers extracted callback if provided
+        if (onHeadersExtracted) {
+          try {
+            // Wait for headers to be processed and stored
+            await onHeadersExtracted(headers);
+            console.log("XLSX headers processed and stored successfully");
+          } catch (headerError) {
+            console.error("Error processing XLSX headers:", headerError);
+            // Continue even if header processing fails
+          }
+        }
+
+        return { headers, rowCount: jsonData.length - 1 }; // Subtract 1 for header row
+      }
+    } catch (jsonError) {
+      console.warn("Error extracting headers using sheet_to_json:", jsonError);
+      // Continue with fallback method
+    }
+
+    // Fallback: Extract headers cell by cell
     for (let col = range.s.c; col <= range.e.c; col++) {
       const cellAddress = xlsx.utils.encode_cell({ r: range.s.r, c: col });
       const cell = worksheet[cellAddress];
@@ -473,17 +518,54 @@ export async function processFileStreaming(
     `Processing file ${fileId} (${format}) with streaming and batch size ${batchSize}`
   );
 
-  switch (format.toLowerCase()) {
-    case FileFormat.CSV:
-      return processCSVStreaming(
-        filePath,
-        fileId,
-        sourceId,
-        batchSize,
-        onProgress,
-        onHeadersExtracted
-      );
-    case FileFormat.XLSX:
+  // Normalize the format string by trimming and converting to lowercase
+  const normalizedFormat = format.toLowerCase().trim();
+
+  // Check if the format contains xlsx or xls
+  if (
+    normalizedFormat === "xlsx" ||
+    normalizedFormat === "xls" ||
+    normalizedFormat.includes("excel") ||
+    normalizedFormat.endsWith(".xlsx") ||
+    normalizedFormat.endsWith(".xls")
+  ) {
+    console.log(`Detected Excel format (${format}), using XLSX processor`);
+    return processXLSXStreaming(
+      filePath,
+      fileId,
+      sourceId,
+      batchSize,
+      onProgress,
+      onHeadersExtracted
+    );
+  }
+  // Check if the format contains csv
+  else if (
+    normalizedFormat === "csv" ||
+    normalizedFormat.includes("csv") ||
+    normalizedFormat.endsWith(".csv")
+  ) {
+    console.log(`Detected CSV format (${format}), using CSV processor`);
+    return processCSVStreaming(
+      filePath,
+      fileId,
+      sourceId,
+      batchSize,
+      onProgress,
+      onHeadersExtracted
+    );
+  }
+  // If we can't determine the format, try to guess from the file path
+  else {
+    console.warn(
+      `Unknown format: ${format}, trying to determine from file path: ${filePath}`
+    );
+
+    if (
+      filePath.toLowerCase().endsWith(".xlsx") ||
+      filePath.toLowerCase().endsWith(".xls")
+    ) {
+      console.log(`Detected Excel format from file path, using XLSX processor`);
       return processXLSXStreaming(
         filePath,
         fileId,
@@ -492,8 +574,21 @@ export async function processFileStreaming(
         onProgress,
         onHeadersExtracted
       );
-    default:
-      throw new Error(`Unsupported file format for streaming: ${format}`);
+    } else if (filePath.toLowerCase().endsWith(".csv")) {
+      console.log(`Detected CSV format from file path, using CSV processor`);
+      return processCSVStreaming(
+        filePath,
+        fileId,
+        sourceId,
+        batchSize,
+        onProgress,
+        onHeadersExtracted
+      );
+    } else {
+      throw new Error(
+        `Unsupported file format for streaming: ${format} (path: ${filePath})`
+      );
+    }
   }
 }
 

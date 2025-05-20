@@ -9,7 +9,7 @@ import React, {
 import { useRouter } from "next/router";
 import { useStableSession } from "../../lib/hooks/useStableSession";
 import { FaFile, FaTrash, FaEye, FaUpload } from "react-icons/fa";
-import SchemaColumnMapper from "../SchemaColumnMapper";
+import { ImprovedSchemaColumnMapper } from "../ImprovedSchemaColumnMapper";
 import { Button, Card } from "../ui";
 import { v4 as uuidv4 } from "uuid";
 import { parseFileClient } from "../../utils/clientParse";
@@ -786,15 +786,25 @@ const FilesPane: React.FC<FilesPaneProps> = ({
     }
 
     if (valid.length > 0) {
-      if (onPreviewParsed) {
-        try {
-          const preview = await parseFileClient(valid[0]);
+      try {
+        // Parse the file to get preview data
+        const preview = await parseFileClient(valid[0]);
+
+        // Pass preview data to parent component if callback exists
+        if (onPreviewParsed) {
           onPreviewParsed(preview);
-        } catch (err) {
-          console.warn("Preview parsing failed", err);
         }
+
+        // Pass the preview data to handleFilesUpload
+        handleFilesUpload(valid, undefined, {
+          previewData: preview,
+          showPreview: true,
+        });
+      } catch (err) {
+        console.warn("Preview parsing failed", err);
+        // Continue with upload even if preview fails
+        handleFilesUpload(valid);
       }
-      handleFilesUpload(valid);
     }
   };
 
@@ -1138,7 +1148,38 @@ const FilesPane: React.FC<FilesPaneProps> = ({
               if (!hasSchema) {
                 setUploadStatus("Creating schema with all columns...");
 
-                // Create schema with all columns
+                // Get the actual column names from the file metadata
+                let actualColumns = columnsToInclude;
+
+                try {
+                  // Try to get the actual column names from the file metadata
+                  const fileResponse = await fetch(`/api/files/${fileId}`);
+                  if (fileResponse.ok) {
+                    const fileData = await fileResponse.json();
+                    console.log("File metadata for schema creation:", fileData);
+
+                    // Check if we have columns in the metadata
+                    if (
+                      fileData.file?.metadata?.columns &&
+                      Array.isArray(fileData.file.metadata.columns) &&
+                      fileData.file.metadata.columns.length > 0
+                    ) {
+                      actualColumns = fileData.file.metadata.columns;
+                      console.log(
+                        "Using actual columns from file metadata:",
+                        actualColumns
+                      );
+                    }
+                  }
+                } catch (err) {
+                  console.warn(
+                    "Error fetching file metadata for schema creation:",
+                    err
+                  );
+                  // Continue with columnsToInclude if we can't get the actual columns
+                }
+
+                // Create schema with actual columns from file metadata
                 const createSchemaResponse = await fetch(
                   "/api/schema-management",
                   {
@@ -1150,7 +1191,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
                       action: "create_with_columns",
                       name: "Auto-generated Schema",
                       description: "Automatically created from file upload",
-                      columns: columnsToInclude.map((col) => ({
+                      columns: actualColumns.map((col) => ({
                         id: uuidv4(),
                         name: col,
                         type: "text",
@@ -1170,17 +1211,11 @@ const FilesPane: React.FC<FilesPaneProps> = ({
                 const schemaData = await createSchemaResponse.json();
                 console.log("Auto-created schema:", schemaData);
 
-                // Activate the file
-                const activateResponse = await fetch(
-                  `/api/activate-file/${fileId}`,
-                  {
-                    method: "POST",
-                  }
+                // We no longer activate the file here
+                // The file will be activated after column mapping is done
+                console.log(
+                  "File will be activated after column mapping is complete"
                 );
-
-                if (!activateResponse.ok) {
-                  console.warn("Failed to activate file, but continuing");
-                }
 
                 setSuccessMessage(
                   "File uploaded and schema created automatically with all columns!"
@@ -1231,7 +1266,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
                   // Show the schema mapper modal
                   setTimeout(() => {
                     setShowSchemaMapper(true);
-                  }, 1000);
+                  }, 100);
 
                   return;
                 } else {
@@ -1295,17 +1330,11 @@ const FilesPane: React.FC<FilesPaneProps> = ({
                     );
                   }
 
-                  // Activate the file
-                  const activateResponse = await fetch(
-                    `/api/activate-file/${fileId}`,
-                    {
-                      method: "POST",
-                    }
+                  // We no longer activate the file here
+                  // The file will be activated after column mapping is done
+                  console.log(
+                    "File will be activated after column mapping is complete"
                   );
-
-                  if (!activateResponse.ok) {
-                    console.warn("Failed to activate file, but continuing");
-                  }
 
                   setSuccessMessage(
                     "File uploaded and automatically mapped to existing schema!"
@@ -1387,16 +1416,11 @@ const FilesPane: React.FC<FilesPaneProps> = ({
                 );
 
                 // Activate the file
-                const activateResponse = await fetch(
-                  `/api/activate-file/${fileId}`,
-                  {
-                    method: "POST",
-                  }
+                // We no longer activate the file here
+                // The file will be activated after column mapping is done
+                console.log(
+                  "File will be activated after column mapping is complete"
                 );
-
-                if (!activateResponse.ok) {
-                  console.warn("Failed to activate file, but continuing");
-                }
 
                 setSuccessMessage(
                   "File uploaded and schema created automatically with default columns!"
@@ -1449,16 +1473,11 @@ const FilesPane: React.FC<FilesPaneProps> = ({
                 }
 
                 // Activate the file
-                const activateResponse = await fetch(
-                  `/api/activate-file/${fileId}`,
-                  {
-                    method: "POST",
-                  }
+                // We no longer activate the file here
+                // The file will be activated after column mapping is done
+                console.log(
+                  "File will be activated after column mapping is complete"
                 );
-
-                if (!activateResponse.ok) {
-                  console.warn("Failed to activate file, but continuing");
-                }
 
                 setSuccessMessage(
                   "File uploaded and automatically mapped with default columns!"
@@ -1539,16 +1558,11 @@ const FilesPane: React.FC<FilesPaneProps> = ({
               );
 
               // Activate the file
-              const activateResponse = await fetch(
-                `/api/activate-file/${fileId}`,
-                {
-                  method: "POST",
-                }
+              // We no longer activate the file here
+              // The file will be activated after column mapping is done
+              console.log(
+                "File will be activated after column mapping is complete"
               );
-
-              if (!activateResponse.ok) {
-                console.warn("Failed to activate file, but continuing");
-              }
 
               setSuccessMessage(
                 "File uploaded and schema created automatically with default columns!"
@@ -1656,16 +1670,11 @@ const FilesPane: React.FC<FilesPaneProps> = ({
                 }
 
                 // Activate the file
-                const activateResponse = await fetch(
-                  `/api/activate-file/${fileId}`,
-                  {
-                    method: "POST",
-                  }
+                // We no longer activate the file here
+                // The file will be activated after column mapping is done
+                console.log(
+                  "File will be activated after column mapping is complete"
                 );
-
-                if (!activateResponse.ok) {
-                  console.warn("Failed to activate file, but continuing");
-                }
 
                 setSuccessMessage(
                   "File uploaded and automatically mapped with default columns!"
@@ -2234,7 +2243,7 @@ const FilesPane: React.FC<FilesPaneProps> = ({
 
       {/* Schema Column Mapper Modal */}
       {showSchemaMapper && uploadedFileId && (
-        <SchemaColumnMapper
+        <ImprovedSchemaColumnMapper
           isOpen={showSchemaMapper}
           onClose={() => {
             setShowSchemaMapper(false);
@@ -2244,7 +2253,12 @@ const FilesPane: React.FC<FilesPaneProps> = ({
           fileColumns={uploadedFileColumns}
           userId={userId || ""}
           projectId={projectId}
-          onMappingComplete={(mapping) => {
+          onMappingComplete={(mapping: {
+            fileId: string;
+            schemaId: string;
+            mappings: Record<string, string>;
+            newColumnsAdded?: number;
+          }) => {
             setShowSchemaMapper(false);
             setUploadedFileId(null);
             setUploadedFileColumns([]);

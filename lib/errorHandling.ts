@@ -1,6 +1,11 @@
 import { FileStatus, updateFileStatus } from "./fileIngestion";
 import { executeQuery } from "./database";
 
+// Declare global type for retry operations tracking
+declare global {
+  var retryOperationsInProgress: Map<string, boolean>;
+}
+
 // Define error types
 export enum ErrorType {
   VALIDATION = "validation",
@@ -140,41 +145,91 @@ export async function handleFileError(
 }
 
 /**
- * Implement retry mechanism with exponential backoff
+ * Implement retry mechanism with exponential backoff and idempotency
  * @param operation Function to retry
  * @param maxRetries Maximum number of retries
  * @param baseDelay Base delay in milliseconds
+ * @param operationId Optional unique ID for the operation to track retries
  * @returns Promise with operation result
  */
 export async function retryWithBackoff<T>(
   operation: () => Promise<T>,
   maxRetries: number = 3,
-  baseDelay: number = 1000
+  baseDelay: number = 1000,
+  operationId?: string
 ): Promise<T> {
   let lastError: Error | null = null;
+  const retryId =
+    operationId ||
+    `retry-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
 
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    try {
-      return await operation();
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
+  // Track this operation to prevent duplicate processing
+  console.log(`Starting operation with retry ID: ${retryId}`);
 
-      // Calculate delay with exponential backoff
-      const delay = baseDelay * Math.pow(2, attempt);
-
-      console.log(
-        `Retry attempt ${
-          attempt + 1
-        }/${maxRetries} failed. Retrying in ${delay}ms...`
-      );
-
-      // Wait before next retry
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
+  // Store in-memory cache of operations in progress (for server-side)
+  if (!global.retryOperationsInProgress) {
+    global.retryOperationsInProgress = new Map<string, boolean>();
   }
 
-  // If we've exhausted all retries, throw the last error
-  throw lastError;
+  // Check if this operation is already in progress
+  if (operationId && global.retryOperationsInProgress.get(operationId)) {
+    console.warn(
+      `Operation ${operationId} is already in progress. Skipping duplicate execution.`
+    );
+    throw new Error(`Duplicate operation detected: ${operationId}`);
+  }
+
+  // Mark operation as in progress
+  if (operationId) {
+    global.retryOperationsInProgress.set(operationId, true);
+  }
+
+  try {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const result = await operation();
+
+        // Operation succeeded, clean up
+        if (operationId) {
+          global.retryOperationsInProgress.delete(operationId);
+        }
+
+        return result;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+
+        // Check if this is a non-retryable error (like duplicate processing)
+        if (
+          lastError.message.includes("Duplicate operation") ||
+          lastError.message.includes("already being processed") ||
+          lastError.message.includes("already exists")
+        ) {
+          console.warn(`Non-retryable error detected: ${lastError.message}`);
+          throw lastError; // Don't retry for these specific errors
+        }
+
+        // Calculate delay with exponential backoff
+        const delay = baseDelay * Math.pow(2, attempt);
+
+        console.log(
+          `Retry attempt ${
+            attempt + 1
+          }/${maxRetries} failed. Retrying in ${delay}ms...`
+        );
+
+        // Wait before next retry
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+
+    // If we've exhausted all retries, throw the last error
+    throw lastError;
+  } finally {
+    // Always clean up the operation tracking
+    if (operationId) {
+      global.retryOperationsInProgress.delete(operationId);
+    }
+  }
 }
 
 /**

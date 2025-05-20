@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from "react";
 import { Button } from "./ui";
 import Papa from "papaparse";
+import { ImprovedSchemaColumnMapper } from "./ImprovedSchemaColumnMapper";
 
 // Maximum file size: 500MB in bytes
 const MAX_FILE_SIZE = 500 * 1024 * 1024;
@@ -21,6 +22,7 @@ interface EnhancedFileUploadProps {
       hasNewColumns?: boolean;
       showPreview?: boolean;
       previewData?: Record<string, unknown>[];
+      fileId?: string; // Added to pass file ID after column mapping
     }
   ) => void;
   accept?: string;
@@ -55,6 +57,12 @@ const EnhancedFileUpload: React.FC<EnhancedFileUploadProps> = ({
   const [processingFile, setProcessingFile] = useState(false);
   const [uploadComplete, setUploadComplete] = useState(false);
   const [internalUploading, setInternalUploading] = useState(uploading);
+  const [showColumnMapper, setShowColumnMapper] = useState(false);
+  const [fileColumnsToMap, setFileColumnsToMap] = useState<string[]>([]);
+  const [currentFileId, setCurrentFileId] = useState<string>("");
+  const [processedFileIds, setProcessedFileIds] = useState<Set<string>>(
+    new Set()
+  );
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Update internal uploading state when prop changes
@@ -119,6 +127,13 @@ const EnhancedFileUpload: React.FC<EnhancedFileUploadProps> = ({
     return { valid: validFiles, errors: fileErrors };
   };
 
+  // Add file hash calculation to prevent duplicate uploads
+  const calculateFileHash = async (file: File): Promise<string> => {
+    // Use file name, size and last modified date as a simple hash
+    // For a more robust solution, you could use a proper hashing algorithm
+    return `${file.name}-${file.size}-${file.lastModified}`;
+  };
+
   const handleFiles = async (files: FileList | null) => {
     if (files && files.length > 0) {
       const { valid, errors } = validateFiles(files);
@@ -131,31 +146,219 @@ const EnhancedFileUpload: React.FC<EnhancedFileUploadProps> = ({
         setProcessingFile(true);
 
         try {
+          // Calculate file hash to prevent duplicate uploads
+          const fileHash = await calculateFileHash(valid[0]);
+          console.log(`File hash: ${fileHash}`);
+
           // Check if we need to show column mapping flow
-          // This would typically involve reading the file headers
-          // and comparing with existing columns
           const hasNewColumns = await checkForNewColumns(valid[0]);
 
           // Parse the first 5 records from the file for preview
           let previewData: Record<string, unknown>[] = [];
 
-          if (valid[0].type === "text/csv" || valid[0].name.endsWith(".csv")) {
-            previewData = await parseCSVPreview(valid[0], 5);
-          } else if (
-            valid[0].name.endsWith(".xlsx") ||
-            valid[0].name.endsWith(".xls")
-          ) {
-            // For Excel files, we'll rely on the backend processing
-            // but we could add client-side Excel parsing in the future
+          try {
+            if (
+              valid[0].type === "text/csv" ||
+              valid[0].name.endsWith(".csv")
+            ) {
+              previewData = await parseCSVPreview(valid[0], 5);
+              console.log("CSV preview data:", previewData);
+            } else if (
+              valid[0].name.endsWith(".xlsx") ||
+              valid[0].name.endsWith(".xls")
+            ) {
+              // Try to parse Excel files client-side for preview
+              try {
+                const { parseFileClient } = await import(
+                  "../utils/clientParse"
+                );
+                previewData = await parseFileClient(valid[0], 5);
+                console.log("Excel preview data:", previewData);
+              } catch (err) {
+                console.warn("Client-side Excel parsing failed:", err);
+              }
+            }
+          } catch (err) {
+            console.warn("Preview generation error:", err);
           }
 
-          // Use the onFilesSelected callback to pass the files to the parent component
-          // with options for how to handle the file
-          onFilesSelected(valid, projectId, {
-            hasNewColumns,
-            showPreview: valid.length > 0 && !hasNewColumns,
-            previewData: previewData.length > 0 ? previewData : undefined,
-          });
+          // Extract headers from the file if needed for column mapping
+          let headers: string[] = [];
+          if (hasNewColumns) {
+            headers = await extractFileHeaders(valid[0]);
+            setFileColumnsToMap(headers);
+          }
+
+          // UNIFIED UPLOAD FLOW - Only upload the file once
+          setProcessingFile(true);
+          try {
+            // Create a FormData object to upload the file
+            const formData = new FormData();
+            formData.append("file", valid[0]);
+            if (projectId) {
+              formData.append("projectId", projectId);
+            }
+
+            // Add file hash to prevent duplicate processing
+            formData.append("fileHash", fileHash);
+
+            // Upload the file
+            const response = await fetch("/api/upload", {
+              method: "POST",
+              body: formData,
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+
+              // Handle the case where the file was already uploaded (duplicate)
+              if (data.duplicate) {
+                console.log(`File already exists with ID: ${data.fileId}`);
+                const fileId = data.fileId;
+
+                // If we have new columns, show the column mapper with the existing file ID
+                if (hasNewColumns) {
+                  setCurrentFileId(fileId);
+                  setShowColumnMapper(true);
+                  return;
+                }
+
+                // Instead of calling onFilesSelected (which would trigger another upload),
+                // just notify the parent that the file is ready to be displayed
+                // Create a custom event to notify that the file is ready
+                const event = new CustomEvent("fileStatusUpdate", {
+                  detail: {
+                    fileId: fileId,
+                    status: "active",
+                    fileName: valid[0]?.name || "File",
+                  },
+                });
+                window.dispatchEvent(event);
+
+                console.log(
+                  `Dispatched fileStatusUpdate event for file ${fileId}`
+                );
+                return;
+              }
+
+              // Normal flow for new files
+              if (data.files && data.files.length > 0) {
+                const fileId = data.files[0].id;
+                console.log(`File uploaded successfully, ID: ${fileId}`);
+
+                // If we have new columns and haven't processed this file yet, show the column mapper
+                if (hasNewColumns && !processedFileIds.has(fileId)) {
+                  setCurrentFileId(fileId);
+                  setShowColumnMapper(true);
+                  // Add this file to the processed set
+                  setProcessedFileIds((prev) => new Set(prev).add(fileId));
+                  return;
+                }
+
+                // Check if the file is already active by fetching its status
+                try {
+                  const fileStatusResponse = await fetch(
+                    `/api/files/${fileId}`
+                  );
+                  if (fileStatusResponse.ok) {
+                    const fileData = await fileStatusResponse.json();
+                    const fileStatus = fileData.file?.status || "unknown";
+
+                    console.log(`Current file status: ${fileStatus}`);
+
+                    // The file is already being processed by the ingest-file API
+                    // No need to manually activate it, as the ingest-file process will handle activation
+                    console.log(
+                      `File ${fileId} will be activated by the ingest-file process, skipping manual activation`
+                    );
+
+                    // Instead of trying to activate, just check the status periodically
+                    // to inform the user when it's ready
+                    const checkStatusInterval = setInterval(async () => {
+                      try {
+                        const statusResponse = await fetch(
+                          `/api/files/${fileId}`
+                        );
+                        if (statusResponse.ok) {
+                          const fileData = await statusResponse.json();
+                          const currentStatus =
+                            fileData.file?.status || "unknown";
+
+                          console.log(`Current file status: ${currentStatus}`);
+
+                          if (currentStatus === "active") {
+                            console.log(`File ${fileId} is now active`);
+                            clearInterval(checkStatusInterval);
+                          }
+                        }
+                      } catch (err) {
+                        console.warn(`Error checking file status: ${err}`);
+                      }
+                    }, 5000); // Check every 5 seconds
+
+                    // Clear the interval after 2 minutes (24 checks) to avoid memory leaks
+                    setTimeout(() => {
+                      clearInterval(checkStatusInterval);
+                    }, 120000);
+                  } else {
+                    console.warn(
+                      `Could not check file status: ${fileStatusResponse.status}`
+                    );
+                  }
+                } catch (statusErr) {
+                  console.warn(
+                    `Error checking file status: ${statusErr}. Continuing anyway.`
+                  );
+                }
+
+                // Instead of calling onFilesSelected (which would trigger another upload),
+                // just notify the parent that the file is ready to be displayed
+                // Create a custom event to notify that the file is ready
+                const event = new CustomEvent("fileStatusUpdate", {
+                  detail: {
+                    fileId: fileId,
+                    status: "active",
+                    fileName: valid[0]?.name || "File",
+                  },
+                });
+                window.dispatchEvent(event);
+
+                console.log(
+                  `Dispatched fileStatusUpdate event for file ${fileId}`
+                );
+              } else {
+                throw new Error("No file ID returned from upload");
+              }
+            } else {
+              throw new Error("Failed to upload file");
+            }
+          } catch (err) {
+            console.error("Error uploading file:", err);
+            setErrors([
+              ...errors,
+              {
+                name: valid[0].name,
+                error: "Failed to upload and activate file",
+              },
+            ]);
+
+            // Instead of calling onFilesSelected, dispatch an error event
+            const event = new CustomEvent("fileUploadError", {
+              detail: {
+                fileName: valid[0]?.name || "File",
+                error: "Failed to upload and activate file",
+              },
+            });
+            window.dispatchEvent(event);
+
+            console.log(
+              `Dispatched fileUploadError event for file ${
+                valid[0]?.name || "File"
+              }`
+            );
+          } finally {
+            setProcessingFile(false);
+          }
         } finally {
           setProcessingFile(false);
         }
@@ -191,26 +394,110 @@ const EnhancedFileUpload: React.FC<EnhancedFileUploadProps> = ({
 
   // Function to check if the file has new columns compared to existing columns
   const checkForNewColumns = async (file: File): Promise<boolean> => {
-    // If no existing columns are provided, assume new columns
+    // If no existing columns are provided, we need to check if we should show the column mapper
+    // Only show the column mapper if there are actually new columns to map
     if (!existingColumns || existingColumns.length === 0) {
-      return true;
+      console.log(
+        "No existing columns provided, checking if we need column mapping"
+      );
+
+      // Extract headers from the file to see if we need column mapping
+      const headers = await extractFileHeaders(file);
+
+      // If we couldn't extract headers or there are no headers, no need for column mapping
+      if (!headers || headers.length === 0) {
+        console.log("No headers found in file, skipping column mapping");
+        return false;
+      }
+
+      // If we have headers but no existing columns, we should show the column mapper
+      // only if we're in a project context (projectId is provided)
+      if (projectId) {
+        console.log(
+          "Headers found and in project context, showing column mapper"
+        );
+        return true;
+      } else {
+        console.log(
+          "Headers found but no project context, skipping column mapper"
+        );
+        return false;
+      }
     }
 
     try {
-      // Read the first few lines of the file to get headers
+      // Extract headers from the file
+      const headers = await extractFileHeaders(file);
+
+      if (!headers || headers.length === 0) {
+        console.log("No headers found in file, skipping column mapping");
+        return false;
+      }
+
+      // Check if there are any headers not in existingColumns
+      const newColumns = headers.filter(
+        (header) => !existingColumns.includes(header)
+      );
+      const hasNewColumns = newColumns.length > 0;
+
+      console.log(`File has ${newColumns.length} new columns:`, newColumns);
+      return hasNewColumns;
+    } catch (error) {
+      console.error("Error checking for new columns:", error);
+      return false;
+    }
+  };
+
+  // Function to extract headers from a file
+  const extractFileHeaders = async (file: File): Promise<string[]> => {
+    try {
+      // For CSV files
+      if (file.type === "text/csv" || file.name.endsWith(".csv")) {
+        return new Promise((resolve) => {
+          Papa.parse(file, {
+            header: true,
+            preview: 1, // We only need the headers
+            skipEmptyLines: true,
+            complete: (results) => {
+              if (results.meta && results.meta.fields) {
+                resolve(results.meta.fields);
+              } else {
+                resolve([]);
+              }
+            },
+            error: () => {
+              resolve([]);
+            },
+          });
+        });
+      }
+      // For Excel files
+      else if (file.name.endsWith(".xlsx") || file.name.endsWith(".xls")) {
+        try {
+          const { parseFileClient } = await import("../utils/clientParse");
+          const previewData = await parseFileClient(file, 1);
+          if (previewData && previewData.length > 0) {
+            return Object.keys(previewData[0]);
+          }
+        } catch (err) {
+          console.warn("Client-side Excel parsing failed:", err);
+        }
+      }
+
+      // Fallback to reading the first line of the file
       return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = (e) => {
           const content = e.target?.result as string;
           if (!content) {
-            resolve(false);
+            resolve([]);
             return;
           }
 
           // For CSV files, get the first line and parse headers
           const lines = content.split("\n");
           if (lines.length === 0) {
-            resolve(false);
+            resolve([]);
             return;
           }
 
@@ -218,12 +505,7 @@ const EnhancedFileUpload: React.FC<EnhancedFileUploadProps> = ({
             .split(",")
             .map((h) => h.trim().replace(/"/g, ""));
 
-          // Check if there are any headers not in existingColumns
-          const hasNewColumns = headers.some(
-            (header) => !existingColumns.includes(header)
-          );
-
-          resolve(hasNewColumns);
+          resolve(headers);
         };
 
         // Read as text - only read the beginning of the file
@@ -231,8 +513,8 @@ const EnhancedFileUpload: React.FC<EnhancedFileUploadProps> = ({
         reader.readAsText(blob);
       });
     } catch (error) {
-      console.error("Error checking for new columns:", error);
-      return false;
+      console.error("Error extracting file headers:", error);
+      return [];
     }
   };
 
@@ -263,6 +545,85 @@ const EnhancedFileUpload: React.FC<EnhancedFileUploadProps> = ({
     setErrors([]);
     if (inputRef.current) {
       inputRef.current.value = "";
+    }
+  };
+
+  // Handle the completion of column mapping
+  const handleMappingComplete = async (mapping: any) => {
+    console.log("Column mapping completed:", mapping);
+
+    // Hide the column mapper
+    setShowColumnMapper(false);
+
+    // The file has already been uploaded, so we need to explicitly activate it
+    if (selectedFiles.length > 0 && currentFileId) {
+      console.log("Column mapping completed for file ID:", currentFileId);
+
+      // Check if the file is already active by fetching its status
+      try {
+        const fileResponse = await fetch(`/api/files/${currentFileId}`);
+        if (fileResponse.ok) {
+          const fileData = await fileResponse.json();
+          const fileStatus = fileData.file?.status || "unknown";
+
+          console.log(`Current file status: ${fileStatus}`);
+
+          // The file is already being processed by the ingest-file API
+          // No need to manually activate it, as the ingest-file process will handle activation
+          console.log(
+            `File ${currentFileId} will be activated by the ingest-file process, skipping manual activation`
+          );
+
+          // Instead of trying to activate, just check the status periodically
+          // to inform the user when it's ready
+          const checkStatusInterval = setInterval(async () => {
+            try {
+              const statusResponse = await fetch(`/api/files/${currentFileId}`);
+              if (statusResponse.ok) {
+                const fileData = await statusResponse.json();
+                const currentStatus = fileData.file?.status || "unknown";
+
+                console.log(`Current file status: ${currentStatus}`);
+
+                if (currentStatus === "active") {
+                  console.log(`File ${currentFileId} is now active`);
+                  clearInterval(checkStatusInterval);
+                }
+              }
+            } catch (err) {
+              console.warn(`Error checking file status: ${err}`);
+            }
+          }, 5000); // Check every 5 seconds
+
+          // Clear the interval after 2 minutes (24 checks) to avoid memory leaks
+          setTimeout(() => {
+            clearInterval(checkStatusInterval);
+          }, 120000);
+        } else {
+          console.warn(`Could not check file status: ${fileResponse.status}`);
+        }
+      } catch (err) {
+        console.warn(`Error checking file status: ${err}. Continuing anyway.`);
+      }
+
+      // Add this file to the processed set to prevent duplicate processing
+      setProcessedFileIds((prev) => new Set(prev).add(currentFileId));
+
+      // Instead of calling onFilesSelected again (which would trigger another upload),
+      // just notify the parent that the file is ready to be displayed
+      // Create a custom event to notify that the file is ready
+      const event = new CustomEvent("fileStatusUpdate", {
+        detail: {
+          fileId: currentFileId,
+          status: "active",
+          fileName: selectedFiles[0]?.name || "File",
+        },
+      });
+      window.dispatchEvent(event);
+
+      console.log(
+        `Dispatched fileStatusUpdate event for file ${currentFileId}`
+      );
     }
   };
 
@@ -367,6 +728,17 @@ const EnhancedFileUpload: React.FC<EnhancedFileUploadProps> = ({
           </ul>
         </div>
       )}
+
+      {/* Column Mapper Modal */}
+      <ImprovedSchemaColumnMapper
+        isOpen={showColumnMapper}
+        onClose={() => setShowColumnMapper(false)}
+        fileId={currentFileId}
+        fileColumns={fileColumnsToMap}
+        userId={projectId || ""}
+        projectId={projectId}
+        onMappingComplete={handleMappingComplete}
+      />
     </div>
   );
 };

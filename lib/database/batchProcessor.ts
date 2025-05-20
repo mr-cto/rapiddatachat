@@ -32,7 +32,8 @@ export class BatchProcessor {
 
     // Get Prisma Accelerate configuration
     const accelerateConfig = getAccelerateConfig();
-    const isAccelerate = isPrismaAccelerate();
+    // We're using Prisma Accelerate with PostgreSQL
+    const isAccelerate = true;
 
     // Determine optimal batch size based on total rows
     if (!batchSize) {
@@ -121,19 +122,46 @@ export class BatchProcessor {
     totalBatches: number,
     shouldLog: boolean = false
   ): Promise<void> {
-    // Get connection manager
+    // Get connection manager - we're using a single Prisma Accelerate PostgreSQL database
     const connectionManager = getConnectionManager();
+    console.log(
+      `Processing batch for file ${fileId} using Prisma Accelerate PostgreSQL`
+    );
 
     // Prepare data for insertion
-    const dataToInsert = batch.map((row) => ({
-      fileId,
-      // Handle circular references and BigInt values
-      data: JSON.parse(
-        JSON.stringify(row, (_, value) =>
-          typeof value === "bigint" ? value.toString() : value
-        )
-      ),
-    }));
+    const dataToInsert = batch.map((row) => {
+      try {
+        return {
+          fileId,
+          // Handle circular references and BigInt values
+          data: JSON.parse(
+            JSON.stringify(row, (_, value) =>
+              typeof value === "bigint" ? value.toString() : value
+            )
+          ),
+        };
+      } catch (parseError) {
+        console.error(`Error parsing row data: ${parseError}`);
+        // Return a simplified version of the row with just the raw values
+        return {
+          fileId,
+          data: Object.fromEntries(
+            Object.entries(row).map(([key, value]) => [
+              key,
+              typeof value === "bigint"
+                ? value.toString()
+                : value === null || value === undefined
+                ? null
+                : String(value),
+            ])
+          ),
+        };
+      }
+    });
+
+    console.log(
+      `Prepared ${dataToInsert.length} rows for insertion into file_data table`
+    );
 
     // Maximum number of retries
     const maxRetries = 3;
@@ -142,37 +170,63 @@ export class BatchProcessor {
 
     while (!success && retryCount < maxRetries) {
       try {
-        // Get a replica client from the pool
-        const replicaClient = connectionManager.getReplicaClient();
+        // Get a client from the pool - using primary client since we're on a single database
+        const client = connectionManager.getPrimaryClient();
 
         try {
           // Get Prisma Accelerate configuration
           const accelerateConfig = getAccelerateConfig();
-          const isAccelerate = isPrismaAccelerate();
+          // We're using Prisma Accelerate with PostgreSQL
+          const isAccelerate = true;
 
-          // For Prisma Accelerate or small batches, always use non-transactional approach
-          if (isAccelerate || dataToInsert.length <= 100) {
+          // Log the insertion attempt
+          console.log(
+            `Attempting to insert ${dataToInsert.length} rows into file_data table for file ${fileId}`
+          );
+
+          // For Prisma Accelerate, use the appropriate approach
+          try {
             // Use a simpler approach for all batch sizes
-            await replicaClient.fileData.createMany({
+            const result = await client.fileData.createMany({
               data: dataToInsert,
               skipDuplicates: true,
             });
-          } else {
-            // For direct database connections, use transactions with appropriate timeouts
-            await replicaClient.$transaction(
-              async (tx) => {
-                // Insert all rows in a single createMany operation
-                await tx.fileData.createMany({
-                  data: dataToInsert,
-                  skipDuplicates: true,
-                });
-              },
-              {
-                timeout: accelerateConfig.timeout,
-                maxWait: accelerateConfig.maxWait,
-              }
+
+            console.log(
+              `Successfully inserted ${result.count} rows into file_data table`
             );
+          } catch (insertError) {
+            console.error(`Error with createMany: ${insertError}`);
+
+            // Try with transaction as fallback
+            try {
+              console.log(`Attempting insertion with transaction as fallback`);
+              const result = await client.$transaction(
+                async (tx: any) => {
+                  // Insert all rows in a single createMany operation
+                  const insertResult = await tx.fileData.createMany({
+                    data: dataToInsert,
+                    skipDuplicates: true,
+                  });
+
+                  return insertResult;
+                },
+                {
+                  timeout: accelerateConfig.timeout,
+                  maxWait: accelerateConfig.maxWait,
+                }
+              );
+
+              console.log(
+                `Successfully inserted ${result.count} rows into file_data table via transaction`
+              );
+            } catch (txError) {
+              console.error(`Transaction fallback also failed: ${txError}`);
+              throw txError;
+            }
           }
+
+          // No smaller batch insertion - removed to prevent duplicate data
 
           // Only log if this is a significant batch
           if (shouldLog) {
@@ -212,11 +266,7 @@ export class BatchProcessor {
               console.warn(
                 `Transaction timeout on small batch ${batchNumber}/${totalBatches}. Using individual inserts.`
               );
-              await BatchProcessor.insertIndividually(
-                fileId,
-                batch,
-                replicaClient
-              );
+              await BatchProcessor.insertIndividually(fileId, batch, client);
               success = true;
             }
           } else if (isPermissionError) {
@@ -224,11 +274,7 @@ export class BatchProcessor {
             console.warn(
               `Permission error on batch ${batchNumber}/${totalBatches}. Using individual inserts with reduced privileges.`
             );
-            await BatchProcessor.insertIndividually(
-              fileId,
-              batch,
-              replicaClient
-            );
+            await BatchProcessor.insertIndividually(fileId, batch, client);
             success = true;
           } else {
             // Other errors - retry with exponential backoff
@@ -255,18 +301,13 @@ export class BatchProcessor {
                 success = true;
               } else {
                 // For small batches, try individual inserts
-                await BatchProcessor.insertIndividually(
-                  fileId,
-                  batch,
-                  replicaClient
-                );
+                await BatchProcessor.insertIndividually(fileId, batch, client);
                 success = true;
               }
             }
           }
         } finally {
-          // Release the client back to the pool
-          connectionManager.releaseReplicaClient(replicaClient);
+          // No need to explicitly release the client with Prisma Accelerate
         }
       } catch (error) {
         // Handle connection errors
@@ -328,12 +369,13 @@ export class BatchProcessor {
         }
       } else {
         // For small batches, skip transaction entirely and use direct inserts
-        const replicaClient = getConnectionManager().getReplicaClient();
+        const client = getConnectionManager().getPrimaryClient();
         try {
-          await BatchProcessor.insertIndividually(fileId, batch, replicaClient);
+          await BatchProcessor.insertIndividually(fileId, batch, client);
           return; // Exit early since we've handled the batch
-        } finally {
-          getConnectionManager().releaseReplicaClient(replicaClient);
+        } catch (error) {
+          console.error(`Error in direct inserts: ${error}`);
+          throw error;
         }
       }
     } else {

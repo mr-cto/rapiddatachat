@@ -135,6 +135,49 @@ export default async function handler(
         : req.query.projectId;
     }
 
+    // Get file hash if provided (for duplicate detection)
+    const fileHash = Array.isArray(fields.fileHash)
+      ? fields.fileHash[0]
+      : fields.fileHash;
+
+    if (fileHash) {
+      console.log(`File hash provided: ${fileHash}`);
+
+      // Check if a file with this hash already exists
+      try {
+        const existingFileQuery = await executeQuery(`
+          SELECT id, filename, status FROM files
+          WHERE metadata->>'fileHash' = '${fileHash.replace(/'/g, "''")}'
+          AND user_id = '${userId}'
+          ${projectId ? `AND project_id = '${projectId}'` : ""}
+          ORDER BY uploaded_at DESC
+          LIMIT 1
+        `);
+
+        if (
+          existingFileQuery &&
+          Array.isArray(existingFileQuery) &&
+          existingFileQuery.length > 0
+        ) {
+          const existingFile = existingFileQuery[0];
+          console.log(`Found existing file with same hash: ${existingFile.id}`);
+
+          // Return the existing file ID instead of creating a new one
+          return res.status(200).json({
+            success: true,
+            duplicate: true,
+            fileId: existingFile.id,
+            name: existingFile.filename,
+            status: existingFile.status,
+            message: "File already exists in the system.",
+          });
+        }
+      } catch (err) {
+        console.warn("Error checking for duplicate file:", err);
+        // Continue with upload even if duplicate check fails
+      }
+    }
+
     // Get column merges information if provided
     let columnMerges = null;
     if (fields.columnMerges) {
@@ -265,13 +308,22 @@ export default async function handler(
         let dbOperationSuccess = true;
 
         try {
-          // Store file metadata in the database
+          // Store file metadata in the database with file hash for duplicate detection
           console.log(
             `Storing file metadata in database for file ID: ${fileId}`
           );
+
+          // Create metadata JSON with file hash if available
+          const metadataJson = fileHash
+            ? `jsonb_build_object('fileHash', '${fileHash.replace(
+                /'/g,
+                "''"
+              )}')`
+            : "NULL";
+
           await executeQuery(`
             INSERT INTO files (
-              id, user_id, filename, status, uploaded_at, size_bytes, format, filepath
+              id, user_id, filename, status, uploaded_at, size_bytes, format, filepath, metadata
             ) VALUES (
               '${fileId}',
               '${userId}',
@@ -280,7 +332,8 @@ export default async function handler(
               CURRENT_TIMESTAMP,
               ${file.size},
               '${format}',
-              '${filePath.replace(/'/g, "''")}'
+              '${filePath.replace(/'/g, "''")}',
+              ${metadataJson}
             )
           `);
 
@@ -537,47 +590,10 @@ async function processFilesAsync(
 
       console.log(`Successfully ingested file ${file.id}`);
 
-      // After successful ingestion, automatically activate the file
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      console.log(`Attempting to auto-activate file ${file.id}`);
-
-      try {
-        // Auto-activate the file using connection manager
-        console.log(`Auto-activating file ${file.id} using connection manager`);
-
-        const connectionManager = getConnectionManager();
-        const replicaClient = connectionManager.getReplicaClient();
-
-        try {
-          await replicaClient.file.update({
-            where: { id: file.id },
-            data: { status: "active" },
-          });
-          console.log(`Successfully auto-activated file ${file.id}`);
-        } finally {
-          // Release the client back to the pool
-          connectionManager.releaseReplicaClient(replicaClient);
-        }
-      } catch (activationError) {
-        console.error(
-          `Error auto-activating file ${file.id}:`,
-          activationError
-        );
-        console.log(
-          `Activation error details: ${
-            activationError instanceof Error
-              ? activationError.message
-              : "Unknown"
-          }`
-        );
-        console.log(
-          `Activation error stack: ${
-            activationError instanceof Error
-              ? activationError.stack
-              : "No stack trace"
-          }`
-        );
-      }
+      // No need to auto-activate here - the ingest-file API already handles activation
+      console.log(
+        `File ${file.id} successfully ingested and activated by the ingest-file API`
+      );
     } catch (error) {
       console.error(`Error processing file ${file.id}:`, error);
       console.log(

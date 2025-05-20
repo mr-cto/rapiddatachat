@@ -173,86 +173,86 @@ BEGIN
   END IF;
 END $$;
 
--- Check if projects table exists and constraint doesn't exist before adding foreign keys
-DO $$
-BEGIN
-  IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'projects')
-     AND NOT EXISTS (
-       SELECT 1 FROM information_schema.table_constraints
-       WHERE constraint_name = 'batch_jobs_project_id_fkey'
-       AND table_name = 'batch_jobs'
-     ) THEN
-    -- AddForeignKey
-    ALTER TABLE "batch_jobs" ADD CONSTRAINT "batch_jobs_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-  END IF;
-END $$;
-
 -- Add foreign keys if they don't exist
 DO $$
 BEGIN
+  -- Check if projects table exists before adding foreign keys
+  IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'projects') THEN
+    -- Check if the foreign key doesn't exist
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.table_constraints 
+      WHERE constraint_name = 'batch_jobs_project_id_fkey' 
+      AND table_name = 'batch_jobs'
+    ) THEN
+      ALTER TABLE "batch_jobs" ADD CONSTRAINT "batch_jobs_project_id_fkey" 
+      FOREIGN KEY ("project_id") REFERENCES "projects"("id") 
+      ON DELETE SET NULL ON UPDATE CASCADE;
+    END IF;
+  END IF;
+  
   -- Check if the foreign key doesn't exist
   IF NOT EXISTS (
-    SELECT 1 FROM information_schema.table_constraints
-    WHERE constraint_name = 'batch_jobs_file_id_fkey'
+    SELECT 1 FROM information_schema.table_constraints 
+    WHERE constraint_name = 'batch_jobs_file_id_fkey' 
     AND table_name = 'batch_jobs'
   ) THEN
-    ALTER TABLE "batch_jobs" ADD CONSTRAINT "batch_jobs_file_id_fkey"
-    FOREIGN KEY ("file_id") REFERENCES "files"("id")
+    ALTER TABLE "batch_jobs" ADD CONSTRAINT "batch_jobs_file_id_fkey" 
+    FOREIGN KEY ("file_id") REFERENCES "files"("id") 
     ON DELETE SET NULL ON UPDATE CASCADE;
   END IF;
   
   -- Check if the foreign key doesn't exist
   IF NOT EXISTS (
-    SELECT 1 FROM information_schema.table_constraints
-    WHERE constraint_name = 'batch_partitions_job_id_fkey'
+    SELECT 1 FROM information_schema.table_constraints 
+    WHERE constraint_name = 'batch_partitions_job_id_fkey' 
     AND table_name = 'batch_partitions'
   ) THEN
-    ALTER TABLE "batch_partitions" ADD CONSTRAINT "batch_partitions_job_id_fkey"
-    FOREIGN KEY ("job_id") REFERENCES "batch_jobs"("id")
+    ALTER TABLE "batch_partitions" ADD CONSTRAINT "batch_partitions_job_id_fkey" 
+    FOREIGN KEY ("job_id") REFERENCES "batch_jobs"("id") 
     ON DELETE CASCADE ON UPDATE CASCADE;
   END IF;
   
   -- Check if the foreign key doesn't exist
   IF NOT EXISTS (
-    SELECT 1 FROM information_schema.table_constraints
-    WHERE constraint_name = 'performance_metrics_job_id_fkey'
+    SELECT 1 FROM information_schema.table_constraints 
+    WHERE constraint_name = 'performance_metrics_job_id_fkey' 
     AND table_name = 'performance_metrics'
   ) THEN
-    ALTER TABLE "performance_metrics" ADD CONSTRAINT "performance_metrics_job_id_fkey"
-    FOREIGN KEY ("job_id") REFERENCES "batch_jobs"("id")
+    ALTER TABLE "performance_metrics" ADD CONSTRAINT "performance_metrics_job_id_fkey" 
+    FOREIGN KEY ("job_id") REFERENCES "batch_jobs"("id") 
     ON DELETE CASCADE ON UPDATE CASCADE;
   END IF;
   
   -- Check if the foreign key doesn't exist
   IF NOT EXISTS (
-    SELECT 1 FROM information_schema.table_constraints
-    WHERE constraint_name = 'performance_metrics_partition_id_fkey'
+    SELECT 1 FROM information_schema.table_constraints 
+    WHERE constraint_name = 'performance_metrics_partition_id_fkey' 
     AND table_name = 'performance_metrics'
   ) THEN
-    ALTER TABLE "performance_metrics" ADD CONSTRAINT "performance_metrics_partition_id_fkey"
-    FOREIGN KEY ("partition_id") REFERENCES "batch_partitions"("id")
+    ALTER TABLE "performance_metrics" ADD CONSTRAINT "performance_metrics_partition_id_fkey" 
+    FOREIGN KEY ("partition_id") REFERENCES "batch_partitions"("id") 
     ON DELETE CASCADE ON UPDATE CASCADE;
   END IF;
   
   -- Check if the foreign key doesn't exist
   IF NOT EXISTS (
-    SELECT 1 FROM information_schema.table_constraints
-    WHERE constraint_name = 'resource_usage_job_id_fkey'
+    SELECT 1 FROM information_schema.table_constraints 
+    WHERE constraint_name = 'resource_usage_job_id_fkey' 
     AND table_name = 'resource_usage'
   ) THEN
-    ALTER TABLE "resource_usage" ADD CONSTRAINT "resource_usage_job_id_fkey"
-    FOREIGN KEY ("job_id") REFERENCES "batch_jobs"("id")
+    ALTER TABLE "resource_usage" ADD CONSTRAINT "resource_usage_job_id_fkey" 
+    FOREIGN KEY ("job_id") REFERENCES "batch_jobs"("id") 
     ON DELETE CASCADE ON UPDATE CASCADE;
   END IF;
   
   -- Check if the foreign key doesn't exist
   IF NOT EXISTS (
-    SELECT 1 FROM information_schema.table_constraints
-    WHERE constraint_name = 'tuning_history_job_id_fkey'
+    SELECT 1 FROM information_schema.table_constraints 
+    WHERE constraint_name = 'tuning_history_job_id_fkey' 
     AND table_name = 'tuning_history'
   ) THEN
-    ALTER TABLE "tuning_history" ADD CONSTRAINT "tuning_history_job_id_fkey"
-    FOREIGN KEY ("job_id") REFERENCES "batch_jobs"("id")
+    ALTER TABLE "tuning_history" ADD CONSTRAINT "tuning_history_job_id_fkey" 
+    FOREIGN KEY ("job_id") REFERENCES "batch_jobs"("id") 
     ON DELETE CASCADE ON UPDATE CASCADE;
   END IF;
 END $$;

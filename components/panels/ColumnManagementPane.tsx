@@ -8,15 +8,21 @@ import { Badge } from "../ui/Badge";
 
 interface ColumnManagementPaneProps {
   onColumnChange?: (column: GlobalSchema | null) => void;
+  projectId?: string;
+  refreshTrigger?: number; // A value that changes when refresh is needed
 }
 
 const ColumnManagementPane: React.FC<ColumnManagementPaneProps> = ({
   onColumnChange,
+  projectId: propProjectId,
 }) => {
   const { data: session, isAuthenticated, userId } = useStableSession();
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const { id: projectId } = router.query;
+  const { id: routerProjectId } = router.query;
+
+  // Use the projectId prop if provided, otherwise fall back to the router query
+  const projectId = propProjectId || (routerProjectId as string);
 
   if (!isAuthenticated) {
     return (
@@ -80,11 +86,19 @@ const ColumnManagementPane: React.FC<ColumnManagementPaneProps> = ({
       </div>
 
       <div className="overflow-y-auto flex-1 p-4 bg-ui-primary">
-        <ColumnManager
-          userId={userId || ""}
-          projectId={projectId}
-          onColumnChange={onColumnChange}
-        />
+        {error ? (
+          <div className="flex flex-col items-center justify-center h-full p-6 text-center text-gray-400 bg-ui-secondary rounded-md">
+            <FaDatabase className="w-12 h-12 mb-4 opacity-30" />
+            <p className="text-lg font-medium">Error</p>
+            <p className="text-sm mt-2 text-red-400">{error}</p>
+          </div>
+        ) : (
+          <ColumnManager
+            userId={userId || ""}
+            projectId={projectId}
+            onColumnChange={onColumnChange}
+          />
+        )}
       </div>
     </div>
   );

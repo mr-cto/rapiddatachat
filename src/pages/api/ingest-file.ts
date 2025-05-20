@@ -180,102 +180,227 @@ export default withAuth(async function handler(
 
     // Process the file with streaming and batch insertion
     // This will parse the file and insert data in batches without loading everything into memory
-    const processResult = await retryWithBackoff(async () => {
-      try {
-        // Dynamically determine batch size based on file size
-        // For very large files, use smaller batches to avoid timeouts
-        let batchSize = 10000; // Default batch size
+    // Check if this file is already being processed to prevent duplicate processing
+    try {
+      const fileStatusQuery = await executeQuery(`
+        SELECT status, metadata FROM files WHERE id = '${fileId}'
+      `);
 
-        // If file size is available, adjust batch size accordingly
-        if (file && typeof file.size_bytes === "number") {
-          const fileSizeBytes = file.size_bytes as number;
+      if (
+        fileStatusQuery &&
+        Array.isArray(fileStatusQuery) &&
+        fileStatusQuery.length > 0
+      ) {
+        const currentStatus = fileStatusQuery[0].status;
+        const metadata = fileStatusQuery[0].metadata || {};
 
-          // Rough estimation: 1MB ~ 10,000 rows for CSV files
-          // Adjust batch size based on file size - automatically optimize for all file sizes
-          // For files with millions of records, we need extremely small batches
-          // Simplify batch size determination
-          if (fileSizeBytes > 100 * 1024 * 1024) {
-            // > 100MB - Large files
-            batchSize = 500;
+        // Check if the file has been processed before by looking at ingestedAt or status
+        if (currentStatus === "active") {
+          log.warn(
+            `File ${fileId} is already active. Checking if it has data...`
+          );
+
+          // Check if the file has data
+          const dataCountResult = await executeQuery(`
+            SELECT COUNT(*) as count FROM file_data WHERE file_id = '${fileId}'
+          `);
+
+          const dataCount =
+            Array.isArray(dataCountResult) && dataCountResult.length > 0
+              ? (dataCountResult[0] as any).count
+              : 0;
+
+          if (dataCount > 0) {
             log.info(
-              `Large file detected (${Math.round(
-                fileSizeBytes / (1024 * 1024)
-              )}MB), using batch size: ${batchSize}`
+              `File ${fileId} is already active with ${dataCount} rows. Skipping processing.`
             );
+            return res.status(200).json({
+              success: true,
+              fileId,
+              message: "File is already active with data. Skipping processing.",
+              alreadyProcessing: false,
+              alreadyActive: true,
+              rowCount: dataCount,
+            });
           } else {
-            // Default for most files
-            batchSize = 1000;
-            log.info(
-              `Standard file detected (${Math.round(
-                fileSizeBytes / (1024 * 1024)
-              )}MB), using batch size: ${batchSize}`
+            log.warn(
+              `File ${fileId} is marked as active but has no data. Proceeding with processing.`
             );
           }
+        } else if (currentStatus === "processing") {
+          // Check if the processing lock is stale (more than 10 minutes old)
+          const processingLock = metadata.processingLock;
+          if (processingLock && typeof processingLock === "string") {
+            const lockTime = new Date(processingLock).getTime();
+            const currentTime = new Date().getTime();
+            const lockAgeMinutes = (currentTime - lockTime) / (1000 * 60);
+
+            if (lockAgeMinutes > 10) {
+              log.warn(
+                `File ${fileId} has a stale processing lock (${lockAgeMinutes.toFixed(
+                  2
+                )} minutes old). Proceeding with processing.`
+              );
+            } else {
+              log.warn(
+                `File ${fileId} is currently being processed (lock age: ${lockAgeMinutes.toFixed(
+                  2
+                )} minutes). Skipping duplicate processing.`
+              );
+              return res.status(200).json({
+                success: true,
+                fileId,
+                message:
+                  "File is currently being processed. Skipping duplicate processing.",
+                alreadyProcessing: true,
+              });
+            }
+          }
         }
+      }
+    } catch (statusError) {
+      log.warn(
+        `Error checking file status: ${statusError}. Continuing with processing.`
+      );
+    }
 
-        // Track progress with more detailed updates
-        let lastProgressUpdate = 0;
-        let startTime = Date.now();
-        let lastUpdateTime = startTime;
+    // Add a processing lock to prevent duplicate processing
+    try {
+      await executeQuery(`
+        UPDATE files
+        SET metadata = jsonb_set(
+          COALESCE(metadata, '{}'::jsonb),
+          '{processingLock}',
+          '"${new Date().toISOString()}"'::jsonb
+        )
+        WHERE id = '${fileId}'
+      `);
+      log.info(`Added processing lock to file ${fileId}`);
+    } catch (lockError) {
+      log.warn(
+        `Error adding processing lock: ${lockError}. Continuing anyway.`
+      );
+    }
 
-        // Dynamically adjust update interval based on file size
-        // For very large files, we want more frequent updates
-        let updateProgressInterval = 10000; // Default: update every 10,000 rows
+    // Use fileId as the operationId to prevent duplicate processing
+    const processResult = await retryWithBackoff(
+      async () => {
+        try {
+          // Dynamically determine batch size based on file size
+          // For very large files, use smaller batches to avoid timeouts
+          let batchSize = 5000; // Reduced default batch size from 10000 to 5000
 
-        // Get file size from the file object
-        const fileSizeMB =
-          file && typeof file.size_bytes === "number"
-            ? Math.round((file.size_bytes as number) / (1024 * 1024))
-            : 0;
+          // If file size is available, adjust batch size accordingly
+          if (file && typeof file.size_bytes === "number") {
+            const fileSizeBytes = file.size_bytes as number;
+            const fileSizeMB = Math.round(fileSizeBytes / (1024 * 1024));
 
-        if (fileSizeMB > 200) {
-          // For extremely large files, update more frequently
-          updateProgressInterval = 1000; // Every 1,000 rows
-        } else if (fileSizeMB > 100) {
-          // For very large files
-          updateProgressInterval = 2000; // Every 2,000 rows
-        } else if (fileSizeMB > 50) {
-          // For large files
-          updateProgressInterval = 5000; // Every 5,000 rows
-        }
-
-        // Store progress in file metadata for UI to access
-        const updateFileProgress = async (
-          processed: number,
-          total: number = 0
-        ) => {
-          try {
-            // Calculate percentage if we have a total estimate
-            const percentage =
-              total > 0
-                ? Math.min(Math.round((processed / total) * 100), 99)
-                : null;
-
-            // Calculate processing rate and ETA
-            const currentTime = Date.now();
-            const elapsedSeconds = (currentTime - startTime) / 1000;
-            const rowsPerSecond = processed / elapsedSeconds;
-
-            // Only calculate ETA if we have a total estimate and have processed some rows
-            let eta = null;
-            if (total > 0 && rowsPerSecond > 0) {
-              const remainingRows = total - processed;
-              eta = Math.round(remainingRows / rowsPerSecond);
+            // More granular batch size determination based on file size
+            if (fileSizeBytes > 200 * 1024 * 1024) {
+              // > 200MB - Very large files
+              batchSize = 250;
+              log.info(
+                `Very large file detected (${fileSizeMB}MB), using batch size: ${batchSize}`
+              );
+            } else if (fileSizeBytes > 100 * 1024 * 1024) {
+              // > 100MB - Large files
+              batchSize = 500;
+              log.info(
+                `Large file detected (${fileSizeMB}MB), using batch size: ${batchSize}`
+              );
+            } else if (fileSizeBytes > 50 * 1024 * 1024) {
+              // > 50MB - Medium-large files
+              batchSize = 1000;
+              log.info(
+                `Medium-large file detected (${fileSizeMB}MB), using batch size: ${batchSize}`
+              );
+            } else if (fileSizeBytes > 10 * 1024 * 1024) {
+              // > 10MB - Medium files
+              batchSize = 2000;
+              log.info(
+                `Medium file detected (${fileSizeMB}MB), using batch size: ${batchSize}`
+              );
+            } else {
+              // Small files
+              batchSize = 3000;
+              log.info(
+                `Small file detected (${fileSizeMB}MB), using batch size: ${batchSize}`
+              );
             }
 
-            // Build progress metadata
-            const progressData = {
-              processed,
-              total: total > 0 ? total : null,
-              percentage,
-              rowsPerSecond: Math.round(rowsPerSecond * 100) / 100,
-              elapsedSeconds: Math.round(elapsedSeconds),
-              eta,
-              lastUpdated: new Date().toISOString(),
-            };
+            // Special case for files with exactly 10,000 rows (common issue)
+            if (fileSizeBytes > 0 && fileSizeBytes < 2 * 1024 * 1024) {
+              // For very small files that might have exactly 10,000 rows
+              batchSize = 2500; // Use a non-round number to avoid edge cases
+              log.info(
+                `Small file that might have exactly 10,000 rows, using adjusted batch size: ${batchSize}`
+              );
+            }
+          }
 
-            // Update file metadata with progress information
-            await executeQuery(`
+          // Track progress with more detailed updates
+          let lastProgressUpdate = 0;
+          let startTime = Date.now();
+          let lastUpdateTime = startTime;
+
+          // Dynamically adjust update interval based on file size
+          // For very large files, we want more frequent updates
+          let updateProgressInterval = 10000; // Default: update every 10,000 rows
+
+          // Get file size from the file object
+          const fileSizeMB =
+            file && typeof file.size_bytes === "number"
+              ? Math.round((file.size_bytes as number) / (1024 * 1024))
+              : 0;
+
+          if (fileSizeMB > 200) {
+            // For extremely large files, update more frequently
+            updateProgressInterval = 1000; // Every 1,000 rows
+          } else if (fileSizeMB > 100) {
+            // For very large files
+            updateProgressInterval = 2000; // Every 2,000 rows
+          } else if (fileSizeMB > 50) {
+            // For large files
+            updateProgressInterval = 5000; // Every 5,000 rows
+          }
+
+          // Store progress in file metadata for UI to access
+          const updateFileProgress = async (
+            processed: number,
+            total: number = 0
+          ) => {
+            try {
+              // Calculate percentage if we have a total estimate
+              const percentage =
+                total > 0
+                  ? Math.min(Math.round((processed / total) * 100), 99)
+                  : null;
+
+              // Calculate processing rate and ETA
+              const currentTime = Date.now();
+              const elapsedSeconds = (currentTime - startTime) / 1000;
+              const rowsPerSecond = processed / elapsedSeconds;
+
+              // Only calculate ETA if we have a total estimate and have processed some rows
+              let eta = null;
+              if (total > 0 && rowsPerSecond > 0) {
+                const remainingRows = total - processed;
+                eta = Math.round(remainingRows / rowsPerSecond);
+              }
+
+              // Build progress metadata
+              const progressData = {
+                processed,
+                total: total > 0 ? total : null,
+                percentage,
+                rowsPerSecond: Math.round(rowsPerSecond * 100) / 100,
+                elapsedSeconds: Math.round(elapsedSeconds),
+                eta,
+                lastUpdated: new Date().toISOString(),
+              };
+
+              // Update file metadata with progress information
+              await executeQuery(`
               UPDATE files
               SET metadata =
                 CASE
@@ -292,61 +417,65 @@ export default withAuth(async function handler(
                 END
               WHERE id = '${fileId}'
             `);
-          } catch (error) {
-            // Don't fail the process if metadata update fails
-            console.warn(`Failed to update progress metadata: ${error}`);
-          }
-        };
-
-        const onProgress = (processed: number) => {
-          // Update progress at regular intervals
-          if (processed - lastProgressUpdate >= updateProgressInterval) {
-            // Only log at significant milestones to reduce noise
-            if (
-              processed % 5000 === 0 ||
-              processed === lastProgressUpdate + updateProgressInterval
-            ) {
-              log.info(`Processed ${processed} rows from ${fileId}`);
+            } catch (error) {
+              // Don't fail the process if metadata update fails
+              console.warn(`Failed to update progress metadata: ${error}`);
             }
+          };
 
-            // Calculate processing rate
-            const currentTime = Date.now();
-            const timeSinceLastUpdate = (currentTime - lastUpdateTime) / 1000;
-            const rowsSinceLastUpdate = processed - lastProgressUpdate;
-            const currentRate = rowsSinceLastUpdate / timeSinceLastUpdate;
+          const onProgress = (processed: number) => {
+            // Update progress at regular intervals
+            if (processed - lastProgressUpdate >= updateProgressInterval) {
+              // Only log at significant milestones to reduce noise
+              if (
+                processed % 5000 === 0 ||
+                processed === lastProgressUpdate + updateProgressInterval
+              ) {
+                log.info(`Processed ${processed} rows from ${fileId}`);
+              }
 
-            log.debug(
-              `Current processing rate: ${Math.round(currentRate)} rows/second`
-            );
+              // Calculate processing rate
+              const currentTime = Date.now();
+              const timeSinceLastUpdate = (currentTime - lastUpdateTime) / 1000;
+              const rowsSinceLastUpdate = processed - lastProgressUpdate;
+              const currentRate = rowsSinceLastUpdate / timeSinceLastUpdate;
 
-            // Estimate total rows based on file size (very rough estimate)
-            // Assume average of 100 bytes per row for CSV files
-            const fileSizeBytes =
-              file && typeof file.size_bytes === "number"
-                ? (file.size_bytes as number)
-                : 0;
-            const estimatedTotalRows =
-              fileSizeBytes > 0 ? Math.round(fileSizeBytes / 100) : 0;
+              log.debug(
+                `Current processing rate: ${Math.round(
+                  currentRate
+                )} rows/second`
+              );
 
-            // Update file metadata with progress information
-            updateFileProgress(processed, estimatedTotalRows);
+              // Estimate total rows based on file size (very rough estimate)
+              // Assume average of 100 bytes per row for CSV files
+              const fileSizeBytes =
+                file && typeof file.size_bytes === "number"
+                  ? (file.size_bytes as number)
+                  : 0;
+              const estimatedTotalRows =
+                fileSizeBytes > 0 ? Math.round(fileSizeBytes / 100) : 0;
 
-            // Update tracking variables
-            lastProgressUpdate = processed;
-            lastUpdateTime = currentTime;
-          }
-        };
+              // Update file metadata with progress information
+              updateFileProgress(processed, estimatedTotalRows);
 
-        // Callback for when headers are extracted
-        const onHeadersExtracted = async (headers: string[]): Promise<void> => {
-          log.info(`Extracted ${headers.length} columns from file ${fileId}`);
-          log.debug("Extracted headers", headers);
-          extractedHeaders = headers;
+              // Update tracking variables
+              lastProgressUpdate = processed;
+              lastUpdateTime = currentTime;
+            }
+          };
 
-          // Store headers in file metadata for schema management
-          try {
-            // Store the headers as a proper JSONB array, not as a JSON string
-            await executeQuery(`
+          // Callback for when headers are extracted
+          const onHeadersExtracted = async (
+            headers: string[]
+          ): Promise<void> => {
+            log.info(`Extracted ${headers.length} columns from file ${fileId}`);
+            log.debug("Extracted headers", headers);
+            extractedHeaders = headers;
+
+            // Store headers in file metadata for schema management
+            try {
+              // Store the headers as a proper JSONB array, not as a JSON string
+              await executeQuery(`
               UPDATE files
               SET metadata =
                 CASE
@@ -366,9 +495,9 @@ export default withAuth(async function handler(
               WHERE id = '${fileId}'
             `);
 
-            // If column merges were provided, store them in metadata
-            if (columnMerges) {
-              await executeQuery(`
+              // If column merges were provided, store them in metadata
+              if (columnMerges) {
+                await executeQuery(`
                 UPDATE files
                 SET metadata = jsonb_set(
                   COALESCE(metadata, '{}'::jsonb),
@@ -377,12 +506,12 @@ export default withAuth(async function handler(
                 )
                 WHERE id = '${fileId}'
               `);
-              log.info(`Stored column merges in file metadata for ${fileId}`);
-            }
+                log.info(`Stored column merges in file metadata for ${fileId}`);
+              }
 
-            // If visible columns were provided, store them in metadata
-            if (visibleColumns) {
-              await executeQuery(`
+              // If visible columns were provided, store them in metadata
+              if (visibleColumns) {
+                await executeQuery(`
                 UPDATE files
                 SET metadata = jsonb_set(
                   COALESCE(metadata, '{}'::jsonb),
@@ -391,71 +520,189 @@ export default withAuth(async function handler(
                 )
                 WHERE id = '${fileId}'
               `);
-              log.info(`Stored visible columns in file metadata for ${fileId}`);
+                log.info(
+                  `Stored visible columns in file metadata for ${fileId}`
+                );
+              }
+              log.info(`Stored column headers in file metadata for ${fileId}`);
+
+              // Update file status to indicate headers are available
+              // This allows the UI to show the columns before ingestion is complete
+              await updateFileStatus(fileId, FileStatus.HEADERS_EXTRACTED);
+              log.info(`Updated file status to indicate headers are available`);
+            } catch (metadataError) {
+              console.warn(
+                `Failed to store column headers in metadata: ${metadataError}`
+              );
+              // Don't fail the process if metadata update fails
             }
-            log.info(`Stored column headers in file metadata for ${fileId}`);
+          };
 
-            // Update file status to indicate headers are available
-            // This allows the UI to show the columns before ingestion is complete
-            await updateFileStatus(fileId, FileStatus.HEADERS_EXTRACTED);
-            log.info(`Updated file status to indicate headers are available`);
-          } catch (metadataError) {
-            console.warn(
-              `Failed to store column headers in metadata: ${metadataError}`
+          // Use the appropriate processor based on file format
+          const formatLower = format.toLowerCase();
+
+          if (formatLower === "csv") {
+            // Use the optimized implementation for CSV files
+            log.info(
+              `Using optimized large file processor for CSV file ${fileId}`
             );
-            // Don't fail the process if metadata update fails
-          }
-        };
+            return await processLargeCSV(
+              filePath,
+              fileId,
+              sourceId,
+              onProgress,
+              onHeadersExtracted
+            );
+          } else if (formatLower === "xlsx" || formatLower === "xls") {
+            // Use the standard implementation for Excel files, but with explicit logging
+            log.info(
+              `Using standard file processor for Excel file ${fileId} (format: ${format})`
+            );
 
-        // Use the optimized large file processor for CSV files
-        if (format.toLowerCase() === "csv") {
-          // Use the optimized implementation for CSV files
-          log.info(
-            `Using optimized large file processor for CSV file ${fileId}`
+            // Add additional debug logging for XLSX processing
+            const xlsxDebugProgress = (processed: number) => {
+              // Call the original progress handler
+              onProgress(processed);
+
+              // Add extra debug logging for Excel files
+              if (processed % 100 === 0) {
+                log.debug(`XLSX processing progress: ${processed} rows`);
+              }
+            };
+
+            // Add additional debug for headers extraction
+            const xlsxDebugHeaders = async (
+              headers: string[]
+            ): Promise<void> => {
+              log.debug(`XLSX headers extracted: ${headers.join(", ")}`);
+              return onHeadersExtracted(headers);
+            };
+
+            return await processFileStreaming(
+              filePath,
+              fileId,
+              sourceId,
+              format,
+              batchSize,
+              xlsxDebugProgress,
+              xlsxDebugHeaders
+            );
+          } else {
+            // Fall back to the standard implementation for other file types
+            log.info(
+              `Using standard file processor for ${format} file ${fileId}`
+            );
+            return await processFileStreaming(
+              filePath,
+              fileId,
+              sourceId,
+              format,
+              batchSize,
+              onProgress,
+              onHeadersExtracted
+            );
+          }
+        } catch (error) {
+          await handleFileError(
+            fileId!,
+            ErrorType.PARSING,
+            ErrorSeverity.MEDIUM,
+            `Error processing file: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`,
+            { format, error }
           );
-          return await processLargeCSV(
-            filePath,
-            fileId,
-            sourceId,
-            onProgress,
-            onHeadersExtracted
-          );
-        } else {
-          // Fall back to the standard implementation for other file types
-          log.info(
-            `Using standard file processor for ${format} file ${fileId}`
-          );
-          return await processFileStreaming(
-            filePath,
-            fileId,
-            sourceId,
-            format,
-            batchSize,
-            onProgress,
-            onHeadersExtracted
-          );
+          throw error;
         }
-      } catch (error) {
-        await handleFileError(
-          fileId!,
-          ErrorType.PARSING,
-          ErrorSeverity.MEDIUM,
-          `Error processing file: ${
-            error instanceof Error ? error.message : "Unknown error"
-          }`,
-          { format, error }
-        );
-        throw error;
-      }
-    });
+      },
+      3, // maxRetries
+      1000, // baseDelay
+      fileId // Use fileId as operationId for idempotency
+    );
 
     log.info(
       `Successfully processed ${processResult.rowCount} rows from ${fileId}`
     );
 
-    // Update file status to active
+    // First update the file status to active
     await updateFileStatus(fileId, FileStatus.ACTIVE);
     log.info(`Updated file status to ${FileStatus.ACTIVE}`);
+
+    // Remove the processing lock
+    try {
+      await executeQuery(`
+        UPDATE files
+        SET metadata = jsonb_set(
+          COALESCE(metadata, '{}'::jsonb),
+          '{processingLock}',
+          'null'::jsonb
+        )
+        WHERE id = '${fileId}'
+      `);
+      log.info(`Removed processing lock from file ${fileId}`);
+    } catch (lockError) {
+      log.warn(
+        `Error removing processing lock: ${lockError}. Continuing anyway.`
+      );
+    }
+
+    // Add a small delay to ensure data is fully committed before activation
+    log.info(
+      `Waiting for data to be fully committed before activating file...`
+    );
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    // Check if file data was actually inserted (for logging purposes only)
+    try {
+      const dataCountResult = await executeQuery(`
+        SELECT COUNT(*) as count FROM file_data WHERE file_id = '${fileId}'
+      `);
+
+      const dataCount =
+        Array.isArray(dataCountResult) && dataCountResult.length > 0
+          ? (dataCountResult[0] as any).count
+          : 0;
+
+      log.info(`File ${fileId} has ${dataCount} rows in the file_data table`);
+
+      // If no data was inserted, log a warning but don't attempt reprocessing
+      if (dataCount === 0) {
+        log.warn(
+          `No data was inserted for file ${fileId}. Please check the logs for errors and try uploading again if needed.`
+        );
+      }
+    } catch (countError) {
+      log.warn(`Error checking data count: ${countError}`);
+    }
+
+    // Now properly activate the file using the fileActivation module
+    // This will create the necessary views and make the data accessible
+    try {
+      const { activateFile } = await import("../../../lib/fileActivation");
+
+      log.info(`Attempting to activate file ${fileId} for user ${userId}`);
+      const activationResult = await activateFile(fileId, userId);
+
+      if (!activationResult.success) {
+        log.warn(`File activation failed: ${activationResult.message}`);
+        log.info(
+          `File is still marked as active but views may not be properly created`
+        );
+      } else {
+        log.info(`File successfully activated: ${activationResult.message}`);
+      }
+    } catch (activationError) {
+      log.error(
+        `Error during file activation: ${
+          activationError instanceof Error
+            ? activationError.message
+            : "Unknown error"
+        }`
+      );
+      log.info(
+        `File is still marked as active but views may not be properly created`
+      );
+    }
 
     // Update ingested_at timestamp
     try {

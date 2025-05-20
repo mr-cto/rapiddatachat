@@ -173,43 +173,73 @@ function ProjectDashboard(): React.ReactElement {
 
     fetchProject();
 
-    // Load top 10 records on initial load if we have a project ID
+    // Always load top 10 records on initial load if we have a project ID
     if (projectId) {
       const loadInitialRecords = async () => {
         try {
           setIsLoading(true);
           setError(null);
 
-          const response = await fetch("/api/file-data/top-records", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              projectId,
-              limit: 10,
-            }),
-          });
+          // First check if there are any files in the project
+          const filesResponse = await fetch(
+            `/api/projects/${projectId}/files?page=1&pageSize=1`
+          );
+          const filesData = await filesResponse.json();
 
-          const data = await response.json();
+          // Only proceed with loading records if there are files
+          if (
+            filesResponse.ok &&
+            filesData.files &&
+            filesData.files.length > 0
+          ) {
+            console.log("Files found in project, loading top 10 records");
 
-          if (!response.ok) {
-            throw new Error(data.error || "Failed to load initial records");
-          }
-
-          // Only set result if we actually have data to show
-          // This prevents "No Results Found" message on fresh projects
-          if (data.results && data.results.length > 0) {
-            setResult({
-              sqlQuery: "SELECT * FROM file_data FETCH FIRST 10 ROWS ONLY",
-              explanation:
-                "Top 10 records loaded for column management purposes, your changes will apply to the full dataset on download",
-              results: data.results,
-              executionTime: data.executionTime,
-              totalRows: data.totalRows,
+            const response = await fetch("/api/file-data/top-records", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                projectId,
+                limit: 10,
+              }),
             });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+              throw new Error(data.error || "Failed to load initial records");
+            }
+
+            // Always set result if we have files, even if no results yet
+            if (data.results && data.results.length > 0) {
+              setResult({
+                sqlQuery: "SELECT * FROM file_data FETCH FIRST 10 ROWS ONLY",
+                explanation:
+                  "Top 10 records loaded automatically, your changes will apply to the full dataset on download",
+                results: data.results,
+                executionTime: data.executionTime,
+                totalRows: data.totalRows,
+              });
+              console.log(
+                `Loaded ${data.results.length} records on dashboard initialization`
+              );
+            } else {
+              console.log("No records found despite having files");
+              // Even with no results, we'll show an empty result set rather than null
+              // This indicates to the user that we attempted to load data
+              setResult({
+                sqlQuery: "SELECT * FROM file_data FETCH FIRST 10 ROWS ONLY",
+                explanation:
+                  "No records found in the active files. Data may still be processing.",
+                results: [],
+                executionTime: 0,
+                totalRows: 0,
+              });
+            }
           } else {
-            // For fresh projects with no data, set result to null
+            console.log("No files found in project, skipping record loading");
+            // For fresh projects with no files, set result to null
             // This will prevent showing "No Results Found" message
             setResult(null);
           }
@@ -619,6 +649,62 @@ function ProjectDashboard(): React.ReactElement {
                 onSelectFile={handleFileSelect}
                 selectedFileId={selectedFileId}
                 projectId={projectId}
+                onFileCountChange={(count) => {
+                  // If we have files, ensure we load the top 10 records
+                  if (
+                    count > 0 &&
+                    (!result || !result.results || result.results.length === 0)
+                  ) {
+                    // Load top 10 records when files are present but no results are showing
+                    (async () => {
+                      try {
+                        setIsLoading(true);
+                        setError(null);
+
+                        const response = await fetch(
+                          "/api/file-data/top-records",
+                          {
+                            method: "POST",
+                            headers: {
+                              "Content-Type": "application/json",
+                            },
+                            body: JSON.stringify({
+                              projectId,
+                              limit: 10,
+                            }),
+                          }
+                        );
+
+                        const data = await response.json();
+
+                        if (!response.ok) {
+                          throw new Error(
+                            data.error || "Failed to load records"
+                          );
+                        }
+
+                        if (data.results && data.results.length > 0) {
+                          setResult({
+                            sqlQuery:
+                              "SELECT * FROM file_data FETCH FIRST 10 ROWS ONLY",
+                            explanation:
+                              "Top 10 records loaded automatically, your changes will apply to the full dataset on download",
+                            results: data.results,
+                            executionTime: data.executionTime,
+                            totalRows: data.totalRows,
+                          });
+                        }
+                      } catch (err) {
+                        console.error(
+                          "Error loading records on file count change:",
+                          err
+                        );
+                      } finally {
+                        setIsLoading(false);
+                      }
+                    })();
+                  }
+                }}
               />
             ) : (
               <div className="p-4 text-gray-400">Loading files...</div>

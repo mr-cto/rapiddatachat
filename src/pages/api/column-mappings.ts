@@ -138,6 +138,52 @@ export default async function handler(
         const success = await schemaService.saveColumnMapping(newMapping);
 
         if (success) {
+          // Check the file status before attempting to activate
+          try {
+            // Get the current file status
+            const fileResponse = await fetch(
+              `${
+                process.env.NEXTAUTH_URL || "http://localhost:3000"
+              }/api/files/${bodyFileId}`,
+              {
+                headers: {
+                  Cookie: req.headers.cookie || "",
+                },
+              }
+            );
+
+            if (fileResponse.ok) {
+              const fileData = await fileResponse.json();
+              const fileStatus = fileData.file?.status;
+
+              // Only attempt to activate if the file is not already active or being processed
+              if (fileStatus !== "active" && fileStatus !== "processing") {
+                console.log(
+                  `Activating file ${bodyFileId} after column mapping (current status: ${fileStatus})`
+                );
+
+                // The file will be activated by the ingest-file process
+                console.log(
+                  `File ${bodyFileId} will be activated by the ingest-file process`
+                );
+              } else {
+                console.log(
+                  `File ${bodyFileId} is already ${fileStatus}, skipping activation`
+                );
+              }
+            } else {
+              console.warn(
+                `Failed to get file status: ${fileResponse.statusText}`
+              );
+            }
+          } catch (statusError) {
+            console.error(
+              `Error checking file status for ${bodyFileId}:`,
+              statusError
+            );
+            // Continue even if status check fails
+          }
+
           return res.status(200).json({
             success: true,
             mapping: newMapping,

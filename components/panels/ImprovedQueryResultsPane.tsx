@@ -53,6 +53,8 @@ interface ImprovedQueryResultsPaneProps {
   viewStateManager?: ViewStateManager;
   userId?: string;
   projectId?: string; // Add projectId prop
+  previewData?: Record<string, unknown>[]; // Add preview data prop
+  isPreview?: boolean; // Flag to indicate if we're showing preview data
 }
 
 const ImprovedQueryResultsPane: React.FC<ImprovedQueryResultsPaneProps> = ({
@@ -65,7 +67,9 @@ const ImprovedQueryResultsPane: React.FC<ImprovedQueryResultsPaneProps> = ({
   onColumnMergesChange,
   viewStateManager,
   userId,
-  projectId, // Extract projectId from props
+  projectId,
+  previewData,
+  isPreview = false,
 }) => {
   // State for modal visibility
   const [showColumnFilterModal, setShowColumnFilterModal] = useState(false);
@@ -97,6 +101,27 @@ const ImprovedQueryResultsPane: React.FC<ImprovedQueryResultsPaneProps> = ({
 
   // Process results to extract nested data
   useEffect(() => {
+    // Handle preview data if available
+    if (isPreview && previewData && previewData.length > 0) {
+      console.log("Processing preview data:", previewData);
+      setProcessedResults(previewData);
+
+      // Get all unique keys from preview data for visible columns
+      const allKeys = new Set<string>();
+      previewData.forEach((row) => {
+        Object.keys(row).forEach((key) => {
+          allKeys.add(key);
+        });
+      });
+
+      const allColumnsArray = Array.from(allKeys);
+      setAllAvailableColumns(allColumnsArray);
+      setVisibleColumns(allColumnsArray);
+
+      return;
+    }
+
+    // Handle regular query results
     if (result && result.results.length > 0) {
       // Process the results to extract nested data
       const processed = result.results.map((row) => {
@@ -560,27 +585,86 @@ const ImprovedQueryResultsPane: React.FC<ImprovedQueryResultsPaneProps> = ({
                 padding="lg"
                 className="flex flex-col items-center justify-center h-64"
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-12 w-12 text-gray-500"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-                <h3 className="mt-4 text-lg font-medium text-gray-300">
-                  No Results Found
-                </h3>
-                <p className="mt-2 text-gray-400 text-center max-w-md">
-                  Your query executed successfully, but didn&apos;t return any
-                  data. Try modifying your query or checking your data source.
-                </p>
+                {isPreview ? (
+                  // For preview data
+                  <>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-12 w-12 text-blue-500"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.5}
+                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                    <h3 className="mt-4 text-lg font-medium text-gray-300">
+                      Preview Data Not Available
+                    </h3>
+                    <p className="mt-2 text-gray-400 text-center max-w-md">
+                      No preview data is available for this file yet. The file
+                      may still be processing.
+                    </p>
+                  </>
+                ) : result &&
+                  result.sqlQuery &&
+                  result.sqlQuery.includes("file_data") ? (
+                  // For file data queries that return no results but have active files
+                  <>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-12 w-12 text-yellow-500"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.5}
+                        d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                    <h3 className="mt-4 text-lg font-medium text-gray-300">
+                      Data Loading
+                    </h3>
+                    <p className="mt-2 text-gray-400 text-center max-w-md">
+                      Your files are available but data may still be processing.
+                      Please wait a moment and refresh the page, or try
+                      uploading a different file.
+                    </p>
+                  </>
+                ) : (
+                  // Default no results message
+                  <>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-12 w-12 text-gray-500"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.5}
+                        d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                    <h3 className="mt-4 text-lg font-medium text-gray-300">
+                      No Results Found
+                    </h3>
+                    <p className="mt-2 text-gray-400 text-center max-w-md">
+                      Your query executed successfully, but didn&apos;t return
+                      any data. Try modifying your query or checking your data
+                      source.
+                    </p>
+                  </>
+                )}
               </Card>
             )}
 
