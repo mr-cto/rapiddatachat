@@ -1,16 +1,20 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "../ui";
-import { FileDetailsModalProps } from "./types";
+import { useFilesContext } from "./context/FilesContext";
+import { formatFileSize, getStatusBadgeColor } from "./utils";
+
+interface FileDetailsModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  fileId: string | null;
+}
 
 const FileDetailsModal: React.FC<FileDetailsModalProps> = ({
   isOpen,
   onClose,
   fileId,
-  formatFileSize,
-  getStatusBadgeColor,
-  retryFileIngestion,
-  retryingFiles,
 }) => {
+  const { retryFileIngestion, retryingFiles } = useFilesContext();
   const [fileDetailsData, setFileDetailsData] = useState<any>(null);
   const [loadingFileDetails, setLoadingFileDetails] = useState<boolean>(false);
 

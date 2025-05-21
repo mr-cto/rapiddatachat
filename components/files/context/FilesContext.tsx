@@ -1,8 +1,10 @@
-import React, { createContext, useContext, ReactNode } from "react";
+import React, { createContext, useContext, ReactNode, useEffect } from "react";
 import { useStableSession } from "../../../lib/hooks/useStableSession";
 import { useFileList } from "../hooks/useFileList";
 import { useFileOperations } from "../hooks/useFileOperations";
 import { useFileUpload } from "../hooks/useFileUpload";
+import { useFileEvents } from "../../../lib/hooks/useFileEvents";
+import { fileStatusMonitor } from "../../../lib/services/FileStatusMonitor";
 import { FileData, Pagination, Sorting } from "../types";
 
 interface FilesContextType {
@@ -28,6 +30,15 @@ interface FilesContextType {
   // File upload state
   uploading: boolean;
   uploadProgress: number;
+
+  // File processing state
+  processingFiles: Record<
+    string,
+    {
+      status: string;
+      progress: number;
+    }
+  >;
   uploadStatus: string;
   showSchemaMapper: boolean;
   uploadedFileId: string | null;
@@ -91,6 +102,11 @@ export const FilesProvider: React.FC<FilesProviderProps> = ({
   onFileCountChange,
 }) => {
   const { userId, isAuthenticated } = useStableSession();
+
+  // Add state for file processing status
+  const [processingFiles, setProcessingFiles] = React.useState<
+    Record<string, { status: string; progress: number }>
+  >({});
 
   // Use our custom hooks
   const {
@@ -161,6 +177,56 @@ export const FilesProvider: React.FC<FilesProviderProps> = ({
     setSuccessMessage,
   });
 
+  // Listen for file events to update processing files state
+  useFileEvents(
+    [
+      "file:upload:completed",
+      "file:processing:progress",
+      "file:processing:completed",
+    ],
+    (event) => {
+      if (event.fileId) {
+        // Update processing files state
+        if (event.type === "file:upload:completed") {
+          setProcessingFiles((prev) => ({
+            ...prev,
+            [event.fileId!]: { status: "processing", progress: 0 },
+          }));
+
+          // Add file to status monitor
+          fileStatusMonitor.addFile(event.fileId);
+        } else if (event.type === "file:processing:progress") {
+          setProcessingFiles((prev) => ({
+            ...prev,
+            [event.fileId!]: {
+              status: event.data.status,
+              progress: event.data.progress,
+            },
+          }));
+        } else if (event.type === "file:processing:completed") {
+          setProcessingFiles((prev) => {
+            const newState = { ...prev };
+            delete newState[event.fileId!];
+            return newState;
+          });
+
+          // Refresh file list when processing completes
+          fetchFiles();
+        }
+      }
+    },
+    [fetchFiles]
+  );
+
+  // Listen for error events
+  useFileEvents(
+    "file:error",
+    (event) => {
+      setError(event.error?.message || "An error occurred");
+    },
+    [setError]
+  );
+
   const value: FilesContextType = {
     // File list state
     files,
@@ -189,6 +255,9 @@ export const FilesProvider: React.FC<FilesProviderProps> = ({
     uploadedFileId,
     uploadedFileColumns,
     dragActive,
+
+    // File processing state
+    processingFiles,
     uploadingFiles,
     inputRef,
 

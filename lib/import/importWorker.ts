@@ -179,7 +179,7 @@ async function processCsvFile(
 
     // Process the batch when it reaches the batch size
     if (batch.length >= batchSize) {
-      await insertBatch(prisma, tableName, batch);
+      await insertBatch(prisma, tableName, batch, projectId);
 
       // Call the progress callback if provided
       if (onProgress) {
@@ -193,7 +193,7 @@ async function processCsvFile(
 
   // Process any remaining records
   if (batch.length > 0) {
-    await insertBatch(prisma, tableName, batch);
+    await insertBatch(prisma, tableName, batch, projectId);
 
     // Call the progress callback if provided
     if (onProgress) {
@@ -241,28 +241,73 @@ async function processXlsxFile(
   const sheetName = workbook.SheetNames[0];
   const worksheet = workbook.Sheets[sheetName];
 
-  // Convert the sheet to JSON
-  const jsonData = XLSX.utils.sheet_to_json(worksheet);
+  // Convert the sheet to JSON with header: true to ensure consistent column names
+  const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+  // Debug: Log the first row of data
+  if (jsonData.length > 0) {
+    console.log("First row of XLSX data (headers):", jsonData[0]);
+  }
 
   // If there's no data, return early
-  if (jsonData.length === 0) {
+  if (jsonData.length <= 1) {
+    // Need at least headers and one data row
     return { rowCount: 0 };
   }
 
   // Extract headers from the first row
-  const headers = Object.keys(jsonData[0] as object);
+  const extractedHeaders = jsonData[0] as string[];
+  console.log("Extracted headers:", extractedHeaders);
 
-  // Create the table name
+  // Convert the data to a format similar to CSV
+  const records = [];
+  for (let i = 1; i < jsonData.length; i++) {
+    const row = jsonData[i] as any[];
+    const record: Record<string, any> = {};
+
+    // Map each column value to its header
+    extractedHeaders.forEach((header, index) => {
+      record[header] = row[index];
+    });
+
+    records.push(record);
+  }
+
+  console.log(`Converted ${records.length} rows from XLSX to record format`);
+  if (records.length > 0) {
+    console.log("Sample converted record:", records[0]);
+  }
+
+  // Use the headers we extracted
+  const headers = extractedHeaders;
+
+  // Use the same table name format as CSV files
   let tableName = `project_${projectId.replace(/-/g, "")}_data`;
 
   // Create or update the table
   await createOrUpdateTable(prisma, tableName, headers, projectId);
 
   // Process the data in batches
-  for (let i = 0; i < jsonData.length; i += batchSize) {
-    const batch = jsonData.slice(i, i + batchSize);
+  for (let i = 0; i < records.length; i += batchSize) {
+    const batch = records.slice(i, i + batchSize);
 
-    await insertBatch(prisma, tableName, batch);
+    // Debug: Log the batch being sent to insertBatch
+    console.log(`Sending batch of ${batch.length} rows to insertBatch`);
+    if (batch.length > 0) {
+      console.log("First row in batch:", batch[0]);
+      console.log(
+        "Keys in first row of batch:",
+        Object.keys(batch[0] as object)
+      );
+    }
+
+    try {
+      await insertBatch(prisma, tableName, batch, projectId);
+      console.log(`Successfully inserted batch of ${batch.length} rows`);
+    } catch (error) {
+      console.error("Error inserting batch:", error);
+      throw error;
+    }
 
     rowCount += batch.length;
 
@@ -416,43 +461,96 @@ async function checkColumnExists(
  * @param prisma The Prisma client
  * @param tableName The name of the table
  * @param batch The batch of records to insert
+ * @param projectId The ID of the project
  */
 async function insertBatch(
   prisma: any,
   tableName: string,
-  batch: any[]
+  batch: any[],
+  projectId?: string
 ): Promise<void> {
   if (batch.length === 0) {
     return;
   }
 
-  // Get the column names from the first record
-  const columnNames = Object.keys(batch[0]).map((name) =>
-    name.replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase()
-  );
+  console.log(`Inserting ${batch.length} records into ${tableName}`);
 
-  // Build the INSERT statement
-  const placeholders = batch
-    .map(
-      (_, i) =>
-        `(${columnNames
-          .map((_, j) => `$${i * columnNames.length + j + 1}`)
-          .join(", ")}, $${batch.length * columnNames.length + 1})`
-    )
-    .join(", ");
+  try {
+    // Insert directly into file_data table using Prisma
+    console.log("Inserting data directly into file_data table");
 
-  const values = batch.flatMap((record) =>
-    columnNames.map((name) => record[name] ?? null)
-  );
+    // Prepare data for insertion
+    const dataToInsert = batch.map((row) => {
+      try {
+        return {
+          fileId: tableName.replace(/^project_(.+)_data.*$/, "$1"),
+          data: JSON.parse(
+            JSON.stringify(row, (_, value) =>
+              typeof value === "bigint" ? value.toString() : value
+            )
+          ),
+        };
+      } catch (parseError) {
+        console.error(`Error parsing row data: ${parseError}`);
+        // Return a simplified version of the row
+        return {
+          fileId: tableName.replace(/^project_(.+)_data.*$/, "$1"),
+          data: Object.fromEntries(
+            Object.entries(row).map(([key, value]) => [
+              key,
+              typeof value === "bigint"
+                ? value.toString()
+                : value === null || value === undefined
+                ? null
+                : String(value),
+            ])
+          ),
+        };
+      }
+    });
 
-  // Add the project_id to each row
-  values.push(batch[0].project_id);
+    console.log(
+      `Prepared ${dataToInsert.length} rows for insertion into file_data table`
+    );
 
-  // Execute the INSERT statement using the RAW_DATABASE_DATABASE_URL connection
-  await prisma.$executeRaw`
-    INSERT INTO ${tableName} (${columnNames.join(", ")}, project_id)
-    VALUES ${placeholders}
-  `;
+    // Insert data in chunks to avoid memory issues
+    const chunkSize = 100;
+    for (let i = 0; i < dataToInsert.length; i += chunkSize) {
+      const chunk = dataToInsert.slice(i, i + chunkSize);
 
-  console.log(`Inserted ${batch.length} records into ${tableName}`);
+      try {
+        const result = await prisma.fileData.createMany({
+          data: chunk,
+          skipDuplicates: true,
+        });
+
+        console.log(
+          `Successfully inserted ${
+            result.count
+          } rows into file_data table (chunk ${Math.floor(i / chunkSize) + 1})`
+        );
+      } catch (insertError) {
+        console.error(`Error with createMany: ${insertError}`);
+
+        // Fall back to individual inserts if batch insert fails
+        console.log("Falling back to individual inserts");
+        for (const item of chunk) {
+          try {
+            await prisma.fileData.create({
+              data: item,
+            });
+          } catch (individualError) {
+            console.error(`Error with individual insert: ${individualError}`);
+          }
+        }
+      }
+    }
+
+    console.log(
+      `Successfully processed ${dataToInsert.length} records for ${tableName}`
+    );
+  } catch (error) {
+    console.error(`Error inserting batch into ${tableName}:`, error);
+    throw error;
+  }
 }

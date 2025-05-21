@@ -186,10 +186,10 @@ let prismaInstance: ReplicaPrismaClient | null = null;
  */
 export function getPrismaClient(): ReplicaPrismaClient {
   if (!prismaInstance) {
-    console.log("Initializing new ReplicaPrismaClient instance");
+    // console.log("Initializing new ReplicaPrismaClient instance");
     try {
       prismaInstance = new ReplicaPrismaClient();
-      console.log("ReplicaPrismaClient initialized successfully");
+      // console.log("ReplicaPrismaClient initialized successfully");
     } catch (error) {
       console.error("Error initializing ReplicaPrismaClient:", error);
       throw error;

@@ -25,14 +25,14 @@ function ProjectDashboard(): React.ReactElement {
   console.log("Dashboard rendering started");
 
   const router = useRouter();
-  console.log("Router state:", {
-    isReady: router.isReady,
-    pathname: router.pathname,
-    query: router.query,
-  });
+  // console.log("Router state:", {
+  //   isReady: router.isReady,
+  //   pathname: router.pathname,
+  //   query: router.query,
+  // });
 
   const { data: session, status } = useSession();
-  console.log("Session state:", { status, userId: session?.user?.id });
+  // console.log("Session state:", { status, userId: session?.user?.id });
 
   // Safely access router.query values with proper type handling
   // Only access router.query when router is ready to prevent HMR issues
@@ -46,11 +46,11 @@ function ProjectDashboard(): React.ReactElement {
     ? (router.query.fileMapped as string | undefined)
     : undefined;
 
-  console.log("Extracted query params:", {
-    projectId,
-    columnCreated,
-    fileMapped,
-  });
+  // console.log("Extracted query params:", {
+  //   projectId,
+  //   columnCreated,
+  //   fileMapped,
+  // });
   const [project, setProject] = useState<Project | null>(null);
   const [selectedFileId, setSelectedFileId] = useState<string | undefined>(
     undefined

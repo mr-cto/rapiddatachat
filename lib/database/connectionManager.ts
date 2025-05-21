@@ -18,7 +18,7 @@ export class DatabaseConnectionManager {
    * Private constructor to enforce singleton pattern
    */
   private constructor() {
-    console.log("Initializing DatabaseConnectionManager");
+    // console.log("Initializing DatabaseConnectionManager");
     this.initializePools();
   }
 
@@ -50,10 +50,6 @@ export class DatabaseConnectionManager {
       this.replicaPool.push(client);
       this.poolCreationTimestamps.set(client, Date.now());
     }
-
-    console.log(
-      `Initialized connection pools with ${this.minPoolSize} connections each`
-    );
   }
 
   /**
@@ -94,11 +90,11 @@ export class DatabaseConnectionManager {
    * @returns PrismaClient instance configured to use the replica database
    */
   getReplicaClient(): PrismaClient {
-    console.log("Getting replica client. Pool size:", this.replicaPool.length);
-    console.log(
-      "RAW_DATABASE_DATABASE_URL is",
-      process.env.RAW_DATABASE_DATABASE_URL ? "set" : "not set"
-    );
+    // console.log("Getting replica client. Pool size:", this.replicaPool.length);
+    // console.log(
+    //   "RAW_DATABASE_DATABASE_URL is",
+    //   process.env.RAW_DATABASE_DATABASE_URL ? "set" : "not set"
+    // );
 
     if (this.replicaPool.length > 0) {
       const client = this.replicaPool.pop()!;

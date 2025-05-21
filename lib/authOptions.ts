@@ -86,7 +86,6 @@ export const authOptions: NextAuthOptions = {
             id: user.id,
             name: user.name,
             email: user.email,
-            image: user.image,
           };
         } catch (error) {
           log.error("Authentication error", error);
@@ -172,9 +171,9 @@ export const authOptions: NextAuthOptions = {
 
         // Redirect to projects page after sign in
         if (url.startsWith(baseUrl)) {
-          log.info(
-            `URL starts with baseUrl, redirecting to ${baseUrl}/project`
-          );
+          // log.info(
+          //   `URL starts with baseUrl, redirecting to ${baseUrl}/project`
+          // );
           return `${baseUrl}/project`;
         }
         // Redirect to projects page if trying to access home page after sign in

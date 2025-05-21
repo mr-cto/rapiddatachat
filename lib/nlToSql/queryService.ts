@@ -825,7 +825,6 @@ export class QueryService {
 
           // Check if this is likely a file table name that needs to be a view
           if (
-            tableName.includes("_xlsx") ||
             tableName.toLowerCase().includes("attorney_data_scenarios") ||
             (!tableName.startsWith("data_") && !tableName.startsWith("user_"))
           ) {
@@ -851,12 +850,10 @@ export class QueryService {
 
                 if (exists) {
                   // Try to find a view that matches the original filename
-                  const cleanTableName = tableName.replace(/_xlsx$/, "");
                   viewsResult = (await executeQuery(`
                     SELECT view_name as table_name
                     FROM view_metadata
                     WHERE original_filename ILIKE '%${tableName}%'
-                    OR original_filename ILIKE '%${cleanTableName}%'
                     LIMIT 1
                   `)) as Array<{ table_name: string }>;
 

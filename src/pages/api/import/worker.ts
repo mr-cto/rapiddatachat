@@ -68,7 +68,7 @@ export default async function handler(
       return;
     } else {
       // Initialize the worker to process jobs from the queue
-      console.log("Initializing import worker");
+      // console.log("Initializing import worker");
       const worker = await initializeImportWorker();
 
       // Keep the worker running for the maximum duration

@@ -82,8 +82,9 @@ export interface FileDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
   fileId: string | null;
-  formatFileSize: (bytes: number) => string;
-  getStatusBadgeColor: (status: string) => string;
-  retryFileIngestion: (fileId: string) => void;
-  retryingFiles: Record<string, boolean>;
+  // These props are now optional since they can come from the context
+  formatFileSize?: (bytes: number) => string;
+  getStatusBadgeColor?: (status: string) => string;
+  retryFileIngestion?: (fileId: string) => void;
+  retryingFiles?: Record<string, boolean>;
 }

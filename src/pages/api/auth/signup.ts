@@ -64,7 +64,7 @@ export default async function handler(
 
     // Check if user already exists
     // Use the replica client directly to ensure we're using the correct database
-    console.log("Getting replica client for user check...");
+    // console.log("Getting replica client for user check...");
     const existingUser = await prisma.useReplica(async (replicaClient) => {
       console.log(
         "Replica client received:",

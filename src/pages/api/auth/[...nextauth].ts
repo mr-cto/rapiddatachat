@@ -2,12 +2,12 @@ import NextAuth from "next-auth";
 import { authOptions } from "../../../../lib/authOptions";
 
 // Add debug logging
-console.log("NextAuth API handler initialized");
-console.log("Environment variables check:");
+// console.log("NextAuth API handler initialized");
+// console.log("Environment variables check:");
 
 // Check NEXTAUTH_URL
 const nextAuthUrl = process.env.NEXTAUTH_URL;
-console.log("- NEXTAUTH_URL:", nextAuthUrl || "Not set");
+// console.log("- NEXTAUTH_URL:", nextAuthUrl || "Not set");
 if (!nextAuthUrl) {
   console.error(
     "WARNING: NEXTAUTH_URL is not set. This will cause authentication issues in production!"
@@ -20,7 +20,7 @@ if (!nextAuthUrl) {
 
 // Check NEXTAUTH_SECRET
 const nextAuthSecret = process.env.NEXTAUTH_SECRET;
-console.log("- NEXTAUTH_SECRET:", nextAuthSecret ? "Set" : "Not set");
+// console.log("- NEXTAUTH_SECRET:", nextAuthSecret ? "Set" : "Not set");
 if (!nextAuthSecret) {
   console.error(
     "WARNING: NEXTAUTH_SECRET is not set. This will cause authentication issues!"
@@ -28,15 +28,15 @@ if (!nextAuthSecret) {
 }
 
 // Check other environment variables
-console.log(
-  "- GOOGLE_CLIENT_ID:",
-  process.env.GOOGLE_CLIENT_ID ? "Set" : "Not set"
-);
-console.log(
-  "- GOOGLE_CLIENT_SECRET:",
-  process.env.GOOGLE_CLIENT_SECRET ? "Set" : "Not set"
-);
-console.log("- NODE_ENV:", process.env.NODE_ENV);
+// console.log(
+//   "- GOOGLE_CLIENT_ID:",
+//   process.env.GOOGLE_CLIENT_ID ? "Set" : "Not set"
+// );
+// console.log(
+//   "- GOOGLE_CLIENT_SECRET:",
+//   process.env.GOOGLE_CLIENT_SECRET ? "Set" : "Not set"
+// );
+// console.log("- NODE_ENV:", process.env.NODE_ENV);
 
 // Create handler with error logging
 const authHandler = NextAuth(authOptions);
@@ -45,19 +45,19 @@ const authHandler = NextAuth(authOptions);
 export default async function handler(req: any, res: any) {
   // Log detailed request information
   console.log(`NextAuth request: ${req.method} ${req.url}`);
-  console.log("Request headers:", {
-    host: req.headers.host,
-    origin: req.headers.origin,
-    referer: req.headers.referer,
-    "user-agent": req.headers["user-agent"],
-    "x-forwarded-for": req.headers["x-forwarded-for"],
-    "x-forwarded-host": req.headers["x-forwarded-host"],
-    "x-forwarded-proto": req.headers["x-forwarded-proto"],
-  });
+  // console.log("Request headers:", {
+  //   host: req.headers.host,
+  //   origin: req.headers.origin,
+  //   referer: req.headers.referer,
+  //   "user-agent": req.headers["user-agent"],
+  //   "x-forwarded-for": req.headers["x-forwarded-for"],
+  //   "x-forwarded-host": req.headers["x-forwarded-host"],
+  //   "x-forwarded-proto": req.headers["x-forwarded-proto"],
+  // });
 
   // Log cookies (without sensitive values)
   if (req.cookies) {
-    console.log("Request cookies present:", Object.keys(req.cookies));
+    // console.log("Request cookies present:", Object.keys(req.cookies));
   } else {
     console.log("No cookies in request");
   }
@@ -69,9 +69,9 @@ export default async function handler(req: any, res: any) {
     const duration = Date.now() - startTime;
 
     // Log response information
-    console.log(
-      `NextAuth response completed in ${duration}ms with status: ${res.statusCode}`
-    );
+    // console.log(
+    //   `NextAuth response completed in ${duration}ms with status: ${res.statusCode}`
+    // );
     return result;
   } catch (error) {
     console.error("NextAuth error:", error);

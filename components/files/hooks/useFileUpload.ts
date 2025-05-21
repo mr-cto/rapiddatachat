@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { fileEventBus } from "../../../lib/events/FileEventBus";
 import { parseFileClient } from "../../../utils/clientParse";
 import { validateFiles, MAX_FILE_SIZE, ALLOWED_FILE_TYPES } from "../utils";
 
@@ -153,6 +154,21 @@ export const useFileUpload = ({
   ) => {
     if (uploadedFiles.length === 0) return;
 
+    // Generate a client-side ID for tracking before server response
+    const clientFileId = crypto.randomUUID();
+
+    // Publish upload started event
+    fileEventBus.publish({
+      type: "file:upload:started",
+      fileName: uploadedFiles[0].name,
+      projectId,
+      data: {
+        clientFileId,
+        size: uploadedFiles[0].size,
+        type: uploadedFiles[0].type,
+      },
+    });
+
     setUploading(true);
     setUploadProgress(0);
     setError(null);
@@ -194,7 +210,20 @@ export const useFileUpload = ({
         setUploadProgress((prev) => {
           // Increase progress by random amount between 5-15%
           const increment = Math.random() * 10 + 5;
-          return Math.min(prev + increment, 95);
+          const newProgress = Math.min(prev + increment, 95);
+
+          // Publish progress event
+          fileEventBus.publish({
+            type: "file:upload:progress",
+            fileName: uploadedFiles[0].name,
+            projectId,
+            data: {
+              clientFileId,
+              progress: newProgress,
+            },
+          });
+
+          return newProgress;
         });
       }, 500);
 
@@ -399,6 +428,21 @@ export const useFileUpload = ({
               }
 
               setUploadedFileColumns(extractedColumns);
+
+              // Generate a client-side ID for tracking
+              const clientFileId = crypto.randomUUID();
+
+              // Publish upload completed event
+              fileEventBus.publish({
+                type: "file:upload:completed",
+                fileId,
+                fileName: uploadedFiles[0].name,
+                projectId,
+                data: {
+                  clientFileId,
+                  columns: extractedColumns,
+                },
+              });
 
               // Force schema check again to be sure
               const schemaExists = await checkActiveSchema();
@@ -663,6 +707,17 @@ export const useFileUpload = ({
           console.log("Auto-created schema:", schemaData);
           setSchemaCreated(true);
 
+          // Publish schema created event
+          fileEventBus.publish({
+            type: "file:schema:created",
+            fileId,
+            projectId,
+            data: {
+              schemaId: schemaData.schema?.id,
+              columns: actualColumns,
+            },
+          });
+
           // Activate the file after creating the schema
           try {
             // Get the schema ID from the response
@@ -700,6 +755,13 @@ export const useFileUpload = ({
                 );
               }
 
+              // Publish activation started event
+              fileEventBus.publish({
+                type: "file:activation:started",
+                fileId,
+                projectId,
+              });
+
               // Activate the file
               const activateResponse = await fetch(
                 `/api/activate-file/${fileId}`,
@@ -712,10 +774,29 @@ export const useFileUpload = ({
                 console.warn(
                   "Failed to activate file after schema creation, but continuing"
                 );
+
+                // Publish error event
+                fileEventBus.publish({
+                  type: "file:error",
+                  fileId,
+                  projectId,
+                  error: new Error(
+                    "Failed to activate file after schema creation"
+                  ),
+                  data: { stage: "activation" },
+                });
               } else {
                 console.log(
                   "File activated successfully after schema creation"
                 );
+
+                // Publish activation completed event
+                fileEventBus.publish({
+                  type: "file:activation:completed",
+                  fileId,
+                  projectId,
+                  data: { status: "active" },
+                });
               }
             }
           } catch (activationError) {
@@ -723,6 +804,19 @@ export const useFileUpload = ({
               "Error during file activation after schema creation:",
               activationError
             );
+
+            // Publish error event
+            fileEventBus.publish({
+              type: "file:error",
+              fileId,
+              projectId,
+              error:
+                activationError instanceof Error
+                  ? activationError
+                  : new Error("Error during file activation"),
+              data: { stage: "activation" },
+            });
+
             // Continue even if activation fails
           }
 
@@ -740,7 +834,18 @@ export const useFileUpload = ({
             `/api/schema-management?projectId=${projectId}`
           );
           if (!schemaResponse.ok) {
-            throw new Error("Failed to fetch current schema");
+            const error = new Error("Failed to fetch current schema");
+
+            // Publish error event
+            fileEventBus.publish({
+              type: "file:error",
+              fileId,
+              projectId,
+              error,
+              data: { stage: "schema-fetch" },
+            });
+
+            throw error;
           }
 
           const schemaData = await schemaResponse.json();
@@ -844,6 +949,19 @@ export const useFileUpload = ({
         setUploadStatus("");
       } catch (err) {
         console.error("Error in automatic schema management:", err);
+
+        // Publish error event
+        fileEventBus.publish({
+          type: "file:error",
+          fileId,
+          projectId,
+          error:
+            err instanceof Error
+              ? err
+              : new Error("Failed to process file automatically"),
+          data: { stage: "schema-management" },
+        });
+
         setError(
           err instanceof Error
             ? err.message
@@ -855,6 +973,19 @@ export const useFileUpload = ({
       }
     } catch (err) {
       console.error("Error processing file with columns:", err);
+
+      // Publish error event
+      fileEventBus.publish({
+        type: "file:error",
+        fileId,
+        projectId,
+        error:
+          err instanceof Error
+            ? err
+            : new Error("Failed to process file with columns"),
+        data: { stage: "processing" },
+      });
+
       setError(
         err instanceof Error
           ? err.message
@@ -865,72 +996,6 @@ export const useFileUpload = ({
       setUploadStatus("");
     }
   };
-
-  // Add a direct test function for schema creation
-  const testSchemaCreation = async () => {
-    try {
-      console.log("DIRECT TEST: Testing schema creation endpoint");
-
-      const testColumns = ["Test1", "Test2", "Test3"];
-
-      const schemaPayload = {
-        action: "create_with_columns",
-        name: "Test Schema",
-        description: "Test schema creation",
-        columns: testColumns.map((col) => ({
-          id: crypto.randomUUID(),
-          name: col,
-          type: "text",
-          description: `Test column: ${col}`,
-          isRequired: false,
-        })),
-        userId: userId || "",
-        projectId: projectId,
-      };
-
-      console.log("DIRECT TEST: Schema payload:", schemaPayload);
-
-      const createSchemaResponse = await fetch("/api/schema-management", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(schemaPayload),
-      });
-
-      console.log(
-        `DIRECT TEST: Schema creation response status: ${createSchemaResponse.status}`
-      );
-
-      if (!createSchemaResponse.ok) {
-        const errorText = await createSchemaResponse
-          .text()
-          .catch(() => "Could not read error response");
-        console.error("DIRECT TEST: Schema creation failed:", errorText);
-      } else {
-        const schemaData = await createSchemaResponse.json();
-        console.log("DIRECT TEST: Schema created successfully:", schemaData);
-      }
-    } catch (err) {
-      console.error("DIRECT TEST: Error testing schema creation:", err);
-    }
-  };
-
-  // Run the test on mount
-  useEffect(() => {
-    // Only run this in development and if we're authenticated
-    if (process.env.NODE_ENV === "development" && isAuthenticated) {
-      // Check if there's no schema first
-      checkActiveSchema().then((hasSchema) => {
-        if (!hasSchema) {
-          console.log("DIRECT TEST: No schema found, testing schema creation");
-          testSchemaCreation();
-        } else {
-          console.log("DIRECT TEST: Schema already exists, skipping test");
-        }
-      });
-    }
-  }, [isAuthenticated, checkActiveSchema]);
 
   return {
     uploading,

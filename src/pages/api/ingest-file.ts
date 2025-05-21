@@ -616,7 +616,7 @@ export default withAuth(async function handler(
         }
       },
       3, // maxRetries
-      1000, // baseDelay
+      100, // baseDelay
       fileId // Use fileId as operationId for idempotency
     );
 

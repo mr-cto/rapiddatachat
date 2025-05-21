@@ -41,15 +41,15 @@ export default async function handler(
 ) {
   console.log("=== API UPLOAD HANDLER START ===");
   console.log(`Request method: ${req.method}`);
-  console.log(
-    `Request headers:`,
-    JSON.stringify({
-      "content-type": req.headers["content-type"],
-      "user-agent": req.headers["user-agent"],
-      host: req.headers["host"],
-      // Don't log authorization headers for security
-    })
-  );
+  // console.log(
+  //   `Request headers:`,
+  //   JSON.stringify({
+  //     "content-type": req.headers["content-type"],
+  //     "user-agent": req.headers["user-agent"],
+  //     host: req.headers["host"],
+  //     // Don't log authorization headers for security
+  //   })
+  // );
 
   // Only allow POST requests
   if (req.method !== "POST") {
@@ -81,13 +81,13 @@ export default async function handler(
 
   try {
     const userId = userEmail || "unknown";
-    console.log(`User ID: ${userId}`);
-    console.log("Initializing formidable...");
-    console.log(
-      `Upload directory: ${
-        isVercelEnvironment ? "Vercel Blob Storage" : UPLOADS_DIR
-      }`
-    );
+    // console.log(`User ID: ${userId}`);
+    // console.log("Initializing formidable...");
+    // console.log(
+    //   `Upload directory: ${
+    //     isVercelEnvironment ? "Vercel Blob Storage" : UPLOADS_DIR
+    //   }`
+    // );
 
     // Configure formidable
     const formOptions: formidable.Options = {

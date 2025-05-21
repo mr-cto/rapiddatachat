@@ -269,6 +269,8 @@ export async function processXLSXStreaming(
 
     // First, try to convert the sheet to JSON to get the actual column names
     try {
+      console.log("Converting XLSX worksheet to JSON with header row");
+
       // Convert the worksheet to JSON with header row
       const jsonData = xlsx.utils.sheet_to_json(worksheet, {
         header: 1, // Use first row as headers
@@ -276,9 +278,25 @@ export async function processXLSXStreaming(
         defval: null, // Default value for empty cells
       });
 
+      console.log(`XLSX to JSON conversion result:`, {
+        dataType: typeof jsonData,
+        isArray: Array.isArray(jsonData),
+        length: jsonData?.length || 0,
+        firstRowType: jsonData?.length > 0 ? typeof jsonData[0] : "none",
+        firstRowIsArray:
+          jsonData?.length > 0 ? Array.isArray(jsonData[0]) : false,
+        firstRowLength:
+          jsonData?.length > 0 && Array.isArray(jsonData[0])
+            ? jsonData[0].length
+            : 0,
+        firstFewRows: jsonData?.slice(0, 3),
+      });
+
       // If we have data and the first row has values, use those as headers
       if (jsonData && jsonData.length > 0 && Array.isArray(jsonData[0])) {
+        console.log("First row is an array, using as headers");
         const headerRow = jsonData[0];
+        console.log("Header row:", headerRow);
 
         // Use the actual column names from the first row
         for (let i = 0; i < headerRow.length; i++) {
@@ -303,7 +321,171 @@ export async function processXLSXStreaming(
           }
         }
 
-        return { headers, rowCount: jsonData.length - 1 }; // Subtract 1 for header row
+        // Process the data from jsonData
+        console.log(`Processing ${jsonData.length - 1} rows from XLSX data`);
+
+        // Skip the header row (index 0) and process all data rows
+        let rowCount = 0;
+        let batch: Record<string, unknown>[] = [];
+        let batchCount = 0;
+        const timestamp = new Date().toISOString();
+
+        // Process a batch of rows
+        const processBatch = async () => {
+          if (batch.length === 0) return;
+
+          try {
+            console.log(
+              `Processing batch ${batchCount + 1} with ${batch.length} rows`
+            );
+
+            // Log a sample row to help debug serialization issues
+            if (batch.length > 0) {
+              console.log(
+                `Sample row data structure:`,
+                JSON.stringify(batch[0], (_, value) =>
+                  typeof value === "bigint" ? value.toString() : value
+                ).substring(0, 500)
+              );
+            }
+
+            // Add provenance columns to each row with better data type handling
+            const rowsWithProvenance = batch.map((row) => {
+              // Create a sanitized version of the row that handles complex Excel data types
+              const sanitizedRow: Record<string, unknown> = {};
+              for (const [key, value] of Object.entries(row)) {
+                if (value instanceof Date) {
+                  sanitizedRow[key] = value.toISOString();
+                } else if (typeof value === "object" && value !== null) {
+                  try {
+                    sanitizedRow[key] = JSON.stringify(value);
+                  } catch (jsonError) {
+                    sanitizedRow[key] = String(value);
+                  }
+                } else if (typeof value === "bigint") {
+                  sanitizedRow[key] = value.toString();
+                } else {
+                  sanitizedRow[key] = value;
+                }
+              }
+
+              return {
+                ...sanitizedRow,
+                source_id: sourceId,
+                ingested_at: timestamp,
+              };
+            });
+
+            // Insert batch into database
+            console.log(`Inserting batch ${batchCount + 1} into database`);
+            await insertFileData(fileId, rowsWithProvenance);
+
+            rowCount += batch.length;
+            if (onProgress) {
+              onProgress(rowCount);
+            }
+
+            console.log(
+              `Successfully inserted batch ${
+                batchCount + 1
+              }, total rows processed: ${rowCount}`
+            );
+          } catch (error) {
+            console.error(`Error processing batch ${batchCount + 1}:`, error);
+
+            // Try individual row insertion as fallback
+            console.log(`Attempting individual row insertion as fallback...`);
+            let successCount = 0;
+
+            for (const row of batch) {
+              try {
+                // Create a simplified version with string values
+                const simplifiedRow: Record<string, unknown> = {};
+                for (const [key, value] of Object.entries(row)) {
+                  if (value === null || value === undefined) {
+                    simplifiedRow[key] = null;
+                  } else if (value instanceof Date) {
+                    simplifiedRow[key] = value.toISOString();
+                  } else if (typeof value === "object") {
+                    simplifiedRow[key] = String(value);
+                  } else {
+                    simplifiedRow[key] = value;
+                  }
+                }
+
+                await insertFileData(fileId, [
+                  {
+                    ...simplifiedRow,
+                    source_id: sourceId,
+                    ingested_at: timestamp,
+                  },
+                ]);
+                successCount++;
+              } catch (rowError) {
+                console.error(`Failed to insert individual row:`, rowError);
+              }
+            }
+
+            console.log(
+              `Individual insertion fallback: ${successCount}/${batch.length} rows inserted`
+            );
+
+            if (successCount === 0) {
+              throw error; // Re-throw if no rows were inserted
+            }
+
+            // Update row count with successful insertions
+            rowCount += successCount;
+            if (onProgress) {
+              onProgress(rowCount);
+            }
+          }
+
+          // Clear the batch
+          batch = [];
+          batchCount++;
+        };
+
+        // Process each row (skip the header row)
+        for (let i = 1; i < jsonData.length; i++) {
+          const rowData = jsonData[i];
+
+          if (!Array.isArray(rowData)) {
+            console.warn(`Row ${i} is not an array, skipping`);
+            continue;
+          }
+
+          const row: Record<string, unknown> = {};
+
+          // Map the row data to column headers
+          for (let j = 0; j < headers.length; j++) {
+            if (j < rowData.length) {
+              row[headers[j]] = rowData[j];
+            } else {
+              row[headers[j]] = null;
+            }
+          }
+
+          // Add row to batch
+          batch.push(row);
+
+          // Process batch if it reaches the batch size
+          if (batch.length >= batchSize) {
+            await processBatch();
+          }
+        }
+
+        // Process any remaining rows
+        if (batch.length > 0) {
+          await processBatch();
+        }
+
+        console.log(`Successfully processed ${rowCount} rows from XLSX data`);
+        return { headers, rowCount };
+      } else {
+        console.log(
+          "First row is not an array or no data found, falling back to alternative method"
+        );
       }
     } catch (jsonError) {
       console.warn("Error extracting headers using sheet_to_json:", jsonError);
@@ -311,9 +493,14 @@ export async function processXLSXStreaming(
     }
 
     // Fallback: Extract headers cell by cell
+    console.log("Using fallback method to extract headers cell by cell");
+    console.log("Worksheet range:", range);
+
     for (let col = range.s.c; col <= range.e.c; col++) {
       const cellAddress = xlsx.utils.encode_cell({ r: range.s.r, c: col });
       const cell = worksheet[cellAddress];
+
+      console.log(`Processing header cell at ${cellAddress}:`, cell);
 
       // Properly format header names
       let headerName = "";
@@ -322,25 +509,40 @@ export async function processXLSXStreaming(
         if (cell.t === "n") {
           // Number
           headerName = String(cell.v);
+          console.log(`Header at ${cellAddress} is a number: ${headerName}`);
         } else if (cell.t === "d") {
           // Date
           headerName = cell.w || String(cell.v);
+          console.log(`Header at ${cellAddress} is a date: ${headerName}`);
         } else if (cell.t === "b") {
           // Boolean
           headerName = String(cell.v);
+          console.log(`Header at ${cellAddress} is a boolean: ${headerName}`);
         } else if (cell.t === "s") {
           // String
           headerName = String(cell.v);
+          console.log(`Header at ${cellAddress} is a string: ${headerName}`);
         } else {
           headerName = cell.w || String(cell.v || "");
+          console.log(
+            `Header at ${cellAddress} is of type ${cell.t}: ${headerName}`
+          );
         }
+      } else {
+        console.log(
+          `No cell found at ${cellAddress}, using default column name`
+        );
       }
 
       // Ensure we have a valid header name
-      headers.push(headerName || `Column${col + 1}`);
+      const finalHeaderName = headerName || `Column${col + 1}`;
+      headers.push(finalHeaderName);
+      console.log(`Added header: ${finalHeaderName}`);
     }
 
-    console.log(`Extracted ${headers.length} headers from XLSX`);
+    console.log(
+      `Extracted ${headers.length} headers from XLSX using fallback method`
+    );
 
     // Call the headers extracted callback if provided
     if (onHeadersExtracted) {
@@ -382,23 +584,122 @@ export async function processXLSXStreaming(
       if (batch.length === 0) return;
 
       try {
-        // Add provenance columns to each row
-        const rowsWithProvenance = batch.map((row) => ({
-          ...row,
-          source_id: sourceId,
-          ingested_at: timestamp,
-        }));
+        console.log(
+          `Processing batch ${batchCount + 1} with ${
+            batch.length
+          } rows (fallback method)`
+        );
+
+        // Log a sample row to help debug serialization issues
+        if (batch.length > 0) {
+          console.log(
+            `Sample row data structure (fallback method):`,
+            JSON.stringify(batch[0], (_, value) =>
+              typeof value === "bigint" ? value.toString() : value
+            ).substring(0, 500)
+          );
+        }
+
+        // Add provenance columns to each row with better data type handling
+        const rowsWithProvenance = batch.map((row) => {
+          // Create a sanitized version of the row that handles complex Excel data types
+          const sanitizedRow: Record<string, unknown> = {};
+          for (const [key, value] of Object.entries(row)) {
+            if (value instanceof Date) {
+              sanitizedRow[key] = value.toISOString();
+            } else if (typeof value === "object" && value !== null) {
+              try {
+                sanitizedRow[key] = JSON.stringify(value);
+              } catch (jsonError) {
+                sanitizedRow[key] = String(value);
+              }
+            } else if (typeof value === "bigint") {
+              sanitizedRow[key] = value.toString();
+            } else {
+              sanitizedRow[key] = value;
+            }
+          }
+
+          return {
+            ...sanitizedRow,
+            source_id: sourceId,
+            ingested_at: timestamp,
+          };
+        });
 
         // Insert batch into database with dynamic batch sizing
+        console.log(
+          `Inserting batch ${batchCount + 1} into database (fallback method)`
+        );
         await insertFileData(fileId, rowsWithProvenance);
 
         rowCount += batch.length;
         if (onProgress) {
           onProgress(rowCount);
         }
+
+        console.log(
+          `Successfully inserted batch ${
+            batchCount + 1
+          }, total rows processed: ${rowCount} (fallback method)`
+        );
       } catch (error) {
-        console.error(`Error processing batch ${batchCount}:`, error);
-        throw error;
+        console.error(
+          `Error processing batch ${batchCount + 1} (fallback method):`,
+          error
+        );
+
+        // Try individual row insertion as fallback
+        console.log(
+          `Attempting individual row insertion as fallback (fallback method)...`
+        );
+        let successCount = 0;
+
+        for (const row of batch) {
+          try {
+            // Create a simplified version with string values
+            const simplifiedRow: Record<string, unknown> = {};
+            for (const [key, value] of Object.entries(row)) {
+              if (value === null || value === undefined) {
+                simplifiedRow[key] = null;
+              } else if (value instanceof Date) {
+                simplifiedRow[key] = value.toISOString();
+              } else if (typeof value === "object") {
+                simplifiedRow[key] = String(value);
+              } else {
+                simplifiedRow[key] = value;
+              }
+            }
+
+            await insertFileData(fileId, [
+              {
+                ...simplifiedRow,
+                source_id: sourceId,
+                ingested_at: timestamp,
+              },
+            ]);
+            successCount++;
+          } catch (rowError) {
+            console.error(
+              `Failed to insert individual row (fallback method):`,
+              rowError
+            );
+          }
+        }
+
+        console.log(
+          `Individual insertion fallback: ${successCount}/${batch.length} rows inserted (fallback method)`
+        );
+
+        if (successCount === 0) {
+          throw error; // Re-throw if no rows were inserted
+        }
+
+        // Update row count with successful insertions
+        rowCount += successCount;
+        if (onProgress) {
+          onProgress(rowCount);
+        }
       }
 
       // Clear the batch
@@ -406,8 +707,14 @@ export async function processXLSXStreaming(
       batchCount++;
     };
 
+    console.log(`Starting to process ${totalRows} rows using fallback method`);
+
     // Process each row (skip the header row)
     for (let r = range.s.r + 1; r <= range.e.r; r++) {
+      if (r % 100 === 0) {
+        console.log(`Processing row ${r} of ${range.e.r} (fallback method)`);
+      }
+
       const row: Record<string, unknown> = {};
 
       // Process each cell in the row
@@ -417,7 +724,10 @@ export async function processXLSXStreaming(
         const header = headers[c - range.s.c];
 
         // Skip if header is undefined or null
-        if (!header) continue;
+        if (!header) {
+          console.log(`Skipping cell at ${cellAddress} due to missing header`);
+          continue;
+        }
 
         // Properly handle different cell types
         if (!cell) {

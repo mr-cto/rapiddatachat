@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/router";
+import { fileEventBus } from "../../../lib/events/FileEventBus";
 
 interface UseFileOperationsProps {
   fetchFiles: () => Promise<void>;
@@ -34,6 +35,12 @@ export const useFileOperations = ({
   // Handle file deletion
   const handleDeleteFile = async (fileId: string) => {
     try {
+      // Publish delete started event
+      fileEventBus.publish({
+        type: "file:delete:started",
+        fileId,
+      });
+
       const response = await fetch(`/api/files/${fileId}`, {
         method: "DELETE",
       });
@@ -55,6 +62,12 @@ export const useFileOperations = ({
       // Show success message
       setSuccessMessage("File successfully deleted");
 
+      // Publish delete completed event
+      fileEventBus.publish({
+        type: "file:delete:completed",
+        fileId,
+      });
+
       // Check if this was the last file and notify parent
       if (onFileCountChange) {
         // We don't know the exact count here, but we'll let fetchFiles update it
@@ -67,6 +80,14 @@ export const useFileOperations = ({
         ...prev,
         [fileId]: err instanceof Error ? err.message : "Delete failed",
       }));
+
+      // Publish error event
+      fileEventBus.publish({
+        type: "file:error",
+        fileId,
+        error: err instanceof Error ? err : new Error("Delete failed"),
+        data: { stage: "delete" },
+      });
     }
   };
 

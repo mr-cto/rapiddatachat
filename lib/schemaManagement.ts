@@ -271,17 +271,19 @@ export class SchemaService {
       console.log(`[getGlobalSchemaById] Schema columns:`, schema.columns);
 
       // Convert Prisma model to our interface format
-      const schemaColumns: SchemaColumn[] = schema.columns.map((column) => ({
-        id: column.id,
-        name: column.name,
-        type: column.dataType,
-        description: column.description || undefined,
-        isRequired: column.isRequired || false,
-        isPrimaryKey: false, // Default value as it's not in the Prisma schema
-        defaultValue: undefined, // Default value as it's not in the Prisma schema
-        derivationFormula: undefined, // Default value as it's not in the Prisma schema
-        isNewColumn: false, // Default value as it's not in the Prisma schema
-      }));
+      const schemaColumns: SchemaColumn[] = schema.columns.map(
+        (column: any) => ({
+          id: column.id,
+          name: column.name,
+          type: column.dataType,
+          description: column.description || undefined,
+          isRequired: column.isRequired || false,
+          isPrimaryKey: false, // Default value as it's not in the Prisma schema
+          defaultValue: undefined, // Default value as it's not in the Prisma schema
+          derivationFormula: undefined, // Default value as it's not in the Prisma schema
+          isNewColumn: false, // Default value as it's not in the Prisma schema
+        })
+      );
 
       console.log(
         `[getGlobalSchemaById] Converted schema columns:`,
@@ -373,19 +375,21 @@ export class SchemaService {
       }
 
       // Convert Prisma models to our interface format
-      return schemas.map((schema) => {
+      return schemas.map((schema: any) => {
         // Convert schema columns
-        const schemaColumns: SchemaColumn[] = schema.columns.map((column) => ({
-          id: column.id,
-          name: column.name,
-          type: column.dataType,
-          description: column.description || undefined,
-          isRequired: column.isRequired || false,
-          isPrimaryKey: false, // Default value as it's not in the Prisma schema
-          defaultValue: undefined, // Default value as it's not in the Prisma schema
-          derivationFormula: undefined, // Default value as it's not in the Prisma schema
-          isNewColumn: false, // Default value as it's not in the Prisma schema
-        }));
+        const schemaColumns: SchemaColumn[] = schema.columns.map(
+          (column: any) => ({
+            id: column.id,
+            name: column.name,
+            type: column.dataType,
+            description: column.description || undefined,
+            isRequired: column.isRequired || false,
+            isPrimaryKey: false, // Default value as it's not in the Prisma schema
+            defaultValue: undefined, // Default value as it's not in the Prisma schema
+            derivationFormula: undefined, // Default value as it's not in the Prisma schema
+            isNewColumn: false, // Default value as it's not in the Prisma schema
+          })
+        );
 
         // Return schema with default values for missing fields
         return {
@@ -450,7 +454,7 @@ export class SchemaService {
         projectId: updatedSchema.projectId,
         name: updatedSchema.name,
         description: updatedSchema.description || undefined,
-        columns: updatedSchema.columns.map((column) => ({
+        columns: updatedSchema.columns.map((column: any) => ({
           id: column.id,
           name: column.name,
           type: column.dataType,
